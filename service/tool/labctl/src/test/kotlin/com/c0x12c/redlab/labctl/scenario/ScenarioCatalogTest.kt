@@ -122,13 +122,34 @@ class ScenarioCatalogTest {
   }
 
   @Test
-  fun `the client outage removes one tenant and keeps the others`() {
+  fun `the client outage mutes one tenant through its own loadgen key`() {
     val scenario = ScenarioCatalog.byId.getValue("client_outage")
-    val params = Params(mapOf("tenant" to "ios"), "14:05")
-    val tenants = scenario.faults(params).services.getValue("loadgen").getValue("tenants") as Map<*, *>
-    assertThat(tenants["ios"]).isEqualTo(0)
-    assertThat(tenants["web"]).isEqualTo(ScenarioCatalog.BASE_TENANTS.getValue("web"))
-    assertThat(scenario.ticket(params).contains("30%")).isTrue()
-    assertThat(scenario.marker!!(params).contains("iOS")).isTrue()
+    val params = Params(scenario.params(Random(2), ExerciseContext(tenants = mapOf("web" to 40, "ios" to 10, "android" to 10))), "14:05")
+    assertThat(scenario.faults(params).services.getValue("loadgen")).isEqualTo(mapOf("tenant_outage" to params.string("tenant")))
+    assertThat(scenario.ticket(params).contains("17%")).isTrue()
+    assertThat(scenario.marker!!(params).contains(if (params.string("tenant") == "ios") "iOS" else "Android")).isTrue()
+
+    val fallback = Params(scenario.params(Random(2), ExerciseContext()), "14:05")
+    assertThat(fallback.int("total")).isEqualTo(ScenarioCatalog.BASE_RPS)
+  }
+
+  @Test
+  fun `the global surge leaves the learner's load multiplier alone`() {
+    val scenario = ScenarioCatalog.byId.getValue("global_surge")
+    val loadgen = scenario.faults(Params(scenario.params(Random(3), ExerciseContext()), "14:05")).services.getValue("loadgen")
+    assertThat(loadgen.keys).containsOnly("surge_multiplier")
+  }
+
+  @Test
+  fun `the baseline numbers come from one tenant mix`() {
+    assertThat(ScenarioCatalog.BASE_RPS).isEqualTo(50)
+    assertThat(ScenarioCatalog.BASE_TENANTS.values.sum()).isEqualTo(ScenarioCatalog.BASE_RPS)
+  }
+
+  @Test
+  fun `a flag missing from an older exercise reads as false`() {
+    assertThat(Params(mapOf("recommend_ms" to 300), "14:05").bool("overload")).isFalse()
+    val scenario = ScenarioCatalog.byId.getValue("pool_hold")
+    assertThat(scenario.ticket(Params(mapOf("recommend_ms" to 300), "14:05")).contains("errors are rare")).isTrue()
   }
 }

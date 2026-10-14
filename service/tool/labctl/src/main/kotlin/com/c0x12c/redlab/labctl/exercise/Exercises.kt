@@ -45,7 +45,7 @@ class Exercises(
       return 1
     }
     val scenario = pick(state, options) ?: return 1
-    val context = ExerciseContext(cpuCount = probe.cpuCount(), productDetailSeconds = probe.productDetailSeconds())
+    val context = ExerciseContext(cpuCount = probe.cpuCount(), productDetailSeconds = probe.productDetailSeconds(), tenants = probe.tenants())
     val params = scenario.params(random, context)
     val startedAt = now()
     val number = state.history.size + 1
@@ -111,7 +111,7 @@ class Exercises(
       }
       in expected.partial -> {
         points += PARTIAL_POINTS
-        missed += "cause"
+        missed += "cause (partial)"
         "partly correct"
       }
       else -> {
@@ -163,13 +163,13 @@ class Exercises(
   fun status(): Int {
     val state = store.load()
     val active = state.active
-    if (active != null) {
+    if (active == null) {
+      terminal.out("No exercise is running.")
+    } else if (resumable(active)) {
       val scenario = catalog.byId.getValue(active.id)
       val minutes = ((now() - active.started) / SECONDS_PER_MINUTE).roundToInt()
       terminal.out("Exercise #${active.n} (level ${scenario.level}) has been running for $minutes min, ${active.hints} hint(s) used.")
       terminal.out(scenario.ticket(Params(active.params, hhmm(active.started))))
-    } else {
-      terminal.out("No exercise is running.")
     }
     terminal.out()
     terminal.out("Services:")
@@ -228,7 +228,7 @@ class Exercises(
       .sortedBy { it.second }
 
   private fun mostMissedCause(scored: List<HistoryEntry>): Pair<String, Int>? =
-    scored.filter { "cause" in it.missed }
+    scored.filter { entry -> entry.missed.any { it.startsWith("cause") } }
       .mapNotNull { catalog.byId[it.id]?.answer?.cause }
       .groupingBy { it }.eachCount()
       .maxByOrNull { it.value }?.toPair()
@@ -239,7 +239,7 @@ class Exercises(
       val loadgen = state.base["loadgen"].orEmpty() + ("rate_multiplier" to x)
       state.copy(base = state.base + ("loadgen" to loadgen))
     }
-    terminal.out("Background load = ${plain(x)} x $BASE_RPS rps = ${plain(BASE_RPS * x)} rps (applied within a few seconds).")
+    terminal.out("Background load = ${plain(x)} x ${ScenarioCatalog.BASE_RPS} rps = ${plain(ScenarioCatalog.BASE_RPS * x)} rps (applied within a few seconds).")
     return 0
   }
 
@@ -260,11 +260,22 @@ class Exercises(
     return (fresh.ifEmpty { pool }).random(random)
   }
 
-  private fun requireActive(state: LabState): ActiveExercise? =
-    state.active ?: run {
+  private fun requireActive(state: LabState): ActiveExercise? {
+    val active = state.active ?: run {
       terminal.out("No exercise is running. Use `make new` to start one.")
-      null
+      return null
     }
+    return active.takeIf { resumable(it) }
+  }
+
+  /** False when the exercise was started by an older catalog and its params no longer render. */
+  private fun resumable(active: ActiveExercise): Boolean {
+    val renders = catalog.byId[active.id]?.let { scenario -> runCatching { scenario.ticket(Params(active.params, hhmm(active.started))) }.isSuccess } ?: false
+    if (!renders) {
+      terminal.out("Exercise #${active.n} was started by an older version of the lab and cannot be resumed. Use `make clear`, then `make new`.")
+    }
+    return renders
+  }
 
   private fun choose(title: String, options: List<Pair<String, String>>, groups: Map<String, String> = emptyMap()): String? {
     terminal.out()
@@ -365,7 +376,6 @@ class Exercises(
     const val CAUSE_POINTS = 2.0
     const val PARTIAL_POINTS = 1.0
     const val MAX_POINTS = NATURE_POINTS + LOCATION_POINTS + SIGNAL_POINTS + CAUSE_POINTS
-    const val BASE_RPS = 50
     const val MIN_LOAD = 0.1
     const val MAX_LOAD = 6.0
     private const val MAX_LEVEL = 3
@@ -376,7 +386,7 @@ class Exercises(
     private const val BANNER_WIDTH = 72
     private const val SERVICE_COLUMN = 8
     private const val ID_COLUMN = 18
-    private const val TITLE_COLUMN = 48
+    const val TITLE_COLUMN = 48
     private const val SCORE_COLUMN = 6
     private const val MINUTES_COLUMN = 5
     private const val MILLIS_PER_SECOND = 1_000.0

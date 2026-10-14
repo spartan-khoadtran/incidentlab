@@ -10,6 +10,8 @@ import java.time.Duration
 object LoadgenFaults {
   const val TENANTS = "tenants"
   const val RATE_MULTIPLIER = "rate_multiplier"
+  const val SURGE_MULTIPLIER = "surge_multiplier"
+  const val TENANT_OUTAGE = "tenant_outage"
   const val EXTRA_RPS = "extra_rps"
   const val CHECKOUT_SHARE = "checkout_share"
   const val TIMEOUT_MS = "timeout_ms"
@@ -20,6 +22,10 @@ object LoadgenFaults {
     // requests per second per tenant
     TENANTS to mapOf("web" to 20, "ios" to 15, "android" to 12, "partner-x" to 3),
     RATE_MULTIPLIER to 1.0,
+    // stacked on rate_multiplier, so the learner's `make load` setting survives a surge exercise
+    SURGE_MULTIPLIER to 1.0,
+    // this tenant sends nothing
+    TENANT_OUTAGE to null,
     // extra traffic per tenant: a crawler walking the whole catalog
     EXTRA_RPS to emptyMap<String, Any>(),
     CHECKOUT_SHARE to 0.3,

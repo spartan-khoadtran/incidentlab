@@ -87,7 +87,7 @@ object Quiz {
     return Question(
       "A service receives $rps requests/s. Each request holds a DB connection for $hold ms on average. How many connections are in use at the same time, on average?",
       answer, Tolerance.Relative(0.03), "connections",
-      "Little's Law: L = λ × W = $rps × ${fmt(hold / MILLIS_PER_SECOND)} s = ${fmt(answer)}. A pool smaller than this is certainly saturated; in practice you need headroom because traffic does not arrive evenly.",
+      "Little's Law: L = λ × W = $rps × ${shown(hold / MILLIS_PER_SECOND)} s = ${shown(answer)}. A pool smaller than this is certainly saturated; in practice you need headroom because traffic does not arrive evenly.",
       "Linking RED and USE > Little's Law"
     )
   }
@@ -110,9 +110,9 @@ object Quiz {
     val p = pct / PERCENT
     val answer = (1 - p.pow(n)) * PERCENT
     return Question(
-      "One request calls $n independent downstream calls in parallel. Each call has a ${fmt(PERCENT - pct)}% chance of being slower than its p${fmt(pct)}. What percentage of the upstream requests hit at least one slow call?",
+      "One request calls $n independent downstream calls in parallel. Each call has a ${shown(PERCENT - pct)}% chance of being slower than its p${shown(pct)}. What percentage of the upstream requests hit at least one slow call?",
       answer, Tolerance.Relative(0.03), "%",
-      "1 − ${fmt(p)}^$n = ${String.format(Locale.ROOT, "%.4f", answer / PERCENT)} ≈ ${String.format(Locale.ROOT, "%.1f", answer)}%. The larger the fan-out, the more the lower layer's tail is amplified.",
+      "1 − ${shown(p)}^$n = ${String.format(Locale.ROOT, "%.4f", answer / PERCENT)} ≈ ${String.format(Locale.ROOT, "%.1f", answer)}%. The larger the fan-out, the more the lower layer's tail is amplified.",
       "RED at many layers > Tail amplification"
     )
   }
@@ -125,7 +125,7 @@ object Quiz {
     return Question(
       "A request calls $n downstream calls in parallel. You want at most $target% of the upstream requests to hit a slow call. At which percentile must each call's 'slow' threshold sit? (answer like 99.9)",
       answer, Tolerance.Absolute(0.02), "percentile",
-      "You need p^$n ≥ ${fmt(1 - target / PERCENT)}, so p = ${fmt(1 - target / PERCENT)}^(1/$n) = ${String.format(Locale.ROOT, "%.5f", p)}, about p${String.format(Locale.ROOT, "%.2f", answer)}. So with a large fan-out you must watch p99.9 and beyond at the lower layer.",
+      "You need p^$n ≥ ${shown(1 - target / PERCENT)}, so p = ${shown(1 - target / PERCENT)}^(1/$n) = ${String.format(Locale.ROOT, "%.5f", p)}, about p${String.format(Locale.ROOT, "%.2f", answer)}. So with a large fan-out you must watch p99.9 and beyond at the lower layer.",
       "RED at many layers > Tail amplification"
     )
   }
@@ -137,7 +137,7 @@ object Quiz {
     return Question(
       "A resource has a service time of $s ms and runs at $u% utilization. By the M/M/1 model, what is the mean response time in ms?",
       answer, Tolerance.Relative(0.03), "ms",
-      "R = S / (1 − U) = $s / (1 − ${fmt(u / PERCENT)}) = ${String.format(Locale.ROOT, "%.1f", answer)} ms, that is ${String.format(Locale.ROOT, "%.1f", 1 / (1 - u / PERCENT))} times the service time.",
+      "R = S / (1 − U) = $s / (1 − ${shown(u / PERCENT)}) = ${String.format(Locale.ROOT, "%.1f", answer)} ms, that is ${String.format(Locale.ROOT, "%.1f", 1 / (1 - u / PERCENT))} times the service time.",
       "Linking RED and USE > Queueing"
     )
   }
@@ -160,7 +160,7 @@ object Quiz {
     return Question(
       "A disk handles $iops IOPS with a mean service time of $s ms per I/O. What is the disk's (time-based) utilization in %?",
       answer, Tolerance.Absolute(0.5), "%",
-      "Utilization law: U = X × S = $iops × ${fmt(s / MILLIS_PER_SECOND)} = ${String.format(Locale.ROOT, "%.0f", answer)}%. This is the %busy iostat reports; a disk with several parallel queues can still take more work at a high busy value.",
+      "Utilization law: U = X × S = $iops × ${shown(s / MILLIS_PER_SECOND)} = ${String.format(Locale.ROOT, "%.0f", answer)}%. This is the %busy iostat reports; a disk with several parallel queues can still take more work at a high busy value.",
       "USE method in detail > Time-based and capacity-based"
     )
   }
@@ -171,9 +171,9 @@ object Quiz {
     val runMs = limit * CFS_PERIOD_MS / threads
     val answer = CFS_PERIOD_MS - runMs
     return Question(
-      "A container has a CPU limit of ${fmt(limit)} core(s) (CFS period 100 ms). The app has $threads threads all busy on CPU. For how many ms per period is the app throttled?",
+      "A container has a CPU limit of ${shown(limit)} core(s) (CFS period 100 ms). The app has $threads threads all busy on CPU. For how many ms per period is the app throttled?",
       answer, Tolerance.Absolute(0.5), "ms",
-      "Quota = ${fmt(limit)} × 100 = ${fmt(limit * CFS_PERIOD_MS)} ms of CPU per period. $threads threads use it up after ${fmt(runMs)} ms and wait the remaining ${fmt(answer)} ms. The host may still look idle.",
+      "Quota = ${shown(limit)} × 100 = ${shown(limit * CFS_PERIOD_MS)} ms of CPU per period. $threads threads use it up after ${shown(runMs)} ms and wait the remaining ${shown(answer)} ms. The host may still look idle.",
       "USE at many layers > One layer hides another"
     )
   }
@@ -185,7 +185,7 @@ object Quiz {
     return Question(
       "Consumer lag is $lag messages and the consumer handles $rate msg/s. About how many seconds does the newest message wait?",
       answer, Tolerance.Relative(0.03), "seconds",
-      "Lag in time ≈ lag / consume rate = $lag / $rate = ${fmt(answer)} s. This number is easier to compare with an SLA than a message count.",
+      "Lag in time ≈ lag / consume rate = $lag / $rate = ${shown(answer)} s. This number is easier to compare with an SLA than a message count.",
       "RED at many layers > The async layer"
     )
   }
@@ -197,7 +197,7 @@ object Quiz {
     return Question(
       "The producer sends $produce msg/s and the consumer handles at most $capacity msg/s. By how many messages does the lag grow per minute?",
       answer, Tolerance.Relative(0.01), "messages",
-      "($produce − $capacity) × 60 = ${fmt(answer)}. Processing time is unchanged but lag grows linearly: the consumer is saturated.",
+      "($produce − $capacity) × 60 = ${shown(answer)}. Processing time is unchanged but lag grows linearly: the consumer is saturated.",
       "RED at many layers > The async layer"
     )
   }
@@ -209,7 +209,7 @@ object Quiz {
     return Question(
       "Each pod has a pool of $per connections to Postgres. You scale out to $pods pods. What is the maximum total number of connections to the DB?",
       answer, Tolerance.Relative(0.0), "connections",
-      "$pods × $per = ${fmt(answer)}. Compare with the DB's max_connections: raising the pool size or scaling pods both push the burden onto the DB.",
+      "$pods × $per = ${shown(answer)}. Compare with the DB's max_connections: raising the pool size or scaling pods both push the burden onto the DB.",
       "USE at many layers > Common examples"
     )
   }
@@ -220,7 +220,7 @@ object Quiz {
     return Question(
       "Out of 100 requests, 98 take 10 ms and 2 take $slow ms. What is the mean duration in ms?",
       answer, Tolerance.Relative(0.01), "ms",
-      "(98 × 10 + 2 × $slow) / 100 = ${fmt(answer)} ms. The average looks fine while 2% of users wait ${fmt(slow / MILLIS_PER_SECOND)} s: always read the percentiles.",
+      "(98 × 10 + 2 × $slow) / 100 = ${shown(answer)} ms. The average looks fine while 2% of users wait ${shown(slow / MILLIS_PER_SECOND)} s: always read the percentiles.",
       "RED method in detail > Duration"
     )
   }
@@ -230,7 +230,7 @@ object Quiz {
     val k = listOf(2, 3, 4).random(r)
     val answer = (1 - p.pow(k + 1)) / (1 - p)
     return Question(
-      "Each attempt fails with probability ${fmt(p)} (independently). The client retries immediately, at most $k times. How many attempts does one user request produce on average?",
+      "Each attempt fails with probability ${shown(p)} (independently). The client retries immediately, at most $k times. How many attempts does one user request produce on average?",
       answer, Tolerance.Relative(0.02), "attempts",
       "1 + p + p² + ... + p^$k = (1 − p^${k + 1}) / (1 − p) = ${String.format(Locale.ROOT, "%.2f", answer)}. The server-side rate grows by that factor although the number of users is unchanged.",
       "RED at many layers > Why Rate differs (retry)"
@@ -245,7 +245,7 @@ object Quiz {
     return Question(
       "After a fix the consumer handles $capacity msg/s again, while the producer keeps sending $produce msg/s. Lag is $lag messages. In how many seconds is the lag gone?",
       answer, Tolerance.Relative(0.02), "seconds",
-      "Lag drains at (capacity − produce) = ${capacity - produce} msg/s, so $lag / ${capacity - produce} = ${fmt(answer)} s. A fix that only matches the produce rate never drains the backlog.",
+      "Lag drains at (capacity − produce) = ${capacity - produce} msg/s, so $lag / ${capacity - produce} = ${shown(answer)} s. A fix that only matches the produce rate never drains the backlog.",
       "RED at many layers > The async layer"
     )
   }
@@ -254,9 +254,9 @@ object Quiz {
     val share = listOf(0.2, 0.3, 0.5).random(r)
     val answer = share * FAIL_FAST_MS + (1 - share) * NORMAL_MS
     return Question(
-      "A dependency dies. ${fmt(share * PERCENT)}% of requests now fail fast in ${fmt(FAIL_FAST_MS)} ms; the rest still take ${fmt(NORMAL_MS)} ms. What is the new mean duration in ms?",
+      "A dependency dies. ${shown(share * PERCENT)}% of requests now fail fast in ${shown(FAIL_FAST_MS)} ms; the rest still take ${shown(NORMAL_MS)} ms. What is the new mean duration in ms?",
       answer, Tolerance.Absolute(0.5), "ms",
-      "${fmt(share)} × ${fmt(FAIL_FAST_MS)} + ${fmt(1 - share)} × ${fmt(NORMAL_MS)} = ${fmt(answer)} ms. The mean went down while users got worse: read the duration of errors and of successes separately.",
+      "${shown(share)} × ${shown(FAIL_FAST_MS)} + ${shown(1 - share)} × ${shown(NORMAL_MS)} = ${shown(answer)} ms. The mean went down while users got worse: read the duration of errors and of successes separately.",
       "RED method in detail > Duration (split errors from successes)"
     )
   }
@@ -267,9 +267,9 @@ object Quiz {
     val after = listOf(0.5, 0.7).random(r)
     val answer = rps * (1 - after)
     return Question(
-      "A service gets $rps requests/s. Every request reads the cache, and each miss runs one DB query. The hit ratio fell from ${fmt(before * PERCENT)}% to ${fmt(after * PERCENT)}%. How many queries/s does the DB get now?",
+      "A service gets $rps requests/s. Every request reads the cache, and each miss runs one DB query. The hit ratio fell from ${shown(before * PERCENT)}% to ${shown(after * PERCENT)}%. How many queries/s does the DB get now?",
       answer, Tolerance.Relative(0.02), "queries/s",
-      "DB rate = rate × (1 − hit) = $rps × ${fmt(1 - after)} = ${fmt(answer)}, against ${fmt(rps * (1 - before))} before. The API rate did not move; the cache did.",
+      "DB rate = rate × (1 − hit) = $rps × ${shown(1 - after)} = ${shown(answer)}, against ${shown(rps * (1 - before))} before. The API rate did not move; the cache did.",
       "RED at many layers > Why Rate differs (cache)"
     )
   }
@@ -281,7 +281,7 @@ object Quiz {
     return Question(
       "A single-threaded worker is busy $u% of the time and its service time is $s ms per request. How many requests/s does it handle right now?",
       answer, Tolerance.Relative(0.02), "requests/s",
-      "Utilization law turned around: X = U / S = ${fmt(u / PERCENT)} / ${fmt(s / MILLIS_PER_SECOND)} = ${fmt(answer)} requests/s. At 100% it would top out at ${fmt(MILLIS_PER_SECOND / s)} requests/s.",
+      "Utilization law turned around: X = U / S = ${shown(u / PERCENT)} / ${shown(s / MILLIS_PER_SECOND)} = ${shown(answer)} requests/s. At 100% it would top out at ${shown(MILLIS_PER_SECOND / s)} requests/s.",
       "USE method in detail > Time-based and capacity-based"
     )
   }
@@ -292,17 +292,15 @@ object Quiz {
     val budget = PERCENT - slo
     val answer = SLO_WINDOW_DAYS * budget / errors
     return Question(
-      "An SLO of ${fmt(slo)}% over $SLO_WINDOW_DAYS days allows ${String.format(Locale.ROOT, "%.2f", budget)}% of requests to fail. The service runs at ${fmt(errors)}% errors right now. After how many days at this rate is the whole error budget spent?",
+      "An SLO of ${shown(slo)}% over $SLO_WINDOW_DAYS days allows ${String.format(Locale.ROOT, "%.2f", budget)}% of requests to fail. The service runs at ${shown(errors)}% errors right now. After how many days at this rate is the whole error budget spent?",
       answer, Tolerance.Relative(0.02), "days",
-      "Burn rate = ${fmt(errors)} / ${String.format(Locale.ROOT, "%.2f", budget)} = ${fmt(errors / budget)} times the allowed rate, so the budget lasts $SLO_WINDOW_DAYS / ${fmt(errors / budget)} = ${String.format(Locale.ROOT, "%.1f", answer)} days. Page on burn rate, not on a raw error count.",
+      "Burn rate = ${shown(errors)} / ${String.format(Locale.ROOT, "%.2f", budget)} = ${shown(errors / budget)} times the allowed rate, so the budget lasts $SLO_WINDOW_DAYS / ${shown(errors / budget)} = ${String.format(Locale.ROOT, "%.1f", answer)} days. Page on burn rate, not on a raw error count.",
       "Combining > SLI and SLO"
     )
   }
 
   /** Four significant digits and no thousands separator, because the answer prompt reads a comma as the decimal point. */
   fun shown(value: Double): String = BigDecimal(value).round(MathContext(SIGNIFICANT_DIGITS)).stripTrailingZeros().toPlainString()
-
-  private fun fmt(value: Double): String = if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
 
   private const val EPSILON = 1e-9
   private const val SIGNIFICANT_DIGITS = 4

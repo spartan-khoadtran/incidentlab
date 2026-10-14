@@ -15,6 +15,8 @@ import com.c0x12c.redlab.labctl.control.Annotator
 import com.c0x12c.redlab.labctl.control.LabProbe
 import com.c0x12c.redlab.labctl.scenario.Answers
 import com.c0x12c.redlab.labctl.scenario.ScenarioCatalog
+import com.c0x12c.redlab.labctl.state.ActiveExercise
+import com.c0x12c.redlab.labctl.state.LabState
 import com.c0x12c.redlab.labctl.state.StateStore
 import java.nio.file.Path
 import kotlin.random.Random
@@ -37,6 +39,8 @@ class ExercisesTest {
     override fun cpuCount(): Int = 4
 
     override fun productDetailSeconds(): Double? = null
+
+    override fun tenants(): Map<String, Int>? = null
 
     override fun serviceStatus(): Map<String, String?> = mapOf("api" to null)
   }
@@ -83,7 +87,7 @@ class ExercisesTest {
     assertThat(terminal.lines.any { it.startsWith("RESULT: 1/5") }).isTrue()
     val state = StateStore(dir.resolve("state.json")).load()
     assertThat(state.active).isNotNull()
-    assertThat(state.history.single().missed).containsExactly("nature", "location", "signal", "cause")
+    assertThat(state.history.single().missed).containsExactly("nature", "location", "signal", "cause (partial)")
   }
 
   @Test
@@ -188,11 +192,33 @@ class ExercisesTest {
     terminal.lines.clear()
     exercises.history()
 
-    assertThat(terminal.lines.any { it.contains("4/5") && it.endsWith("Retry storm  missed: cause") }).isTrue()
+    assertThat(terminal.lines.any { it.contains("4/5") && it.endsWith("Retry storm  missed: cause (partial)") }).isTrue()
     assertThat(terminal.lines).contains("     note: saw pricing 503s")
     assertThat(terminal.lines).contains("Average score: 4.50/5 over 2 exercise(s)")
     assertThat(terminal.lines.any { it.startsWith("By topic: ") && it.contains("red 4.0 (1)") && it.contains("layers 4.5 (2)") }).isTrue()
     assertThat(terminal.lines).contains("Most missed cause: ${Answers.label(Answers.CAUSES, "retry_storm")} (1 time(s))")
+  }
+
+  @Test
+  fun `every title fits the list column`() {
+    for (scenario in ScenarioCatalog.all) {
+      assertThat(scenario.title.length <= Exercises.TITLE_COLUMN).isTrue()
+    }
+  }
+
+  @Test
+  fun `an exercise whose params no longer render is reported, not crashed on`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal(ArrayDeque())
+    val store = StateStore(dir.resolve("state.json"))
+    store.save(LabState(active = ActiveExercise(id = "client_outage", params = mapOf("tenant" to "ios"), started = NOW, n = 1)))
+    val exercises = exercises(dir, terminal)
+
+    assertThat(exercises.status()).isEqualTo(0)
+    assertThat(exercises.answer()).isEqualTo(1)
+    assertThat(exercises.hint()).isEqualTo(1)
+    assertThat(terminal.lines.count { it.contains("older version of the lab") }).isEqualTo(3)
+    assertThat(exercises.clear()).isEqualTo(0)
+    assertThat(store.load().active).isNull()
   }
 
   private companion object {

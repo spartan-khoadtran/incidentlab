@@ -7,7 +7,9 @@ import kotlin.random.Random
 /** What an exercise may read from the running lab before it draws its parameters. */
 data class ExerciseContext(
   val cpuCount: Int? = null,
-  val productDetailSeconds: Double? = null
+  val productDetailSeconds: Double? = null,
+  /** loadgen's default rate per tenant. */
+  val tenants: Map<String, Int>? = null
 )
 
 /** The random parameters of one run, plus the ticket time, with typed readers for the texts. */
@@ -21,7 +23,7 @@ class Params(
 
   fun string(key: String): String = values.getValue(key).toString()
 
-  fun bool(key: String): Boolean = values.getValue(key) as Boolean
+  fun bool(key: String): Boolean = values[key] as? Boolean ?: false
 
   fun percent(key: String): String = "${(double(key) * PERCENT).roundToInt()}%"
 

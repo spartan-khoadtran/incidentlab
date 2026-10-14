@@ -1,5 +1,6 @@
 package com.c0x12c.redlab.labctl.scenario
 
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
@@ -9,6 +10,13 @@ import kotlin.math.roundToInt
  * the ticket, the hints, the accepted answer and the explanation with its PromQL evidence.
  */
 object ScenarioCatalog {
+
+  val BASE_TENANTS: Map<String, Int> = mapOf("web" to 20, "ios" to 15, "android" to 12, "partner-x" to 3)
+  val BASE_RPS: Int = BASE_TENANTS.values.sum()
+  private const val BASE_CHECKOUT_SHARE = 0.3
+  private val CHECKOUTS_PER_SECOND: Int = (BASE_RPS * BASE_CHECKOUT_SHARE).roundToInt()
+  private val PRODUCTS_PER_SECOND: Int = BASE_RPS - CHECKOUTS_PER_SECOND
+  private val BASE_CONNECTIONS_IN_USE: Double = CHECKOUTS_PER_SECOND * BASE_CHECKOUT_HOLD_MS / MILLIS_PER_SECOND
 
   val all: List<Scenario> = listOf(
     tenantSpike(),
@@ -86,7 +94,7 @@ object ScenarioCatalog {
     level = 1,
     topics = listOf("red", "load", "little"),
     params = { random, _ -> mapOf("multiplier" to round2(random.nextDouble(MIN_SURGE, MAX_SURGE))) },
-    faults = { p -> FaultSpec(services = mapOf("loadgen" to mapOf("rate_multiplier" to p.double("multiplier")))) },
+    faults = { p -> FaultSpec(services = mapOf("loadgen" to mapOf("surge_multiplier" to p.double("multiplier")))) },
     decoy = 0.5,
     ticket = { p ->
       "At ${p.startedAt}, /checkout p99 crossed its threshold. Marketing mentions a push notification campaign, " +
@@ -101,10 +109,10 @@ object ScenarioCatalog {
     explain = { p ->
       val total = (BASE_RPS * p.double("multiplier")).roundToInt()
       val checkouts = (CHECKOUTS_PER_SECOND * p.double("multiplier")).roundToInt()
-      val need = checkouts * (BASE_CHECKOUT_HOLD_MS + SHORT_SESSION_PRICING_MS) / MILLIS_PER_SECOND
-      "Every tenant sends about ${p.fixed(p.double("multiplier"), 1)} times its normal rate: about $total rps at the LB instead of $BASE_RPS, and the same at api. " +
+      val need = checkouts * BASE_CHECKOUT_HOLD_MS / MILLIS_PER_SECOND
+      "Every tenant sends about ${p.fixed(p.double("multiplier"), 1)} times its normal rate: about $total rps at the LB instead of the usual $BASE_RPS, and the same at api. " +
         "No tenant stands out and attempts per request stay at 1, so this is real demand. Duration rises with the rate because the first resource " +
-        "to saturate is the 4-connection pool: about $checkouts checkouts/s times ${BASE_CHECKOUT_HOLD_MS + SHORT_SESSION_PRICING_MS} ms is " +
+        "to saturate is the 4-connection pool: about $checkouts checkouts/s times $BASE_CHECKOUT_HOLD_MS ms is " +
         "${p.fixed(need, 1)} connections in use on average, and queueing starts well before the pool is full. " +
         "Nothing in the system changed. Fix: scale api and the pool, or shed load per tenant until you can."
     },
@@ -157,12 +165,16 @@ object ScenarioCatalog {
     title = "One client stopped calling",
     level = 1,
     topics = listOf("red", "load"),
-    params = { random, _ -> mapOf("tenant" to listOf("ios", "android").random(random)) },
-    faults = { p -> FaultSpec(services = mapOf("loadgen" to mapOf("tenants" to BASE_TENANTS + (p.string("tenant") to 0)))) },
+    params = { random, context ->
+      val tenants = context.tenants ?: BASE_TENANTS
+      val tenant = listOf("ios", "android").random(random)
+      mapOf("tenant" to tenant, "rps" to (tenants[tenant] ?: 0), "total" to tenants.values.sum())
+    },
+    faults = { p -> FaultSpec(services = mapOf("loadgen" to mapOf("tenant_outage" to p.string("tenant")))) },
     marker = { p -> if (p.string("tenant") == "ios") "Release: iOS app 5.3 rolled out to 100% of users" else "Release: Android app 7.1 rolled out to 100% of users" },
     decoy = 0.5,
     ticket = { p ->
-      val lost = BASE_TENANTS.getValue(p.string("tenant")).toDouble() / BASE_RPS
+      val lost = p.int("rps").toDouble() / p.int("total")
       "At ${p.startedAt}, the business dashboard shows orders down about ${(lost * PERCENT).roundToInt()}%. " +
         "Every service dashboard is green and nobody was paged."
     },
@@ -173,9 +185,9 @@ object ScenarioCatalog {
     ),
     answer = Answer(nature = setOf("load"), location = setOf("client"), signal = setOf("client_rate_by_tenant"), cause = "client_outage"),
     explain = { p ->
-      val rps = BASE_TENANTS.getValue(p.string("tenant"))
+      val rps = p.int("rps")
       "The ${p.string("tenant")} app stopped sending requests after its release: its $rps rps are gone, so the LB and api rate fell by about " +
-        "${(rps.toDouble() / BASE_RPS * PERCENT).roundToInt()}%. Errors and duration look perfect because the system has nothing to do. " +
+        "${(rps.toDouble() / p.int("total") * PERCENT).roundToInt()}%. Errors and duration look perfect because the system has nothing to do. " +
         "A lower rate is a finding in its own right, and only the layer in front of the LB can show why. Fix: roll back the app release."
     },
     evidence = listOf(
@@ -226,7 +238,7 @@ object ScenarioCatalog {
     // Half the runs overload the pool (503s), half sit just under it (slow, almost no errors).
     params = { random, _ ->
       val overload = random.nextBoolean()
-      mapOf("recommend_ms" to if (overload) random.nextInt(290, 351) else random.nextInt(160, 211), "overload" to overload)
+      mapOf("recommend_ms" to if (overload) random.nextInt(290, 351) else random.nextInt(160, 191), "overload" to overload)
     },
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("recommend_in_txn" to true), "pricing" to mapOf("recommend_ms" to p.int("recommend_ms")))) },
     marker = { "Deploy checkout-api v2.31: product suggestions added to the checkout step" },
@@ -243,7 +255,7 @@ object ScenarioCatalog {
     ),
     answer = Answer(nature = setOf("arch"), location = setOf("api_db", "api"), signal = setOf("pool"), cause = "pool_exhausted"),
     explain = { p ->
-      val hold = p.int("recommend_ms") + BASE_CHECKOUT_HOLD_MS
+      val hold = BASE_CHECKOUT_HOLD_MS + PRICE_BASE_MS + p.int("recommend_ms")
       val holdSeconds = hold / MILLIS_PER_SECOND
       val need = CHECKOUTS_PER_SECOND * holdSeconds
       val outcome = if (p.bool("overload")) {
@@ -251,8 +263,8 @@ object ScenarioCatalog {
       } else {
         "just under the pool of 4. At that utilization the wait time explodes (queueing theory): almost nothing fails, everything waits."
       }
-      "v2.31 calls pricing /recommend (about ${p.int("recommend_ms")} ms) while still holding the connection with a transaction open. " +
-        "The connection hold time per checkout goes from about 10 ms to about $hold ms. At about $CHECKOUTS_PER_SECOND checkouts/s, " +
+      "v2.31 calls pricing /price and /recommend (about ${p.int("recommend_ms")} ms) while still holding the connection with a transaction open. " +
+        "The connection hold time per checkout goes from about $BASE_CHECKOUT_HOLD_MS ms to about $hold ms. At about $CHECKOUTS_PER_SECOND checkouts/s, " +
         "Little's Law gives L = $CHECKOUTS_PER_SECOND x ${p.fixed(holdSeconds, 3)} ≈ ${p.fixed(need, 1)} connections, $outcome " +
         "Postgres is not slow: exec time is flat. What Postgres does show is connections 'idle in transaction': each one holds a transaction open " +
         "while api waits for pricing. Fix: call /recommend outside the transaction, or asynchronously. Raising the pool only hides the problem " +
@@ -283,13 +295,13 @@ object ScenarioCatalog {
     hints = listOf(
       "Compare DB session time from api with exec time inside Postgres. Where is the gap?",
       "Pool row on the USE dashboard: in use, waiting, and the max. Did the hold time change, or the limit?",
-      "Little's Law: $CHECKOUTS_PER_SECOND checkouts/s times about 35 ms is about 0.5 connections. Against which pool_max is that now a problem?"
+      "Little's Law: $CHECKOUTS_PER_SECOND checkouts/s times about $BASE_CHECKOUT_HOLD_MS ms is about ${String.format(Locale.ROOT, "%.1f", BASE_CONNECTIONS_IN_USE)} connections. " +
+        "Against which pool_max is that now a problem?"
     ),
     answer = Answer(nature = setOf("arch"), location = setOf("api_db", "api"), signal = setOf("pool"), cause = "pool_exhausted"),
     explain = { p ->
-      val need = CHECKOUTS_PER_SECOND * (BASE_CHECKOUT_HOLD_MS + SHORT_SESSION_PRICING_MS) / MILLIS_PER_SECOND
       "pool_max was lowered from 4 to ${p.int("pool_max")}. The hold time per checkout did not change, so Little's Law still gives about " +
-        "${p.fixed(need, 1)} connections in use on average. That is ${(need / p.int("pool_max") * PERCENT).roundToInt()}% utilization of the new pool, " +
+        "${p.fixed(BASE_CONNECTIONS_IN_USE, 1)} connections in use on average. That is ${(BASE_CONNECTIONS_IN_USE / p.int("pool_max") * PERCENT).roundToInt()}% utilization of the new pool, " +
         "and queueing theory says the wait grows fast from there: every burst of checkouts waits for the one connection. Postgres runs the same " +
         "queries at the same speed. Compared with the v2.31 exercise, the hold time (numerator) is flat and the limit (denominator) moved. " +
         "Utilization only means something against the limit of the right layer."
@@ -535,7 +547,7 @@ object ScenarioCatalog {
 
   private fun apiTimeout() = Scenario(
     id = "api_timeout",
-    title = "api's timeout to pricing is shorter than pricing's latency",
+    title = "api times out on pricing before pricing answers",
     level = 3,
     topics = listOf("layers", "red"),
     params = { random, _ -> mapOf("timeout_s" to round2(random.nextDouble(0.2, 0.3)), "extra" to random.nextInt(320, 421), "frac" to 0.5) },
@@ -578,7 +590,7 @@ object ScenarioCatalog {
     title = "pricing saturates its single event loop thread",
     level = 2,
     topics = listOf("use", "runtime", "layers"),
-    params = { random, _ -> mapOf("burn" to random.nextInt(60, 76)) },
+    params = { random, _ -> mapOf("burn" to random.nextInt(42, 56)) },
     faults = { p -> FaultSpec(services = mapOf("pricing" to mapOf("cpu_ms" to p.int("burn")))) },
     marker = { "Deploy pricing v3.6: discount rules evaluated in memory" },
     decoy = 0.5,
@@ -727,7 +739,7 @@ object ScenarioCatalog {
         "Processing time per message is the metric that tells them apart."
     },
     evidence = listOf(
-      "histogram_quantile(0.99, sum by (le) (rate(kafka_consume_seconds_bucket[1m])))",
+      "histogram_quantile(0.99, sum by (le) (rate(kafka_processing_seconds_bucket[1m])))",
       "sum(rate(kafka_produced_total[1m])) and sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
       "max(kafka_consumer_lag_seconds)"
     ),
@@ -860,17 +872,8 @@ object ScenarioCatalog {
   private const val MIN_CRAWLER_RPS = 40
   private const val MAX_CRAWLER_RPS = 600
 
-  // loadgen's normal mix: 50 rps in total, 30% of it /checkout.
-  val BASE_TENANTS: Map<String, Int> = mapOf("web" to 20, "ios" to 15, "android" to 12, "partner-x" to 3)
-  private const val BASE_RPS = 50
-  private const val BASE_CHECKOUT_SHARE = 0.3
-  private const val CHECKOUTS_PER_SECOND = 15
-  private const val PRODUCTS_PER_SECOND = 35
   private const val AVERAGE_BASKET = 2.5
-
-  // A checkout holds a connection for about 25 ms of its own work; with short sessions the pricing call (about 12 ms) sits outside it.
   private const val BASE_CHECKOUT_HOLD_MS = 25
-  private const val SHORT_SESSION_PRICING_MS = 10
   private const val PRICE_BASE_MS = 12
   private const val MIN_SURGE = 4.0
   private const val MAX_SURGE = 5.0

@@ -20,8 +20,8 @@ object DesiredState {
     val docker = Services.BASE_DOCKER.mapValues { it.value.toMutableMap() }.toMutableMap()
     val active = state.active
     val scenario = active?.let { catalog.byId[it.id] }
-    if (active != null && scenario != null) {
-      val spec = scenario.faults(Params(active.params, startedAt = ""))
+    val spec = if (active != null && scenario != null) runCatching { scenario.faults(Params(active.params, startedAt = "")) }.getOrNull() else null
+    if (spec != null) {
       for ((service, overrides) in spec.services) {
         faults.getOrPut(service) { mutableMapOf() }.putAll(overrides)
       }

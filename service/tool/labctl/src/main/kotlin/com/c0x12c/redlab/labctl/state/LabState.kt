@@ -21,7 +21,7 @@ data class HistoryEntry(
   val minutes: Double,
   /** Epoch seconds. */
   val at: Double,
-  /** The questions answered wrong: nature, location, signal, cause. */
+  /** The questions answered wrong: nature, location, signal, cause; a half-right cause is "cause (partial)". */
   val missed: List<String> = emptyList(),
   /** The learner's own one-line note on the evidence they used. */
   val note: String = ""
