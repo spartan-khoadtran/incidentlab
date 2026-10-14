@@ -1,4 +1,4 @@
-# RED & USE lab. `make` (no target) lists the commands.
+# Incident investigation lab (RED & USE). `make` (no target) lists the commands.
 COMPOSE ?= docker compose
 LABCTL   = /run/app/labctl/bin/labctl
 CTL      = $(COMPOSE) exec control $(LABCTL)
@@ -9,7 +9,7 @@ GRADLE   = cd service && ./gradlew
         open logs ps stop down nuke check build test lint format dashboards
 
 help: ## List the commands
-	@echo "RED & USE lab"
+	@echo "redlab: incident investigation lab (RED & USE)"
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-11s\033[0m %s\n", $$1, $$2}'
 
 # ----------------------------------------------------------------------------- lifecycle

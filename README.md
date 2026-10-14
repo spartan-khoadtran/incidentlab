@@ -1,13 +1,17 @@
-# redlab: a hands-on lab for RED and USE
+# redlab: practice incident investigation with RED and USE
 
-A small checkout system that runs with Docker Compose (Envoy, api, pricing, Postgres, Redis, Kafka, worker)
-plus Prometheus, Grafana and Tempo. The lab injects a random incident. You investigate it with RED and USE,
-submit an answer, and the lab scores it.
+A lab for the part of on-call nobody teaches: you get a ticket, a few dashboards, some traces, and a
+system that is slow or failing for a reason you do not know yet. redlab runs a small checkout system with
+Docker Compose (Envoy, api, pricing, Postgres, Redis, Kafka, worker) plus Prometheus, Grafana and Tempo.
+It injects a random fault and opens a ticket. You investigate with RED and USE across the layers, name the
+kind of problem, the layer, the signal that proves it and the root cause, and the lab scores you.
 
-The full guide lives in the lab doc that goes with this repo.
+The method is in [docs/investigation-guide.md](docs/investigation-guide.md): RED and USE in detail, how
+the numbers differ between layers, how to link them with Little's Law, and where each layer lives in the
+dashboards. Every exercise and every quiz question points back at a section of it.
 
-> **For training only.** This repo exists to teach the RED and USE methods. The services break on
-> purpose, and the code is not meant for production use.
+> **For training only.** This repo exists to teach incident investigation with the RED and USE methods.
+> The services break on purpose, and the code is not meant for production use.
 
 ## How it works
 
@@ -38,8 +42,8 @@ The full guide lives in the lab doc that goes with this repo.
    partial cause), so 5 points max. Each `make hint` you used takes 0.5 off. Then you can type one
    line about the evidence you used; `make history` shows it next to the score, with your average
    by topic and the cause you miss most.
-5. You see the explanation and the PromQL that proves it. Press Enter to clear the fault, then
-   `make new` again.
+5. You see the explanation, the PromQL that proves it, and the section of the guide to read again.
+   Press Enter to clear the fault, then `make new` again.
 
 Hints, answers, scoring and the `make quiz` drills are all built into `labctl`. They run offline and
 need no account or API key.
