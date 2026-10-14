@@ -24,7 +24,7 @@ data class Question(
   val doc: String
 )
 
-/** Numeric drills for the theory doc. Every run draws new numbers. */
+/** Numeric drills for the guide. Every run draws new numbers. */
 object Quiz {
 
   val generators: List<(Random) -> Question> = listOf(
@@ -49,7 +49,7 @@ object Quiz {
       if (correct) score += 1
       terminal.out((if (correct) "  CORRECT. " else "  NOT QUITE. ") + "Answer: ${shown(question.answer)} ${question.unit}")
       terminal.out("  ${question.explanation}")
-      terminal.out("  Read again: ${question.doc}")
+      terminal.out("  Read again in $GUIDE: ${question.doc}")
     }
     terminal.out()
     terminal.out("Result: $score/${picked.size}")
@@ -138,7 +138,7 @@ object Quiz {
       "A resource has a service time of $s ms and runs at $u% utilization. By the M/M/1 model, what is the mean response time in ms?",
       answer, Tolerance.Relative(0.03), "ms",
       "R = S / (1 − U) = $s / (1 − ${shown(u / PERCENT)}) = ${String.format(Locale.ROOT, "%.1f", answer)} ms, that is ${String.format(Locale.ROOT, "%.1f", 1 / (1 - u / PERCENT))} times the service time.",
-      "Linking RED and USE > Queueing"
+      "Linking RED and USE > Why latency rises before 100%"
     )
   }
 
@@ -149,7 +149,7 @@ object Quiz {
       "By M/M/1, what is the maximum utilization in % if you want the response time to stay under $k times the service time?",
       answer, Tolerance.Absolute(0.5), "%",
       "S / (1 − U) ≤ $k·S ⇒ U ≤ 1 − 1/$k = ${String.format(Locale.ROOT, "%.0f", answer)}%.",
-      "Linking RED and USE > Queueing"
+      "Linking RED and USE > Why latency rises before 100%"
     )
   }
 
@@ -295,7 +295,7 @@ object Quiz {
       "An SLO of ${shown(slo)}% over $SLO_WINDOW_DAYS days allows ${String.format(Locale.ROOT, "%.2f", budget)}% of requests to fail. The service runs at ${shown(errors)}% errors right now. After how many days at this rate is the whole error budget spent?",
       answer, Tolerance.Relative(0.02), "days",
       "Burn rate = ${shown(errors)} / ${String.format(Locale.ROOT, "%.2f", budget)} = ${shown(errors / budget)} times the allowed rate, so the budget lasts $SLO_WINDOW_DAYS / ${shown(errors / budget)} = ${String.format(Locale.ROOT, "%.1f", answer)} days. Page on burn rate, not on a raw error count.",
-      "Combining > SLI and SLO"
+      "Combining with other methods > Sibling metric sets (SLI and SLO)"
     )
   }
 
@@ -311,4 +311,5 @@ object Quiz {
   private const val FAIL_FAST_MS = 2.0
   private const val NORMAL_MS = 100.0
   private const val SLO_WINDOW_DAYS = 30
+  const val GUIDE = "docs/investigation-guide.md"
 }
