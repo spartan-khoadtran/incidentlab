@@ -45,17 +45,18 @@ class Exercises(
       return 1
     }
     val scenario = pick(state, options) ?: return 1
-    val context = ExerciseContext(cpuCount = probe.cpuCount(), productDetailSeconds = probe.productDetailSeconds())
+    val context = ExerciseContext(cpuCount = probe.cpuCount(), productDetailSeconds = probe.productDetailSeconds(), tenants = probe.tenants())
     val params = scenario.params(random, context)
     val startedAt = now()
     val number = state.history.size + 1
     store.save(state.copy(active = ActiveExercise(id = scenario.id, params = params, started = startedAt, n = number)))
+    val rendered = Params(params, hhmm(startedAt))
     if (random.nextDouble() < scenario.decoy) {
-      annotator.annotate(Answers.DECOYS.random(random), listOf("change"), startedAt - random.nextInt(DECOY_MIN_SECONDS, DECOY_MAX_SECONDS + 1))
+      annotator.annotate(Answers.DECOYS.random(random), listOf("change"), startedAt + random.nextInt(-DECOY_MAX_LEAD_SECONDS, DECOY_MAX_LAG_SECONDS + 1))
     }
-    scenario.marker?.let { annotator.annotate(it, listOf("change"), startedAt) }
+    scenario.marker?.let { annotator.annotate(it(rendered), listOf("change"), startedAt - random.nextInt(0, MARKER_MAX_LEAD_SECONDS + 1)) }
     banner("EXERCISE #$number  ·  level ${scenario.level}  ·  ticket opened at ${hhmm(startedAt)}")
-    terminal.out(scenario.ticket(Params(params, hhmm(startedAt))))
+    terminal.out(scenario.ticket(rendered))
     terminal.out()
     terminal.out("The fault is now being applied to the system. Wait 1-2 minutes for the numbers to show, then start investigating.")
     terminal.out("Suggested approach: problem statement -> RED at the outermost layer -> compare two adjacent layers -> USE for the suspected layer.")
@@ -92,14 +93,17 @@ class Exercises(
       return 0
     }
     val scenario = catalog.byId.getValue(active.id)
-    terminal.out("Three questions. Type the number of your choice and press Enter. Ctrl-C quits without scoring.")
+    terminal.out("Four questions. Type the number of your choice and press Enter. Ctrl-C quits without scoring.")
     val nature = choose("1) What is the nature of the problem?", Answers.NATURES) ?: return inputClosed()
     val location = choose("2) Where is the cause?", Answers.LOCATIONS) ?: return inputClosed()
-    val cause = choose("3) What is the root cause?", Answers.CAUSES) ?: return inputClosed()
+    val signal = choose("3) Which signal proves it?", Answers.SIGNALS) ?: return inputClosed()
+    val cause = choose("4) What is the root cause?", Answers.CAUSES, Answers.CAUSE_GROUPS) ?: return inputClosed()
     val expected = scenario.answer
+    val missed = mutableListOf<String>()
     var points = 0.0
-    if (nature in expected.nature) points += NATURE_POINTS
-    if (location in expected.location) points += LOCATION_POINTS
+    if (nature in expected.nature) points += NATURE_POINTS else missed += "nature"
+    if (location in expected.location) points += LOCATION_POINTS else missed += "location"
+    if (signal in expected.signal) points += SIGNAL_POINTS else missed += "signal"
     val causeVerdict = when (cause) {
       expected.cause -> {
         points += CAUSE_POINTS
@@ -107,20 +111,28 @@ class Exercises(
       }
       in expected.partial -> {
         points += PARTIAL_POINTS
+        missed += "cause (partial)"
         "partly correct"
       }
-      else -> "wrong"
+      else -> {
+        missed += "cause"
+        "wrong"
+      }
     }
     val raw = points
     val score = (points - HINT_PENALTY * active.hints).coerceAtLeast(0.0)
-    banner("RESULT: ${plain(score)}/4  (correct ${plain(raw)}/4, ${active.hints} hint(s) used)  ·  exercise: ${scenario.title}")
-    terminal.out("  Nature   : ${if (nature in expected.nature) "correct" else "wrong"}")
-    terminal.out("  Location : ${if (location in expected.location) "correct" else "wrong"}")
+    banner("RESULT: ${plain(score)}/${plain(MAX_POINTS)}  (correct ${plain(raw)}/${plain(MAX_POINTS)}, ${active.hints} hint(s) used)  ·  exercise: ${scenario.title}")
+    terminal.out("  Nature   : ${verdict("nature" !in missed)}")
+    terminal.out("  Location : ${verdict("location" !in missed)}")
+    terminal.out("  Signal   : ${verdict("signal" !in missed)}")
     terminal.out("  Cause    : $causeVerdict")
     explain(scenario, active)
-    finish(state.copy(active = active.copy(answered = true)), score)
+    val note = terminal.ask("\nOne line for your future self: what evidence did you use? (Enter to skip) ")?.trim().orEmpty()
+    finish(state.copy(active = active.copy(answered = true)), score, missed, note)
     return 0
   }
+
+  private fun verdict(correct: Boolean): String = if (correct) "correct" else "wrong"
 
   fun reveal(): Int {
     val state = store.load()
@@ -151,13 +163,13 @@ class Exercises(
   fun status(): Int {
     val state = store.load()
     val active = state.active
-    if (active != null) {
+    if (active == null) {
+      terminal.out("No exercise is running.")
+    } else if (resumable(active)) {
       val scenario = catalog.byId.getValue(active.id)
       val minutes = ((now() - active.started) / SECONDS_PER_MINUTE).roundToInt()
       terminal.out("Exercise #${active.n} (level ${scenario.level}) has been running for $minutes min, ${active.hints} hint(s) used.")
       terminal.out(scenario.ticket(Params(active.params, hhmm(active.started))))
-    } else {
-      terminal.out("No exercise is running.")
     }
     terminal.out()
     terminal.out("Services:")
@@ -190,18 +202,36 @@ class Exercises(
       terminal.out("No exercises yet.")
       return 0
     }
-    val scored = history.mapNotNull { it.score }
+    val scored = history.filter { it.score != null }
     for (entry in history) {
-      val score = entry.score?.let { "${plain(it)}/4" } ?: "-"
+      val score = entry.score?.let { "${plain(it)}/${plain(MAX_POINTS)}" } ?: "-"
       val at = Instant.ofEpochSecond(entry.at.toLong()).atZone(zone).format(DAY_TIME)
-      terminal.out("#${entry.n.toString().padEnd(3)} $at  ${score.padEnd(SCORE_COLUMN)} ${plain(entry.minutes).padStart(MINUTES_COLUMN)} min  ${entry.hints} hint(s)  ${entry.title}")
+      val missed = if (entry.missed.isEmpty()) "" else "  missed: ${entry.missed.joinToString(", ")}"
+      terminal.out("#${entry.n.toString().padEnd(3)} $at  ${score.padEnd(SCORE_COLUMN)} ${plain(entry.minutes).padStart(MINUTES_COLUMN)} min  ${entry.hints} hint(s)  ${entry.title}$missed")
+      if (entry.note.isNotEmpty()) {
+        terminal.out("     note: ${entry.note}")
+      }
     }
     if (scored.isNotEmpty()) {
       terminal.out()
-      terminal.out("Average score: ${String.format(Locale.ROOT, "%.2f", scored.average())}/4 over ${scored.size} exercise(s)")
+      terminal.out("Average score: ${String.format(Locale.ROOT, "%.2f", scored.map { it.score!! }.average())}/${plain(MAX_POINTS)} over ${scored.size} exercise(s)")
+      terminal.out("By topic: " + byTopic(scored).joinToString(" · ") { (topic, average, count) -> "$topic ${String.format(Locale.ROOT, "%.1f", average)} ($count)" })
+      mostMissedCause(scored)?.let { (cause, count) -> terminal.out("Most missed cause: ${Answers.label(Answers.CAUSES, cause)} ($count time(s))") }
     }
     return 0
   }
+
+  private fun byTopic(scored: List<HistoryEntry>): List<Triple<String, Double, Int>> =
+    scored.flatMap { entry -> catalog.byId[entry.id]?.topics.orEmpty().map { topic -> topic to entry.score!! } }
+      .groupBy({ it.first }, { it.second })
+      .map { (topic, scores) -> Triple(topic, scores.average(), scores.size) }
+      .sortedBy { it.second }
+
+  private fun mostMissedCause(scored: List<HistoryEntry>): Pair<String, Int>? =
+    scored.filter { entry -> entry.missed.any { it.startsWith("cause") } }
+      .mapNotNull { catalog.byId[it.id]?.answer?.cause }
+      .groupingBy { it }.eachCount()
+      .maxByOrNull { it.value }?.toPair()
 
   fun load(multiplier: Double): Int {
     val x = multiplier.coerceIn(MIN_LOAD, MAX_LOAD)
@@ -209,7 +239,7 @@ class Exercises(
       val loadgen = state.base["loadgen"].orEmpty() + ("rate_multiplier" to x)
       state.copy(base = state.base + ("loadgen" to loadgen))
     }
-    terminal.out("Background load = ${plain(x)} x $BASE_RPS rps = ${plain(BASE_RPS * x)} rps (applied within a few seconds).")
+    terminal.out("Background load = ${plain(x)} x ${ScenarioCatalog.BASE_RPS} rps = ${plain(ScenarioCatalog.BASE_RPS * x)} rps (applied within a few seconds).")
     return 0
   }
 
@@ -230,16 +260,34 @@ class Exercises(
     return (fresh.ifEmpty { pool }).random(random)
   }
 
-  private fun requireActive(state: LabState): ActiveExercise? =
-    state.active ?: run {
+  private fun requireActive(state: LabState): ActiveExercise? {
+    val active = state.active ?: run {
       terminal.out("No exercise is running. Use `make new` to start one.")
-      null
+      return null
     }
+    return active.takeIf { resumable(it) }
+  }
 
-  private fun choose(title: String, options: List<Pair<String, String>>): String? {
+  /** False when the exercise was started by an older catalog and its params no longer render. */
+  private fun resumable(active: ActiveExercise): Boolean {
+    val renders = catalog.byId[active.id]?.let { scenario -> runCatching { scenario.ticket(Params(active.params, hhmm(active.started))) }.isSuccess } ?: false
+    if (!renders) {
+      terminal.out("Exercise #${active.n} was started by an older version of the lab and cannot be resumed. Use `make clear`, then `make new`.")
+    }
+    return renders
+  }
+
+  private fun choose(title: String, options: List<Pair<String, String>>, groups: Map<String, String> = emptyMap()): String? {
     terminal.out()
     terminal.out(title)
-    options.forEachIndexed { index, (_, label) -> terminal.out("  ${(index + 1).toString().padStart(2)}. $label") }
+    var group: String? = null
+    options.forEachIndexed { index, (key, label) ->
+      groups[key]?.takeIf { it != group }?.let {
+        group = it
+        terminal.out("  -- $it")
+      }
+      terminal.out("  ${(index + 1).toString().padStart(2)}. $label")
+    }
     while (true) {
       val raw = terminal.ask("  Pick a number: ")?.trim() ?: return null
       val index = raw.toIntOrNull()
@@ -262,6 +310,7 @@ class Exercises(
     terminal.out("ANSWER")
     terminal.out("  Nature   : ${scenario.answer.nature.joinToString(" / ") { Answers.label(Answers.NATURES, it) }}")
     terminal.out("  Location : ${scenario.answer.location.joinToString(" / ") { Answers.label(Answers.LOCATIONS, it) }}")
+    terminal.out("  Signal   : ${scenario.answer.signal.joinToString(" / ") { Answers.label(Answers.SIGNALS, it) }}")
     terminal.out("  Cause    : ${Answers.label(Answers.CAUSES, scenario.answer.cause)}")
     terminal.out()
     terminal.out("EXPLANATION")
@@ -273,7 +322,7 @@ class Exercises(
     terminal.out("Read again in the theory doc: ${scenario.doc}")
   }
 
-  private fun finish(state: LabState, score: Double?) {
+  private fun finish(state: LabState, score: Double?, missed: List<String> = emptyList(), note: String = "") {
     val active = state.active ?: return
     val scenario = catalog.byId.getValue(active.id)
     val entry = HistoryEntry(
@@ -284,7 +333,9 @@ class Exercises(
       score = score,
       hints = active.hints,
       minutes = ((now() - active.started) / SECONDS_PER_MINUTE * TENTHS).roundToInt() / TENTHS,
-      at = now()
+      at = now(),
+      missed = missed,
+      note = note
     )
     val next = state.copy(history = state.history + entry)
     store.save(next)
@@ -321,19 +372,21 @@ class Exercises(
     const val HINT_PENALTY = 0.5
     const val NATURE_POINTS = 1.0
     const val LOCATION_POINTS = 1.0
+    const val SIGNAL_POINTS = 1.0
     const val CAUSE_POINTS = 2.0
     const val PARTIAL_POINTS = 1.0
-    const val BASE_RPS = 50
+    const val MAX_POINTS = NATURE_POINTS + LOCATION_POINTS + SIGNAL_POINTS + CAUSE_POINTS
     const val MIN_LOAD = 0.1
     const val MAX_LOAD = 6.0
     private const val MAX_LEVEL = 3
     private const val RECENT_WINDOW = 5
-    private const val DECOY_MIN_SECONDS = 120
-    private const val DECOY_MAX_SECONDS = 900
+    private const val DECOY_MAX_LEAD_SECONDS = 600
+    private const val DECOY_MAX_LAG_SECONDS = 60
+    private const val MARKER_MAX_LEAD_SECONDS = 180
     private const val BANNER_WIDTH = 72
     private const val SERVICE_COLUMN = 8
     private const val ID_COLUMN = 18
-    private const val TITLE_COLUMN = 48
+    const val TITLE_COLUMN = 48
     private const val SCORE_COLUMN = 6
     private const val MINUTES_COLUMN = 5
     private const val MILLIS_PER_SECOND = 1_000.0

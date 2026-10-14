@@ -37,4 +37,14 @@ class DesiredStateTest {
 
     assertThat(DesiredState.of(state).faults.getValue("api")).isEqualTo(emptyMap<String, Any?>())
   }
+
+  @Test
+  fun `params from an older catalog that no longer render are ignored too`() {
+    val state = LabState(active = ActiveExercise(id = "cpu_throttle", params = emptyMap(), started = 0.0, n = 1))
+
+    val desired = DesiredState.of(state)
+
+    assertThat(desired.faults.getValue("api")).isEqualTo(emptyMap<String, Any?>())
+    assertThat(desired.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0)))
+  }
 }

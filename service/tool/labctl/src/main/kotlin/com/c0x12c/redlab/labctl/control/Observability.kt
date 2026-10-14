@@ -9,6 +9,9 @@ interface LabProbe {
   /** Mean cost of one uncached product query on this machine, used to calibrate load. */
   fun productDetailSeconds(): Double?
 
+  /** loadgen's default rate per tenant, from its own fault defaults. */
+  fun tenants(): Map<String, Int>?
+
   fun serviceStatus(): Map<String, String?>
 }
 
@@ -27,6 +30,13 @@ class HttpLabProbe(private val http: JsonHttp) : LabProbe {
       val value = http.get(PROMETHEUS + "/api/v1/query?query=" + java.net.URLEncoder.encode(expr, Charsets.UTF_8))
         .path("data").path("result").get(0).path("value").get(1).asText().toDouble()
       value.takeIf { it > MIN_PLAUSIBLE && it < MAX_PLAUSIBLE }
+    }.getOrNull()
+
+  override fun tenants(): Map<String, Int>? =
+    runCatching {
+      http.get("${Services.ENDPOINTS.getValue("loadgen")}/admin/faults").path("defaults").path("tenants")
+        .properties().associate { (tenant, rate) -> tenant to rate.asInt() }
+        .takeIf { it.isNotEmpty() }
     }.getOrNull()
 
   override fun serviceStatus(): Map<String, String?> =

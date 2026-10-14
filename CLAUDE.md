@@ -80,9 +80,9 @@ The daemon owns fault state. A manual PUT to `/admin/faults` is reverted within 
 
 ### Scenario contract (`ScenarioCatalog.kt`)
 
-Each `Scenario` has: `id`, `title`, `level` (1 to 3), `topics`; `params(random, context)` (context carries `cpuCount` and `productDetailSeconds`, the measured cost of one uncached product query, used to calibrate load); `faults(params) -> FaultSpec(services, docker)`; `ticket(params)`, `hints` (3), `explain(params)`; `answer` (`nature` and `location` are sets of accepted keys from `Answers`, `cause` one key, `partial` the causes worth 1 point); `evidence` (PromQL), `doc`; optional `marker` (real Grafana annotation at start) and `decoy` (probability of a fake annotation 2 to 15 minutes before start).
+Each `Scenario` has: `id`, `title`, `level` (1 to 3), `topics`; `params(random, context)` (context carries `cpuCount`, `productDetailSeconds`, the measured cost of one uncached product query, used to calibrate load, and `tenants`, loadgen's default rate per tenant); `faults(params) -> FaultSpec(services, docker)`; `ticket(params)`, `hints` (3), `explain(params)`; `answer` (`nature`, `location` and `signal` are sets of accepted keys from `Answers`, `cause` one key, `partial` the causes worth 1 point: a visible consequence one step before the root cause); `evidence` (PromQL), `doc`; optional `marker(params)` (real Grafana annotation 0 to 3 minutes before start) and `decoy` (probability of a fake annotation between 10 minutes before and 1 minute after start). `Answers.CAUSES` also holds `DISTRACTORS`, causes no scenario has, and some causes belong to two scenarios (`pool_exhausted`, `single_thread_cpu`, `client_timeout`), so the cause list is not a copy of the catalog.
 
-Scoring: nature 1, location 1, cause 2 (partial 1), minus 0.5 per hint. `make new` skips the last 5 played ids. `ScenarioCatalogTest` renders every scenario with a seeded random and checks the fault targets, so run it after any catalog change.
+Scoring: nature 1, location 1, signal 1, cause 2 (partial 1), minus 0.5 per hint; 5 points max. After scoring, `make answer` asks for a one-line note, kept in history with the missed questions. `make new` skips the last 5 played ids. `ScenarioCatalogTest` renders every scenario with a seeded random and checks the fault targets, so run it after any catalog change.
 
 ### Metric conventions
 
@@ -97,7 +97,8 @@ Changing one of these breaks the scenario named in brackets:
 - `AdmissionFilter` (FIRST phase) runs before `RedMetricsFilter` (just after TRACING), so queue time shows at Envoy, not at api. [`queue_before_app`]
 - A latency histogram gets exemplars only if it is recorded while its span is current. The RED filter, the worker's `kafka.consume` span and loadgen's root span all record inside their span. Record a new histogram the same way or its panel shows no dots.
 - `ApiGates.pool` is a `ResizableGate` in front of the real Hikari pool (max 24). `pool_max` default is 4. [`pool_hold`, `db_lock`]
-- CPU burn runs through `EventLoopRuntime.onEventLoop` on the single Netty thread. [`single_thread_cpu`]
+- CPU burn runs through `EventLoopRuntime.onEventLoop` on the single Netty thread. api and pricing both have `cpus: "2.0"`, so one saturated thread shows as half the limit with no throttling. [`single_thread_cpu`, `pricing_cpu`]
+- loadgen multiplies `rate_multiplier` (what `make load` sets) with `surge_multiplier` (what a scenario sets), so a surge exercise keeps the learner's load setting. [`global_surge`]
 - `MemoryLeak` allocates off heap with `Unsafe`, so the kernel OOM killer ends the process, not a Java `OutOfMemoryError`. api has `mem_limit: 512m` and `memswap_limit: 512m`. Without the swap cap, Docker allows twice the limit as swap, and the api swaps and slows down instead of being killed. [`oom`]
 - Envoy has `healthy_panic_threshold: 0`, so it returns 503 itself when api is unhealthy. [`lb_no_healthy`]
 - The controller sets the api CPU limit from a base of 2.0 cores; the throttle scenario draws 0.25 to 0.4 cores. [`cpu_throttle`]

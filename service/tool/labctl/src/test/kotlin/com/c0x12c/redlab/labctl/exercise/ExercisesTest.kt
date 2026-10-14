@@ -2,7 +2,9 @@ package com.c0x12c.redlab.labctl.exercise
 
 import assertk.assertThat
 import assertk.assertions.contains
+import assertk.assertions.containsExactly
 import assertk.assertions.hasSize
+import assertk.assertions.isEmpty
 import assertk.assertions.isEqualTo
 import assertk.assertions.isFalse
 import assertk.assertions.isNotNull
@@ -13,6 +15,8 @@ import com.c0x12c.redlab.labctl.control.Annotator
 import com.c0x12c.redlab.labctl.control.LabProbe
 import com.c0x12c.redlab.labctl.scenario.Answers
 import com.c0x12c.redlab.labctl.scenario.ScenarioCatalog
+import com.c0x12c.redlab.labctl.state.ActiveExercise
+import com.c0x12c.redlab.labctl.state.LabState
 import com.c0x12c.redlab.labctl.state.StateStore
 import java.nio.file.Path
 import kotlin.random.Random
@@ -36,48 +40,54 @@ class ExercisesTest {
 
     override fun productDetailSeconds(): Double? = null
 
+    override fun tenants(): Map<String, Int>? = null
+
     override fun serviceStatus(): Map<String, String?> = mapOf("api" to null)
   }
 
-  private val annotations = mutableListOf<String>()
-  private val annotator = Annotator { text, _, _ -> annotations.add(text) }
+  private val annotations = mutableListOf<Pair<String, Double>>()
+  private val annotator = Annotator { text, _, at -> annotations.add(text to at) }
+
+  private val index = { options: List<Pair<String, String>>, key: String -> (options.indexOfFirst { it.first == key } + 1).toString() }
 
   private fun exercises(dir: Path, terminal: Terminal): Exercises =
-    Exercises(StateStore(dir.resolve("state.json")), probe, annotator, terminal, random = Random(1), now = { 1_700_000_000.0 })
+    Exercises(StateStore(dir.resolve("state.json")), probe, annotator, terminal, random = Random(1), now = { NOW })
+
+  private fun picks(nature: String, location: String, signal: String, cause: String): List<String> =
+    listOf(index(Answers.NATURES, nature), index(Answers.LOCATIONS, location), index(Answers.SIGNALS, signal), index(Answers.CAUSES, cause))
 
   @Test
   fun `a full round of new, hint and answer is scored with the hint penalty`(@TempDir dir: Path) {
-    val index = { options: List<Pair<String, String>>, key: String -> (options.indexOfFirst { it.first == key } + 1).toString() }
-    val terminal = ScriptedTerminal(
-      ArrayDeque(listOf(index(Answers.NATURES, "arch"), index(Answers.LOCATIONS, "api_db"), index(Answers.CAUSES, "pool_exhausted"), "y"))
-    )
+    val terminal = ScriptedTerminal(ArrayDeque(picks("arch", "api_db", "pool", "pool_exhausted") + listOf("session time vs exec time", "y")))
     val exercises = exercises(dir, terminal)
 
     assertThat(exercises.newExercise(NewOptions(id = "pool_hold"))).isEqualTo(0)
-    assertThat(annotations.any { it.startsWith("Deploy checkout-api v2.31") }).isTrue()
+    val marker = annotations.single { it.first.startsWith("Deploy checkout-api v2.31") }
+    assertThat(marker.second <= NOW && marker.second >= NOW - MARKER_LEAD_SECONDS).isTrue()
     assertThat(exercises.hint()).isEqualTo(0)
     assertThat(exercises.answer()).isEqualTo(0)
 
-    assertThat(terminal.lines.any { it.startsWith("RESULT: 3.5/4") }).isTrue()
+    assertThat(terminal.lines.any { it.startsWith("RESULT: 4.5/5") }).isTrue()
     val state = StateStore(dir.resolve("state.json")).load()
     assertThat(state.active).isNull()
-    assertThat(state.history.single().score).isEqualTo(3.5)
-    assertThat(annotations.last()).isEqualTo("lab: fault cleared")
+    assertThat(state.history.single().score).isEqualTo(4.5)
+    assertThat(state.history.single().missed).isEmpty()
+    assertThat(state.history.single().note).isEqualTo("session time vs exec time")
+    assertThat(annotations.last().first).isEqualTo("lab: fault cleared")
   }
 
   @Test
   fun `a partial cause earns one point and a wrong answer none`(@TempDir dir: Path) {
-    val index = { options: List<Pair<String, String>>, key: String -> (options.indexOfFirst { it.first == key } + 1).toString() }
-    val terminal = ScriptedTerminal(
-      ArrayDeque(listOf(index(Answers.NATURES, "load"), index(Answers.LOCATIONS, "host"), index(Answers.CAUSES, "downstream_slow"), "n"))
-    )
+    val terminal = ScriptedTerminal(ArrayDeque(picks("load", "host", "host_cpu", "downstream_errors") + listOf("", "n")))
     val exercises = exercises(dir, terminal)
 
     exercises.newExercise(NewOptions(id = "retry_storm"))
     exercises.answer()
 
-    assertThat(terminal.lines.any { it.startsWith("RESULT: 1/4") }).isTrue()
-    assertThat(StateStore(dir.resolve("state.json")).load().active).isNotNull()
+    assertThat(terminal.lines.any { it.startsWith("RESULT: 1/5") }).isTrue()
+    val state = StateStore(dir.resolve("state.json")).load()
+    assertThat(state.active).isNotNull()
+    assertThat(state.history.single().missed).containsExactly("nature", "location", "signal", "cause (partial)")
   }
 
   @Test
@@ -104,13 +114,9 @@ class ExercisesTest {
     assertThat(StateStore(dir.resolve("state.json")).load().base.getValue("loadgen")["rate_multiplier"]).isEqualTo(6.0)
   }
 
-  private val index = { options: List<Pair<String, String>>, key: String -> (options.indexOfFirst { it.first == key } + 1).toString() }
-
   @Test
-  fun `a bad pick asks again and the hint line shows the running penalty`(@TempDir dir: Path) {
-    val terminal = ScriptedTerminal(
-      ArrayDeque(listOf("", "abc", "99", index(Answers.NATURES, "arch"), index(Answers.LOCATIONS, "container"), index(Answers.CAUSES, "cpu_throttle"), "y"))
-    )
+  fun `a bad pick asks again, causes print by group and the hint line shows the running penalty`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal(ArrayDeque(listOf("", "abc", "99") + picks("arch", "container", "cgroup_cpu", "cpu_throttle") + listOf("", "y")))
     val exercises = exercises(dir, terminal)
 
     exercises.newExercise(NewOptions(id = "cpu_throttle"))
@@ -121,7 +127,8 @@ class ExercisesTest {
     assertThat(exercises.answer()).isEqualTo(0)
 
     assertThat(terminal.lines.count { it == "  Enter a number from 1 to ${Answers.NATURES.size}." }).isEqualTo(3)
-    assertThat(terminal.lines.any { it.startsWith("RESULT: 3/4  (correct 4/4, 2 hint(s) used)") }).isTrue()
+    assertThat(terminal.lines.count { it.startsWith("  -- ") }).isEqualTo(Answers.CAUSE_GROUPS.values.toSet().size)
+    assertThat(terminal.lines.any { it.startsWith("RESULT: 4/5  (correct 5/5, 2 hint(s) used)") }).isTrue()
   }
 
   @Test
@@ -140,9 +147,7 @@ class ExercisesTest {
 
   @Test
   fun `reveal after a kept answer adds no second history entry`(@TempDir dir: Path) {
-    val terminal = ScriptedTerminal(
-      ArrayDeque(listOf(index(Answers.NATURES, "arch"), index(Answers.LOCATIONS, "container"), index(Answers.CAUSES, "oom"), "n", "y"))
-    )
+    val terminal = ScriptedTerminal(ArrayDeque(picks("arch", "container", "memory_restarts", "oom") + listOf("", "n", "y")))
     val exercises = exercises(dir, terminal)
 
     exercises.newExercise(NewOptions(id = "oom"))
@@ -153,7 +158,7 @@ class ExercisesTest {
     exercises.reveal()
 
     val state = StateStore(dir.resolve("state.json")).load()
-    assertThat(state.history.single().score).isEqualTo(4.0)
+    assertThat(state.history.single().score).isEqualTo(5.0)
     assertThat(state.active).isNull()
   }
 
@@ -168,5 +173,56 @@ class ExercisesTest {
 
     assertThat(terminal.lines.last()).contains("already submitted")
     assertThat(StateStore(dir.resolve("state.json")).load().history.single().score).isNull()
+  }
+
+  @Test
+  fun `history shows the note, the missed questions and the weak spots`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal(
+      ArrayDeque(
+        picks("amplified", "client", "attempts_vs_requests", "downstream_errors") + listOf("saw pricing 503s", "y") +
+          picks("arch", "api_db", "pool", "pool_exhausted") + listOf("", "y")
+      )
+    )
+    val exercises = exercises(dir, terminal)
+
+    exercises.newExercise(NewOptions(id = "retry_storm"))
+    exercises.answer()
+    exercises.newExercise(NewOptions(id = "pool_hold"))
+    exercises.answer()
+    terminal.lines.clear()
+    exercises.history()
+
+    assertThat(terminal.lines.any { it.contains("4/5") && it.endsWith("Retry storm  missed: cause (partial)") }).isTrue()
+    assertThat(terminal.lines).contains("     note: saw pricing 503s")
+    assertThat(terminal.lines).contains("Average score: 4.50/5 over 2 exercise(s)")
+    assertThat(terminal.lines.any { it.startsWith("By topic: ") && it.contains("red 4.0 (1)") && it.contains("layers 4.5 (2)") }).isTrue()
+    assertThat(terminal.lines).contains("Most missed cause: ${Answers.label(Answers.CAUSES, "retry_storm")} (1 time(s))")
+  }
+
+  @Test
+  fun `every title fits the list column`() {
+    for (scenario in ScenarioCatalog.all) {
+      assertThat(scenario.title.length <= Exercises.TITLE_COLUMN).isTrue()
+    }
+  }
+
+  @Test
+  fun `an exercise whose params no longer render is reported, not crashed on`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal(ArrayDeque())
+    val store = StateStore(dir.resolve("state.json"))
+    store.save(LabState(active = ActiveExercise(id = "client_outage", params = mapOf("tenant" to "ios"), started = NOW, n = 1)))
+    val exercises = exercises(dir, terminal)
+
+    assertThat(exercises.status()).isEqualTo(0)
+    assertThat(exercises.answer()).isEqualTo(1)
+    assertThat(exercises.hint()).isEqualTo(1)
+    assertThat(terminal.lines.count { it.contains("older version of the lab") }).isEqualTo(3)
+    assertThat(exercises.clear()).isEqualTo(0)
+    assertThat(store.load().active).isNull()
+  }
+
+  private companion object {
+    const val NOW = 1_700_000_000.0
+    const val MARKER_LEAD_SECONDS = 180
   }
 }

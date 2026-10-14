@@ -136,9 +136,12 @@ class LoadGenerator(
 
   private fun currentRates(): Map<Arrival, Double> {
     val multiplier = faults.double(LoadgenFaults.RATE_MULTIPLIER).takeIf { it > 0 } ?: 1.0
+    val surge = faults.double(LoadgenFaults.SURGE_MULTIPLIER).takeIf { it > 0 } ?: 1.0
+    val outage = faults.string(LoadgenFaults.TENANT_OUTAGE)
     val out = mutableMapOf<Arrival, Double>()
     for ((tenant, rate) in faults.map(LoadgenFaults.TENANTS)) {
-      out[Arrival(tenant, crawl = false)] = (rate as? Number)?.toDouble()?.times(multiplier) ?: 0.0
+      val rps = if (tenant == outage) 0.0 else (rate as? Number)?.toDouble() ?: 0.0
+      out[Arrival(tenant, crawl = false)] = rps * multiplier * surge
     }
     for ((tenant, rate) in faults.map(LoadgenFaults.EXTRA_RPS)) {
       out[Arrival(tenant, crawl = true)] = (rate as? Number)?.toDouble() ?: 0.0

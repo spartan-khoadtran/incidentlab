@@ -48,6 +48,19 @@ class QuizTest {
   }
 
   @Test
+  fun `explanations never show floating-point noise`() {
+    val random = Random(11)
+    val noise = Regex("\\d\\.\\d{7,}")
+    for (generate in Quiz.generators) {
+      repeat(30) {
+        val question = generate(random)
+        assertThat(noise.containsMatchIn(question.text)).isFalse()
+        assertThat(noise.containsMatchIn(question.explanation)).isFalse()
+      }
+    }
+  }
+
+  @Test
   fun `a scripted run scores the right answers`() {
     val answers = ArrayDeque<String>()
     val terminal = object : Terminal {

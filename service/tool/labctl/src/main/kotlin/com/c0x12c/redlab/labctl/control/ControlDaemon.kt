@@ -24,7 +24,11 @@ class ControlDaemon(
       info { "docker socket not found: CPU-limit exercises are disabled" }
     }
     while (!Thread.currentThread().isInterrupted) {
-      applyOnce()
+      try {
+        applyOnce()
+      } catch (e: Exception) {
+        warn { "control: ${e.message}" }
+      }
       Thread.sleep(interval.toMillis())
     }
   }
