@@ -407,7 +407,7 @@ object ScenarioCatalog {
       "v2.32 adds about ${p.int("burn")} ms of CPU per /products, run on the event loop thread. At about $PRODUCTS_PER_SECOND requests/s " +
         "that is about ${p.fixed(cores, 2)} cores of CPU on a single thread. The event loop is close to saturated, so every other request " +
         "(including /checkout) waits: event loop lag rises. The container uses about 1 of its 2 cores and is not throttled, so raising the limit " +
-        "to 4 cores does nothing. This is the 'single-threaded application' example in section 2.3.8 Load vs. Architecture."
+        "to 4 cores does nothing. This is the classic single-threaded application case: the load is flat, the architecture is the limit."
     },
     evidence = listOf(
       "rate(process_cpu_seconds_total{job=\"api\"}[1m])",
