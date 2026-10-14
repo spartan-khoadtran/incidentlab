@@ -85,7 +85,7 @@ object ScenarioCatalog {
       "db_pool_waiting{job=\"api\"}",
       "sum(rate(cache_requests_total{result=\"hit\"}[1m])) / sum(rate(cache_requests_total[1m]))"
     ),
-    doc = "RED method in detail > Rate; Combining > Workload characterization"
+    doc = "RED method in detail > Rate; Combining with other methods > Workload characterization"
   )
 
   private fun globalSurge() = Scenario(
@@ -311,7 +311,7 @@ object ScenarioCatalog {
       "histogram_quantile(0.99, sum by (le, op) (rate(db_client_session_seconds_bucket{job=\"api\"}[1m])))",
       "sum by (query) (rate(pg_query_exec_seconds_total[1m])) / sum by (query) (rate(pg_query_calls_total[1m]))"
     ),
-    doc = "USE at many layers > Common examples (pool full while the DB idles); Static performance tuning"
+    doc = "USE at many layers > Common examples (pool full while the DB idles); Combining with other methods > Methods from chapter 2 (Static performance tuning)"
   )
 
   private fun nPlusOne() = Scenario(
@@ -645,7 +645,7 @@ object ScenarioCatalog {
       "sum(rate(cache_requests_total{result=\"hit\"}[1m])) / sum(rate(cache_requests_total[1m]))",
       "sum by (query) (rate(pg_query_calls_total[1m]))"
     ),
-    doc = "RED at many layers > Why Rate differs (cache); Combining > Cache tuning"
+    doc = "RED at many layers > Why Rate differs (cache); Combining with other methods > Methods from chapter 2 (Cache tuning)"
   )
 
   private fun clientTimeout() = Scenario(
@@ -802,7 +802,7 @@ object ScenarioCatalog {
       "pg_lock_waiters",
       "pg_connections"
     ),
-    doc = "USE method in detail > Software resources (mutex, lock); Investigation example (comparison)"
+    doc = "USE method in detail > Software resources (mutex, lock); End-to-end investigation example (compare with it)"
   )
 
   // ---------------------------------------------------------------- memory / host
@@ -831,7 +831,7 @@ object ScenarioCatalog {
       "changes(process_start_time_seconds{job=\"api\"}[10m])",
       "increase(node_vmstat_oom_kill[10m])"
     ),
-    doc = "USE at many layers > Container, cgroup"
+    doc = "USE at many layers > Layers and their metrics (container, cgroup)"
   )
 
   private fun noisyNeighbor() = Scenario(
@@ -859,7 +859,7 @@ object ScenarioCatalog {
       "node_load1 / scalar(count(node_cpu_seconds_total{mode=\"idle\"}))",
       "sum by (job) (rate(cgroup_cpu_usage_seconds_total[1m]))"
     ),
-    doc = "USE at many layers > Hypervisor, host"
+    doc = "USE at many layers > Layers and their metrics (hypervisor, host)"
   )
 
   private fun round2(value: Double): Double = (value * HUNDREDTHS).roundToInt() / HUNDREDTHS

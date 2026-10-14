@@ -3,6 +3,7 @@ package com.c0x12c.redlab.labctl.exercise
 import com.c0x12c.redlab.labctl.Terminal
 import com.c0x12c.redlab.labctl.control.Annotator
 import com.c0x12c.redlab.labctl.control.LabProbe
+import com.c0x12c.redlab.labctl.quiz.Quiz
 import com.c0x12c.redlab.labctl.scenario.Answers
 import com.c0x12c.redlab.labctl.scenario.ExerciseContext
 import com.c0x12c.redlab.labctl.scenario.Params
@@ -319,7 +320,7 @@ class Exercises(
     terminal.out("EVIDENCE TO LOOK FOR (PromQL, paste into Grafana Explore or Prometheus)")
     scenario.evidence.forEach { terminal.out("  - $it") }
     terminal.out()
-    terminal.out("Read again in the theory doc: ${scenario.doc}")
+    terminal.out("Read again in ${Quiz.GUIDE}: ${scenario.doc}")
   }
 
   private fun finish(state: LabState, score: Double?, missed: List<String> = emptyList(), note: String = "") {
