@@ -4,9 +4,9 @@ How the lab is built, how to run it, and the design choices the exercises depend
 
 ## What this is
 
-redlab is a local training lab for the RED and USE methods. Docker Compose runs a small checkout system (Envoy, api, pricing, Postgres, Redis, Kafka, worker) plus Prometheus, Grafana and Tempo. A controller injects a random fault. The learner investigates with the dashboards, submits an answer and gets a score.
+redlab is a local training lab for incident investigation with the RED and USE methods. Docker Compose runs a small checkout system (Envoy, api, pricing, Postgres, Redis, Kafka, worker) plus Prometheus, Grafana and Tempo. A controller injects a random fault. The learner investigates with the dashboards, submits an answer and gets a score.
 
-Everything in the repo is English: code, comments, log lines, learner-facing text, Makefile help. The lab guide the learners read is a separate doc.
+Everything in the repo is English: code, comments, log lines, learner-facing text, Makefile help. The study guide the learners read is `docs/investigation-guide.md`. Scenario and quiz `doc` fields point at its headings as `Section > Subsection (note)`; `GuidePointersTest` checks that every pointer resolves, so a heading rename must update the pointers too.
 
 `service/tool/labctl/src/main/kotlin/com/c0x12c/redlab/labctl/scenario/ScenarioCatalog.kt` holds the answers. The README tells learners not to read it.
 
