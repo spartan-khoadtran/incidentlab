@@ -20,7 +20,11 @@ data class HistoryEntry(
   val hints: Int,
   val minutes: Double,
   /** Epoch seconds. */
-  val at: Double
+  val at: Double,
+  /** The questions answered wrong: nature, location, signal, cause. */
+  val missed: List<String> = emptyList(),
+  /** The learner's own one-line note on the evidence they used. */
+  val note: String = ""
 )
 
 /** The whole lab state. `base` holds overrides that outlive an exercise, such as the load multiplier. */

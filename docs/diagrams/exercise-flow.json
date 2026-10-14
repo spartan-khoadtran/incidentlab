@@ -134,7 +134,7 @@
       "col": 5,
       "type": "backend",
       "label": "Score + explain",
-      "sublabel": "max 4 points",
+      "sublabel": "max 5 points",
       "tag": "PromQL evidence",
       "width": 132
     },

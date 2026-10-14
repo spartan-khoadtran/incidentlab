@@ -21,6 +21,8 @@ class Params(
 
   fun string(key: String): String = values.getValue(key).toString()
 
+  fun bool(key: String): Boolean = values.getValue(key) as Boolean
+
   fun percent(key: String): String = "${(double(key) * PERCENT).roundToInt()}%"
 
   fun fixed(value: Double, decimals: Int): String = String.format(Locale.ROOT, "%.${decimals}f", value)
@@ -36,10 +38,14 @@ data class FaultSpec(
   val docker: Map<String, Map<String, Any?>> = emptyMap()
 )
 
-/** nature and location are sets of accepted keys; cause is one key; partial causes earn one point. */
+/**
+ * nature, location and signal are sets of accepted keys; cause is one key. A partial cause earns one
+ * point: it is a visible consequence that sits one step before the root cause.
+ */
 data class Answer(
   val nature: Set<String>,
   val location: Set<String>,
+  val signal: Set<String>,
   val cause: String,
   val partial: Set<String> = emptySet()
 )
@@ -57,8 +63,8 @@ class Scenario(
   val explain: (Params) -> String,
   val evidence: List<String>,
   val doc: String,
-  /** A real change event, written as a Grafana annotation when the exercise starts. */
-  val marker: String? = null,
-  /** Probability of a fake change event 2 to 15 minutes before the start. */
+  /** A real change event, written as a Grafana annotation up to 3 minutes before the start. */
+  val marker: ((Params) -> String)? = null,
+  /** Probability of a fake change event between 10 minutes before and 1 minute after the start. */
   val decoy: Double = 0.0
 )

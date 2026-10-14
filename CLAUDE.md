@@ -80,9 +80,9 @@ The daemon owns fault state. A manual PUT to `/admin/faults` is reverted within 
 
 ### Scenario contract (`ScenarioCatalog.kt`)
 
-Each `Scenario` has: `id`, `title`, `level` (1 to 3), `topics`; `params(random, context)` (context carries `cpuCount` and `productDetailSeconds`, the measured cost of one uncached product query, used to calibrate load); `faults(params) -> FaultSpec(services, docker)`; `ticket(params)`, `hints` (3), `explain(params)`; `answer` (`nature` and `location` are sets of accepted keys from `Answers`, `cause` one key, `partial` the causes worth 1 point); `evidence` (PromQL), `doc`; optional `marker` (real Grafana annotation at start) and `decoy` (probability of a fake annotation 2 to 15 minutes before start).
+Each `Scenario` has: `id`, `title`, `level` (1 to 3), `topics`; `params(random, context)` (context carries `cpuCount` and `productDetailSeconds`, the measured cost of one uncached product query, used to calibrate load); `faults(params) -> FaultSpec(services, docker)`; `ticket(params)`, `hints` (3), `explain(params)`; `answer` (`nature`, `location` and `signal` are sets of accepted keys from `Answers`, `cause` one key, `partial` the causes worth 1 point: a visible consequence one step before the root cause); `evidence` (PromQL), `doc`; optional `marker(params)` (real Grafana annotation 0 to 3 minutes before start) and `decoy` (probability of a fake annotation between 10 minutes before and 1 minute after start). `Answers.CAUSES` also holds `DISTRACTORS`, causes no scenario has, and some causes belong to two scenarios (`pool_exhausted`, `single_thread_cpu`, `client_timeout`), so the cause list is not a copy of the catalog.
 
-Scoring: nature 1, location 1, cause 2 (partial 1), minus 0.5 per hint. `make new` skips the last 5 played ids. `ScenarioCatalogTest` renders every scenario with a seeded random and checks the fault targets, so run it after any catalog change.
+Scoring: nature 1, location 1, signal 1, cause 2 (partial 1), minus 0.5 per hint; 5 points max. After scoring, `make answer` asks for a one-line note, kept in history with the missed questions. `make new` skips the last 5 played ids. `ScenarioCatalogTest` renders every scenario with a seeded random and checks the fault targets, so run it after any catalog change.
 
 ### Metric conventions
 

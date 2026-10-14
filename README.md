@@ -33,9 +33,11 @@ The full guide lives in the lab doc that goes with this repo.
 2. `make new` picks a scenario you did not play in the last 5 rounds. It draws random parameters and
    saves them as the active exercise. Within 3 seconds the daemon turns the fault on.
 3. You read the ticket and investigate with RED and USE in Grafana. Traces are there too (Explore > Tempo).
-4. `make answer` asks three multiple choice questions: the nature of the problem, the location and the
-   cause. You get nature 1, location 1, cause 2 (1 for a partial cause), so 4 points max. Each
-   `make hint` you used takes 0.5 off.
+4. `make answer` asks four multiple choice questions: the nature of the problem, the location, the
+   signal that proves it, and the cause. You get nature 1, location 1, signal 1, cause 2 (1 for a
+   partial cause), so 5 points max. Each `make hint` you used takes 0.5 off. Then you can type one
+   line about the evidence you used; `make history` shows it next to the score, with your average
+   by topic and the cause you miss most.
 5. You see the explanation and the PromQL that proves it. Press Enter to clear the fault, then
    `make new` again.
 
