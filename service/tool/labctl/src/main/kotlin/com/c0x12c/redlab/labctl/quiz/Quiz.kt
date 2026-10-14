@@ -29,7 +29,8 @@ object Quiz {
 
   val generators: List<(Random) -> Question> = listOf(
     ::littlePool, ::littleLatency, ::fanOut, ::fanOutInverse, ::mm1, ::mm1Inverse, ::utilizationLaw,
-    ::throttle, ::lagTime, ::lagGrowth, ::poolTotal, ::averageVsPercentile, ::retryAmplification
+    ::throttle, ::lagTime, ::lagGrowth, ::lagDrain, ::poolTotal, ::averageVsPercentile, ::failFastMean,
+    ::retryAmplification, ::cacheMissLoad, ::throughputFromUtilization, ::burnRate
   )
 
   fun run(count: Int, terminal: Terminal, random: Random = Random.Default): Int {
@@ -236,6 +237,68 @@ object Quiz {
     )
   }
 
+  private fun lagDrain(r: Random): Question {
+    val lag = listOf(30_000, 60_000, 120_000).random(r)
+    val capacity = listOf(300, 500).random(r)
+    val produce = listOf(100, 200).random(r)
+    val answer = lag / (capacity - produce).toDouble()
+    return Question(
+      "After a fix the consumer handles $capacity msg/s again, while the producer keeps sending $produce msg/s. Lag is $lag messages. In how many seconds is the lag gone?",
+      answer, Tolerance.Relative(0.02), "seconds",
+      "Lag drains at (capacity − produce) = ${capacity - produce} msg/s, so $lag / ${capacity - produce} = ${fmt(answer)} s. A fix that only matches the produce rate never drains the backlog.",
+      "RED at many layers > The async layer"
+    )
+  }
+
+  private fun failFastMean(r: Random): Question {
+    val share = listOf(0.2, 0.3, 0.5).random(r)
+    val answer = share * FAIL_FAST_MS + (1 - share) * NORMAL_MS
+    return Question(
+      "A dependency dies. ${fmt(share * PERCENT)}% of requests now fail fast in ${fmt(FAIL_FAST_MS)} ms; the rest still take ${fmt(NORMAL_MS)} ms. What is the new mean duration in ms?",
+      answer, Tolerance.Absolute(0.5), "ms",
+      "${fmt(share)} × ${fmt(FAIL_FAST_MS)} + ${fmt(1 - share)} × ${fmt(NORMAL_MS)} = ${fmt(answer)} ms. The mean went down while users got worse: read the duration of errors and of successes separately.",
+      "RED method in detail > Duration (split errors from successes)"
+    )
+  }
+
+  private fun cacheMissLoad(r: Random): Question {
+    val rps = listOf(200, 500, 1_000).random(r)
+    val before = listOf(0.9, 0.95, 0.98).random(r)
+    val after = listOf(0.5, 0.7).random(r)
+    val answer = rps * (1 - after)
+    return Question(
+      "A service gets $rps requests/s. Every request reads the cache, and each miss runs one DB query. The hit ratio fell from ${fmt(before * PERCENT)}% to ${fmt(after * PERCENT)}%. How many queries/s does the DB get now?",
+      answer, Tolerance.Relative(0.02), "queries/s",
+      "DB rate = rate × (1 − hit) = $rps × ${fmt(1 - after)} = ${fmt(answer)}, against ${fmt(rps * (1 - before))} before. The API rate did not move; the cache did.",
+      "RED at many layers > Why Rate differs (cache)"
+    )
+  }
+
+  private fun throughputFromUtilization(r: Random): Question {
+    val u = listOf(40, 60, 75).random(r)
+    val s = listOf(2, 5, 10, 20).random(r)
+    val answer = u / PERCENT / (s / MILLIS_PER_SECOND)
+    return Question(
+      "A single-threaded worker is busy $u% of the time and its service time is $s ms per request. How many requests/s does it handle right now?",
+      answer, Tolerance.Relative(0.02), "requests/s",
+      "Utilization law turned around: X = U / S = ${fmt(u / PERCENT)} / ${fmt(s / MILLIS_PER_SECOND)} = ${fmt(answer)} requests/s. At 100% it would top out at ${fmt(MILLIS_PER_SECOND / s)} requests/s.",
+      "USE method in detail > Time-based and capacity-based"
+    )
+  }
+
+  private fun burnRate(r: Random): Question {
+    val slo = listOf(99.9, 99.95).random(r)
+    val errors = listOf(0.5, 1.0, 2.0).random(r)
+    val budget = PERCENT - slo
+    val answer = SLO_WINDOW_DAYS * budget / errors
+    return Question(
+      "An SLO of ${fmt(slo)}% over $SLO_WINDOW_DAYS days allows ${String.format(Locale.ROOT, "%.2f", budget)}% of requests to fail. The service runs at ${fmt(errors)}% errors right now. After how many days at this rate is the whole error budget spent?",
+      answer, Tolerance.Relative(0.02), "days",
+      "Burn rate = ${fmt(errors)} / ${String.format(Locale.ROOT, "%.2f", budget)} = ${fmt(errors / budget)} times the allowed rate, so the budget lasts $SLO_WINDOW_DAYS / ${fmt(errors / budget)} = ${String.format(Locale.ROOT, "%.1f", answer)} days. Page on burn rate, not on a raw error count.",
+      "Combining > SLI and SLO"
+    )
+  }
+
   /** Four significant digits and no thousands separator, because the answer prompt reads a comma as the decimal point. */
   fun shown(value: Double): String = BigDecimal(value).round(MathContext(SIGNIFICANT_DIGITS)).stripTrailingZeros().toPlainString()
 
@@ -247,4 +310,7 @@ object Quiz {
   private const val MILLIS_PER_SECOND = 1_000.0
   private const val SECONDS_PER_MINUTE = 60
   private const val CFS_PERIOD_MS = 100.0
+  private const val FAIL_FAST_MS = 2.0
+  private const val NORMAL_MS = 100.0
+  private const val SLO_WINDOW_DAYS = 30
 }
