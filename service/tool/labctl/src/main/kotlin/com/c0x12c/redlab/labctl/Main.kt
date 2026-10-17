@@ -44,9 +44,9 @@ object Main {
         "history" -> exercises.history()
         "load" -> exercises.load(CommandLine.loadMultiplier(args.getOrNull(1)))
         "quiz" -> {
-          val count = CommandLine.quizCount(args.drop(1), DEFAULT_QUIZ_QUESTIONS)
-          terminal.out("Numeric drills. Every run draws new numbers. Answer with a number; a comma or a dot both work as the decimal separator.")
-          Quiz.run(count, terminal)
+          val options = CommandLine.quizOptions(args.drop(1), DEFAULT_QUIZ_QUESTIONS)
+          terminal.out("Drills from the guide. A number question takes a number (a comma or a dot both work as the decimal separator). A concept question takes the number of one option.")
+          Quiz.run(options.count, options.kind, terminal)
           0
         }
         else -> usage()
@@ -58,7 +58,7 @@ object Main {
   }
 
   private fun usage(): Int {
-    println("usage: labctl daemon | new [--level N] [--topic T] [--id ID] [--force] | hint | answer | reveal | clear | status | list | history | load X | quiz [-n N]")
+    println("usage: labctl daemon | new [--level N] [--topic T] [--id ID] [--force] | hint | answer | reveal | clear | status | list | history | load X | quiz [-n N] [--kind numbers|concepts|all]")
     return USAGE_EXIT
   }
 

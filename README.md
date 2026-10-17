@@ -62,7 +62,7 @@ make up        # build + start, wait until ready (the first build takes several 
 make new       # get an exercise
 make hint      # a hint (costs 0.5 point)
 make answer    # submit, see the explanation
-make quiz      # numeric drills
+make quiz      # drills from the guide: numbers and concepts (KIND=numbers|concepts)
 make down      # stop and remove everything
 ```
 

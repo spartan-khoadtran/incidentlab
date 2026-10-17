@@ -6,6 +6,7 @@ import assertk.assertions.hasMessage
 import assertk.assertions.isEqualTo
 import assertk.assertions.isInstanceOf
 import com.c0x12c.redlab.labctl.exercise.NewOptions
+import com.c0x12c.redlab.labctl.quiz.QuizKind
 import org.junit.jupiter.api.Test
 
 class CommandLineTest {
@@ -37,9 +38,11 @@ class CommandLineTest {
   }
 
   @Test
-  fun `quiz count must be a positive whole number`() {
-    assertThat(CommandLine.quizCount(listOf("-n", "3"), 5)).isEqualTo(3)
-    assertThat(CommandLine.quizCount(emptyList(), 5)).isEqualTo(5)
-    assertFailure { CommandLine.quizCount(listOf("-n", "x"), 5) }.isInstanceOf(UsageError::class)
+  fun `quiz takes a positive count and a kind, and defaults to five mixed questions`() {
+    assertThat(CommandLine.quizOptions(listOf("-n", "3", "--kind", "concepts"), 5)).isEqualTo(QuizOptions(count = 3, kind = QuizKind.CONCEPTS))
+    assertThat(CommandLine.quizOptions(emptyList(), 5)).isEqualTo(QuizOptions(count = 5, kind = QuizKind.ALL))
+    assertFailure { CommandLine.quizOptions(listOf("-n", "x"), 5) }.isInstanceOf(UsageError::class)
+    assertFailure { CommandLine.quizOptions(listOf("--kind", "riddles"), 5) }.hasMessage("KIND must be one of numbers, concepts, all, for example `make quiz KIND=concepts`.")
+    assertFailure { CommandLine.quizOptions(listOf("--bogus"), 5) }.isInstanceOf(UsageError::class)
   }
 }

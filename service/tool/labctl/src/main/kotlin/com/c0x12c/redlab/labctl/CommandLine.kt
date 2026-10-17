@@ -2,10 +2,16 @@ package com.c0x12c.redlab.labctl
 
 import com.c0x12c.redlab.labctl.exercise.Exercises
 import com.c0x12c.redlab.labctl.exercise.NewOptions
+import com.c0x12c.redlab.labctl.quiz.QuizKind
 import com.c0x12c.redlab.labctl.scenario.Answers
 import com.c0x12c.redlab.labctl.scenario.ScenarioCatalog
 
 class UsageError(message: String) : RuntimeException(message)
+
+data class QuizOptions(
+  val count: Int,
+  val kind: QuizKind = QuizKind.ALL
+)
 
 /** Turns the arguments the Makefile passes into typed options, with a message a learner can act on. */
 object CommandLine {
@@ -35,14 +41,27 @@ object CommandLine {
     return value
   }
 
-  fun quizCount(args: List<String>, default: Int): Int {
-    val at = args.indexOf("-n")
-    if (at < 0) {
-      return default
+  fun quizOptions(args: List<String>, defaultCount: Int): QuizOptions {
+    var options = QuizOptions(count = defaultCount)
+    var index = 0
+    while (index < args.size) {
+      when (val flag = args[index]) {
+        "-n" -> options = options.copy(count = quizCount(args.getOrNull(++index)))
+        "--kind" -> options = options.copy(kind = quizKind(args.getOrNull(++index)))
+        else -> throw UsageError("Unknown option '$flag'.")
+      }
+      index++
     }
-    return args.getOrNull(at + 1)?.toIntOrNull()?.takeIf { it > 0 }
-      ?: throw UsageError("N must be a whole number above 0, for example `make quiz N=5`.")
+    return options
   }
+
+  private fun quizCount(raw: String?): Int =
+    raw?.toIntOrNull()?.takeIf { it > 0 }
+      ?: throw UsageError("N must be a whole number above 0, for example `make quiz N=5`.")
+
+  private fun quizKind(raw: String?): QuizKind =
+    QuizKind.entries.firstOrNull { it.flag == raw }
+      ?: throw UsageError("KIND must be one of ${QuizKind.entries.joinToString(", ") { it.flag }}, for example `make quiz KIND=concepts`.")
 
   private fun level(raw: String?): Int {
     val levels = ScenarioCatalog.all.map { it.level }.distinct().sorted()
