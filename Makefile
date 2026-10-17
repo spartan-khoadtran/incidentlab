@@ -47,7 +47,7 @@ nuke: ## Like `down`, and also remove the built image
 	$(COMPOSE) --profile datadog down -v --remove-orphans --rmi local
 
 # ----------------------------------------------------------------------------- exercises
-new: ## New exercise. Options: LEVEL=1|2|3 TOPIC=async ID=pool_hold FORCE=1
+new: ## New incident exercise on the live lab. Options: LEVEL=1|2|3 TOPIC=async ID=pool_hold FORCE=1
 	@$(CTL) new $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(ID),--id $(ID)) $(if $(FORCE),--force)
 
 hint: ## Next hint (costs 0.5 point each)
@@ -71,9 +71,9 @@ list: ## Exercise catalog by level and topic
 history: ## History and scores
 	@$(CTL) history
 
-quiz: ## Drills from the guide (N=5, KIND=numbers|concepts|all). Does not need the lab running
+quiz: ## Theory drills from the guide (N=20, KIND=numbers|concepts|all). Does not need the lab running
 	@$(COMPOSE) build -q control
-	@$(COMPOSE) run --rm --no-deps control $(LABCTL) quiz -n $(or $(N),5) --kind $(or $(KIND),all)
+	@$(COMPOSE) run --rm --no-deps control $(LABCTL) quiz -n $(or $(N),20) --kind $(or $(KIND),all)
 
 load: ## Change the background load: X=1.5 (times the default 50 rps)
 	@$(CTL) load $(or $(X),1)

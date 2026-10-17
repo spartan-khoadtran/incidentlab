@@ -13,6 +13,30 @@ dashboards. Every exercise and every quiz question points back at a section of i
 > **For training only.** This repo exists to teach incident investigation with the RED and USE methods.
 > The services break on purpose, and the code is not meant for production use.
 
+## Two ways to practice
+
+| | `make new` | `make quiz` |
+|---|---|---|
+| What it is | An incident on the running lab | Theory drills in the terminal |
+| What you do | Read a ticket, investigate in Grafana, then `make answer` | Answer questions one by one |
+| Needs the lab running | Yes (`make up` first) | No |
+| Time | 10 to 30 minutes per exercise | About 1 minute per question |
+| What it trains | The whole investigation: find the layer, the signal and the cause | The ideas and the math behind it: Little's Law, queueing, tail latency, what each metric means |
+| How many | 24 scenarios, random numbers every run | 32 number drills with new numbers every run, and 81 multiple choice questions |
+| Score | 0 to 5 per exercise, kept in `make history` | Right answers out of the questions asked, not saved |
+
+A good order: run `make quiz` until the guide makes sense, then `make new` to use it on a live system.
+Both point back at the section of the guide to read again.
+
+`make quiz` asks 20 questions by default, half numbers and half concepts. Change it with `N` and `KIND`:
+
+```bash
+make quiz                  # 20 mixed questions
+make quiz N=10             # 10 mixed questions
+make quiz KIND=concepts    # multiple choice only
+make quiz KIND=numbers     # calculations only
+```
+
 ## How it works
 
 ### The system
@@ -46,7 +70,8 @@ dashboards. Every exercise and every quiz question points back at a section of i
    Press Enter to clear the fault, then `make new` again.
 
 Hints, answers, scoring and the `make quiz` drills are all built into `labctl`. They run offline and
-need no account or API key.
+need no account or API key. After `make answer`, the trace shows the investigation step by step, from
+the ticket to the cause.
 
 For an interactive view (zoom, search, trace a path), open `docs/diagrams/architecture.html` or
 `docs/diagrams/exercise-flow.html` in a browser. The `.json` files next to them are the diagram sources.
@@ -59,10 +84,10 @@ Nothing else is installed on your machine: the services are built inside Docker.
 ```bash
 make up        # build + start, wait until ready (the first build takes several minutes)
 # open http://localhost:3000 (Grafana: dashboards and traces)
-make new       # get an exercise
+make new       # an incident on the live lab
 make hint      # a hint (costs 0.5 point)
-make answer    # submit, see the explanation
-make quiz      # drills from the guide: numbers and concepts (KIND=numbers|concepts)
+make answer    # submit, see the explanation and the step-by-step trace
+make quiz      # theory drills, no lab needed (20 questions)
 make down      # stop and remove everything
 ```
 

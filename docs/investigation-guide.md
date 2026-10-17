@@ -1,6 +1,6 @@
 # Investigating incidents with RED and USE
 
-This is the study guide for redlab. The exercises (`make answer`) and the drills (`make quiz`, numbers and concepts) point at its sections, written as `Section > Subsection`. The section [In this lab](#in-this-lab) maps every layer in the guide to a dashboard row.
+This is the study guide for redlab. The incident exercises on the live lab (`make new`, then `make answer`) and the theory drills (`make quiz`, no lab needed) point at its sections, written as `Section > Subsection`. The section [In this lab](#in-this-lab) maps every layer in the guide to a dashboard row.
 
 ## Overview
 
