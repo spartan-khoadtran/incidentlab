@@ -317,6 +317,9 @@ class Exercises(
     terminal.out("EXPLANATION")
     terminal.out("  " + scenario.explain(params))
     terminal.out()
+    terminal.out("TRACE (how to get there, step by step)")
+    scenario.steps.forEachIndexed { index, step -> terminal.out("  ${index + 1}. $step") }
+    terminal.out()
     terminal.out("EVIDENCE TO LOOK FOR (PromQL, paste into Grafana Explore or Prometheus)")
     scenario.evidence.forEach { terminal.out("  - $it") }
     terminal.out()

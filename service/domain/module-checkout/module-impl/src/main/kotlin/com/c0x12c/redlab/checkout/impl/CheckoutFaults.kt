@@ -8,6 +8,7 @@ object CheckoutFaults {
   const val POOL_ACQUIRE_TIMEOUT_S = "pool_acquire_timeout_s"
   const val CACHE_TTL_MS = "cache_ttl_ms"
   const val CPU_BURN_MS = "cpu_burn_ms"
+  const val PRICE_WORK_MS = "price_work_ms"
   const val N_PLUS_ONE = "n_plus_one"
   const val RECOMMEND_IN_TXN = "recommend_in_txn"
   const val HOT_ROW = "hot_row"
@@ -25,6 +26,8 @@ object CheckoutFaults {
     POOL_MAX to 4,
     POOL_ACQUIRE_TIMEOUT_S to 2.0,
     CACHE_TTL_MS to 120_000,
+    // app work per checkout after loading prices, with the connection still held (outside any transaction)
+    PRICE_WORK_MS to 45,
     // CPU work on the event loop per /products request
     CPU_BURN_MS to 0,
     // >0: load prices with one query per item, repeated k times

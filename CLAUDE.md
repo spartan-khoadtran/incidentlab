@@ -24,7 +24,7 @@ Lifecycle:
 Exercises (each one runs the `labctl` CLI inside the `control` container):
 - `make new` with optional `LEVEL=1|2|3`, `TOPIC=async`, `ID=pool_hold`, `FORCE=1`
 - `make hint`, `make answer`, `make reveal`, `make clear`, `make status`, `make list`, `make history`
-- `make quiz N=5`: numeric drills. Does not need the lab running.
+- `make quiz N=5 KIND=numbers|concepts|all`: drills from the guide, numeric (`Numbers`) and multiple choice (`Concepts`). Default KIND is `all`. Does not need the lab running.
 - `make load X=1.5`: multiply the background load (default 50 rps).
 
 Development (Gradle lives in `service/`, needs a JDK on the host; Gradle downloads JDK 21 itself):
@@ -97,11 +97,12 @@ Changing one of these breaks the scenario named in brackets:
 - `AdmissionFilter` (FIRST phase) runs before `RedMetricsFilter` (just after TRACING), so queue time shows at Envoy, not at api. [`queue_before_app`]
 - A latency histogram gets exemplars only if it is recorded while its span is current. The RED filter, the worker's `kafka.consume` span and loadgen's root span all record inside their span. Record a new histogram the same way or its panel shows no dots.
 - `ApiGates.pool` is a `ResizableGate` in front of the real Hikari pool (max 24). `pool_max` default is 4. [`pool_hold`, `db_lock`]
+- A healthy checkout holds its connection about 50 ms: `price_work_ms` (default 45) is app work after loading prices, outside any transaction, so Postgres stays idle. At 15 checkouts/s that is about 0.8 connections, so a pool of 1 saturates and a 4x surge fills the pool of 4. [`pool_shrunk`, `global_surge`, `pool_hold`]
 - CPU burn runs through `EventLoopRuntime.onEventLoop` on the single Netty thread. api and pricing both have `cpus: "2.0"`, so one saturated thread shows as half the limit with no throttling. [`single_thread_cpu`, `pricing_cpu`]
 - loadgen multiplies `rate_multiplier` (what `make load` sets) with `surge_multiplier` (what a scenario sets), so a surge exercise keeps the learner's load setting. [`global_surge`]
 - `MemoryLeak` allocates off heap with `Unsafe`, so the kernel OOM killer ends the process, not a Java `OutOfMemoryError`. api has `mem_limit: 512m` and `memswap_limit: 512m`. Without the swap cap, Docker allows twice the limit as swap, and the api swaps and slows down instead of being killed. [`oom`]
 - Envoy has `healthy_panic_threshold: 0`, so it returns 503 itself when api is unhealthy. [`lb_no_healthy`]
-- The controller sets the api CPU limit from a base of 2.0 cores; the throttle scenario draws 0.25 to 0.4 cores. [`cpu_throttle`]
+- The controller sets the api CPU limit from a base of 2.0 cores; the throttle scenario draws 0.07 to 0.1 cores, because api averages about 0.06 cores at 50 rps. [`cpu_throttle`]
 - `noisy` has `cpu_shares: 65536`. [`noisy_neighbor`]
 - No index on `reviews.product_id`; the Redis cache keeps `product_detail` cheap. The cache key includes the TTL, so a config change starts with an empty cache. [`cache_miss`, `tenant_spike`]
 - The worker processes each partition in order and retries a failed message for ever. [`poison_message`, `consumer_backlog`]

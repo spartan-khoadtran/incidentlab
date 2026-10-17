@@ -132,6 +132,17 @@ class DefaultCheckoutManager(
     }
 
   private fun loadPrices(connection: Connection, items: List<Int>): Map<Int, Double> {
+    val prices = queryPrices(connection, items)
+    val work = faults.double(CheckoutFaults.PRICE_WORK_MS)
+    if (work > 0) {
+      tracer.span("prices.compute (connection held)") {
+        Thread.sleep(jitter(work, PRICE_WORK_JITTER).toMillis())
+      }
+    }
+    return prices
+  }
+
+  private fun queryPrices(connection: Connection, items: List<Int>): Map<Int, Double> {
     val repeats = faults.int(CheckoutFaults.N_PLUS_ONE)
     if (repeats <= 0) {
       return products.prices(connection, items)
@@ -166,5 +177,6 @@ class DefaultCheckoutManager(
     const val CATALOG_TAIL = 500
     const val RENDER_JITTER = 0.2
     const val LOCK_HOLD_JITTER = 0.3
+    const val PRICE_WORK_JITTER = 0.3
   }
 }

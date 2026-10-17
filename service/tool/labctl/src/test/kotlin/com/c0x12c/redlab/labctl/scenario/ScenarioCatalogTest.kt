@@ -34,6 +34,7 @@ class ScenarioCatalogTest {
       assertThat(scenario.answer.partial.all { it in causes && it !in Answers.DISTRACTORS }).isTrue()
       assertThat(scenario.topics.all { it in Answers.TOPICS }).isTrue()
       assertThat(scenario.hints).hasSize(3)
+      assertThat(scenario.steps.size).isBetween(4, 8)
       assertThat(scenario.evidence).isNotEmpty()
     }
   }

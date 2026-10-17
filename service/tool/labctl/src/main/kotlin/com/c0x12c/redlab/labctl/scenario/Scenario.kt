@@ -62,6 +62,7 @@ class Scenario(
   val ticket: (Params) -> String,
   val hints: List<String>,
   val answer: Answer,
+  val steps: List<String>,
   val explain: (Params) -> String,
   val evidence: List<String>,
   val doc: String,

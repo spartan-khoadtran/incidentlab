@@ -53,7 +53,7 @@ object ScenarioCatalog {
     title = "One tenant's traffic surges",
     level = 1,
     topics = listOf("red", "load"),
-    // Crawler rate calibrated to this machine: aim for about 90% of 2 Postgres cores on cache misses.
+    // Calibrated on the cost of one lone product query. Concurrent scans share their reads, so under the crawl each query costs about a third of that.
     params = { random, context ->
       val cost = context.productDetailSeconds ?: DEFAULT_PRODUCT_DETAIL_SECONDS
       val extra = (CRAWLER_CPU_BUDGET / cost * random.nextDouble(0.9, 1.1)).roundToInt().coerceIn(MIN_CRAWLER_RPS, MAX_CRAWLER_RPS)
@@ -73,12 +73,20 @@ object ScenarioCatalog {
     answer = Answer(nature = setOf("load"), location = setOf("client"), signal = setOf("client_rate_by_tenant"), cause = "tenant_spike", partial = setOf("cache_miss")),
     explain = { p ->
       "Tenant ${p.string("tenant")} sends about ${p.int("extra")} extra requests/s to /products, walking the whole 100,000-product catalog like a crawler. " +
-        "Almost every one of its requests misses the cache and runs the heavy product_detail query, so the api's 4-connection pool and Postgres CPU " +
-        "saturate; everyone's /checkout slows down because it waits on the same pool. Rate rises at every layer at once: the pattern " +
+        "Almost every one of its requests misses the cache and runs the heavy product_detail query, so the api's 4-connection pool " +
+        "saturates; everyone's /checkout slows down because it waits on the same pool. Rate rises at every layer at once: the pattern " +
         "'rate and duration rise together, so it may be load'. Workload characterization (who causes the load) points at the tenant right away. " +
         "The lower cache hit ratio here is a consequence of a new workload, not a broken cache: compared with the cache-miss exercise, the API rate is flat. " +
         "Fix: rate limit per tenant, give the crawler its own endpoint, or scale if this traffic is legitimate."
     },
+    steps = listOf(
+      "Problem statement: /checkout is slow and API p99 is over its threshold. The deploy calendar says nothing changed.",
+      "RED at the LB and the client: the rate is up, not flat. Rate and duration rising together may be load.",
+      "Workload characterization: split the client rate by tenant. One tenant grew several times over; the others are flat.",
+      "Follow that load down: its requests miss the cache and run product_detail, so the 4-connection pool fills.",
+      "Everyone's /checkout waits on the same pool, so it slows too. The cause is a real surge from one tenant.",
+      "Check against the cache-miss exercise: here the API rate is up, so the low hit ratio comes from a new workload, not a broken cache."
+    ),
     evidence = listOf(
       "sum by (tenant) (rate(client_requests_total[1m]))",
       "sum(rate(envoy_http_downstream_rq_total{envoy_http_conn_manager_prefix=\"ingress\"}[1m]))",
@@ -116,6 +124,14 @@ object ScenarioCatalog {
         "${p.fixed(need, 1)} connections in use on average, and queueing starts well before the pool is full. " +
         "Nothing in the system changed. Fix: scale api and the pool, or shed load per tenant until you can."
     },
+    steps = listOf(
+      "Problem statement: /checkout p99 is over its threshold. A push campaign may or may not have gone out.",
+      "RED at the LB: the total rate is up against the baseline from 10 minutes ago.",
+      "Split the client rate by tenant: every tenant grew in proportion, so no single one stands out.",
+      "Attempts per user request stay at 1, so nobody retries. This is real demand.",
+      "Follow it into the pool: in use reaches the max of 4, and queueing starts before the pool is full.",
+      "Little's Law ties the checkout rate and the hold time to the connections in use. The cause is load across every tenant."
+    ),
     evidence = listOf(
       "sum by (tenant) (rate(client_requests_total[1m]))",
       "sum(rate(envoy_http_downstream_rq_total{envoy_http_conn_manager_prefix=\"ingress\"}[1m]))",
@@ -152,6 +168,13 @@ object ScenarioCatalog {
         "A total rate hides a workload change; split the rate by route before you read it. " +
         "Fix: capacity for the new mix, and find out why users check out more (a promotion?)."
     },
+    steps = listOf(
+      "Problem statement: pricing says its rate doubled, the DBA sees twice the writes, and the gateway rate is flat.",
+      "Attempts per user request at the client: still 1, so nobody retries.",
+      "The total rate is flat, so split it by route: /checkout went up and /products went down.",
+      "Each checkout costs a pricing call, a Kafka event and two DB sessions, so pricing, Kafka and Postgres all see more load.",
+      "The cause is a mix that moved to the heavier endpoint. A total rate hides it, so read the rate by route."
+    ),
     evidence = listOf(
       "sum by (route) (rate(http_server_requests_total{job=\"api\"}[1m]))",
       "sum(rate(client_attempts_total[1m])) / sum(rate(client_requests_total[1m]))",
@@ -190,6 +213,13 @@ object ScenarioCatalog {
         "${(rps.toDouble() / p.int("total") * PERCENT).roundToInt()}%. Errors and duration look perfect because the system has nothing to do. " +
         "A lower rate is a finding in its own right, and only the layer in front of the LB can show why. Fix: roll back the app release."
     },
+    steps = listOf(
+      "Problem statement: orders are down, every service dashboard is green, and nobody was paged.",
+      "A drop in rate is a symptom too. Compare the LB rate with 10 minutes ago: it fell.",
+      "Split the client rate by tenant: one tenant disappeared right at its app release.",
+      "Errors and duration look perfect, because the system has nothing to do.",
+      "Only the layer in front of the LB can explain it. The cause is a client that stopped calling after a bad release."
+    ),
     evidence = listOf(
       "sum by (tenant) (rate(client_requests_total[1m]))",
       "sum(rate(envoy_http_downstream_rq_total{envoy_http_conn_manager_prefix=\"ingress\"}[1m]))"
@@ -221,6 +251,13 @@ object ScenarioCatalog {
         "and at api) multiply. This is 'rate up but not real load': scaling api fixes nothing. " +
         "Fix: retry with backoff and jitter, cap retries (a retry budget), and fix the error in pricing."
     },
+    steps = listOf(
+      "Problem statement: many customers cannot order, /checkout traffic is jumping, and someone wants to scale api.",
+      "Compare the logical user requests at the client with the rate at the LB: they no longer match.",
+      "The Attempts vs user requests panel: one user request now becomes several attempts.",
+      "Find the source of the errors: api's calls to pricing fail with 503, so api answers 502 and the client retries with no backoff.",
+      "The cause is a retry storm. The real user count is flat, so scaling api fixes nothing. Fix pricing and add backoff to the client."
+    ),
     evidence = listOf(
       "sum(rate(client_attempts_total{endpoint=\"checkout\"}[1m])) / sum(rate(client_requests_total{endpoint=\"checkout\"}[1m]))",
       "sum by (outcome) (rate(http_client_requests_total{job=\"api\",target=\"pricing\"}[1m]))",
@@ -238,7 +275,7 @@ object ScenarioCatalog {
     // Half the runs overload the pool (503s), half sit just under it (slow, almost no errors).
     params = { random, _ ->
       val overload = random.nextBoolean()
-      mapOf("recommend_ms" to if (overload) random.nextInt(290, 351) else random.nextInt(160, 191), "overload" to overload)
+      mapOf("recommend_ms" to if (overload) random.nextInt(250, 311) else random.nextInt(125, 151), "overload" to overload)
     },
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("recommend_in_txn" to true), "pricing" to mapOf("recommend_ms" to p.int("recommend_ms")))) },
     marker = { "Deploy checkout-api v2.31: product suggestions added to the checkout step" },
@@ -270,6 +307,16 @@ object ScenarioCatalog {
         "while api waits for pricing. Fix: call /recommend outside the transaction, or asynchronously. Raising the pool only hides the problem " +
         "and may hit max_connections when you scale."
     },
+    steps = listOf(
+      "Problem statement: /checkout p99 jumps right after the v2.31 deploy. The DB team says Postgres is fine.",
+      "RED at the LB: the rate is flat against the baseline, so suspect architecture, not load.",
+      "LB p99 and api p99 are about equal, so there is no queue before the app. The problem is in the app or behind it.",
+      "Compare the DB session time from api with the Postgres exec time: the session time is up and exec time is flat. The gap is on the app side.",
+      "USE for the pool: in use at 4/4, waiting above 0, acquire wait high. The pool is the saturated resource.",
+      "Little's Law: checkouts/s times the hold time, against pool_max = 4. It is near or above the limit.",
+      "Open one /checkout trace: the pricing /price and /recommend calls sit inside db.session, and Postgres shows connections idle in transaction.",
+      "The cause: v2.31 holds the connection across the pricing calls, so the pool is exhausted."
+    ),
     evidence = listOf(
       "histogram_quantile(0.99, sum by (le, op) (rate(db_client_session_seconds_bucket{job=\"api\"}[1m])))",
       "sum by (query) (rate(pg_query_exec_seconds_total[1m])) / sum by (query) (rate(pg_query_calls_total[1m]))",
@@ -306,6 +353,14 @@ object ScenarioCatalog {
         "queries at the same speed. Compared with the v2.31 exercise, the hold time (numerator) is flat and the limit (denominator) moved. " +
         "Utilization only means something against the limit of the right layer."
     },
+    steps = listOf(
+      "Problem statement: /checkout p99 is up, Postgres is nearly idle, and the checkout code did not change.",
+      "Compare the DB session time from api with the Postgres exec time: session time up, exec time flat. The gap is on the app side.",
+      "USE for the pool: in use at the max and waiting above 0. Check what moved: the hold time or the max.",
+      "The max moved. Little's Law: the same checkouts/s times the same 50 ms hold is fine against 4, not against 1.",
+      "Compare with v2.31: there the hold time (the numerator) grew. Here the limit (the denominator) shrank.",
+      "The cause: a config change lowered pool_max. Utilization only means something against the right limit."
+    ),
     evidence = listOf(
       "db_pool_max{job=\"api\"}, db_pool_in_use{job=\"api\"}, db_pool_waiting{job=\"api\"}",
       "histogram_quantile(0.99, sum by (le, op) (rate(db_client_session_seconds_bucket{job=\"api\"}[1m])))",
@@ -332,7 +387,7 @@ object ScenarioCatalog {
       "Split the query rate by query name. Which query is new or jumped?",
       "Divide product_by_id queries per second by /checkout requests per second: how many queries does one checkout send?"
     ),
-    answer = Answer(nature = setOf("amplified"), location = setOf("api_db", "api"), signal = setOf("query_rate_by_name"), cause = "n_plus_one"),
+    answer = Answer(nature = setOf("amplified", "arch"), location = setOf("api_db", "api"), signal = setOf("query_rate_by_name"), cause = "n_plus_one"),
     explain = { p ->
       val queries = (AVERAGE_BASKET * p.int("k")).roundToInt()
       "The new ORM loads prices one product at a time, ${p.int("k")} times per product (lazy loading). An average checkout of $AVERAGE_BASKET products " +
@@ -340,6 +395,14 @@ object ScenarioCatalog {
         "Each query is fast inside Postgres and /checkout gets only a little slower, so users barely notice: the cost lands on the DB as load. " +
         "Fix: load in batches (WHERE id = ANY(...)) or eager loading."
     },
+    steps = listOf(
+      "Problem statement: the DBA sees the query count multiplied, and marketing says there is no campaign.",
+      "Compare the API rate with the query rate at Postgres: the API rate is flat and the query rate is up. The fan-out grew.",
+      "Split the query rate by name: product_by_id is new or jumped.",
+      "Divide product_by_id per second by /checkout per second: one checkout now sends many queries.",
+      "Each query is fast, so /checkout barely slows. The cost lands on the DB as load.",
+      "The cause: N+1 queries from the new ORM. Fix it with a batch load or eager loading."
+    ),
     evidence = listOf(
       "sum by (query) (rate(db_client_queries_total{job=\"api\"}[1m]))",
       "sum(rate(db_client_queries_total{job=\"api\",query=\"product_by_id\"}[1m])) / sum(rate(http_server_requests_total{job=\"api\",route=\"/checkout\"}[1m]))",
@@ -375,6 +438,14 @@ object ScenarioCatalog {
         "A 1-minute average still looks below 100% because the quota runs out inside single 100 ms periods, which is what the throttle counter shows. " +
         "This is the 'lower layer hides the upper one' case from USE at many layers."
     },
+    steps = listOf(
+      "Problem statement: p99 is up on every route, even /products. The rate is normal, and the host has CPU to spare.",
+      "RED: the LB and api rise together and the rate is flat. Suspect architecture.",
+      "USE for api at each layer: host, container, runtime. Measure utilization against the right limit.",
+      "Container CPU against cgroup_cpu_limit_cores jumps, and the share of throttled periods climbs from 0 to 10% or more.",
+      "The quota runs out inside single 100 ms periods, so a 1-minute average still looks under 100%.",
+      "The cause: the container CPU limit was lowered. The cgroup layer hides the problem from the host view."
+    ),
     evidence = listOf(
       "rate(cgroup_cpu_usage_seconds_total{job=\"api\"}[1m]) / cgroup_cpu_limit_cores{job=\"api\"}",
       "rate(cgroup_cpu_throttled_periods_total{job=\"api\"}[1m]) / rate(cgroup_cpu_periods_total{job=\"api\"}[1m])",
@@ -409,6 +480,14 @@ object ScenarioCatalog {
         "(including /checkout) waits: event loop lag rises. The container uses about 1 of its 2 cores and is not throttled, so raising the limit " +
         "to 4 cores does nothing. This is the classic single-threaded application case: the load is flat, the architecture is the limit."
     },
+    steps = listOf(
+      "Problem statement: /products and /checkout are slow, the rate is normal, and someone wants a 4-core limit.",
+      "USE for the container: CPU is about 1 of 2 cores and there is no throttling, so a bigger limit changes nothing.",
+      "api serves on one event loop thread. Look at process CPU and event loop lag.",
+      "Process CPU sits near one core and event loop lag rises: one thread is saturated.",
+      "Open a /products trace: the render span burns CPU. /checkout slows because it waits on the same loop.",
+      "The cause: CPU work on a single-threaded event loop. The load is flat; the architecture is the limit."
+    ),
     evidence = listOf(
       "rate(process_cpu_seconds_total{job=\"api\"}[1m])",
       "histogram_quantile(0.99, sum by (le) (rate(event_loop_lag_seconds_bucket{job=\"api\"}[1m])))",
@@ -422,7 +501,7 @@ object ScenarioCatalog {
     title = "Requests queue before the app accepts them",
     level = 2,
     topics = listOf("layers", "red"),
-    params = { _, _ -> mapOf("limit" to 1) },
+    params = { _, _ -> mapOf("limit" to 2) },
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("admission_limit" to p.int("limit")))) },
     decoy = 0.5,
     ticket = { p -> "At ${p.startedAt}, users complain the app is slow. The api team looks at APM and says their p99 is still normal, so it must be the network." },
@@ -433,10 +512,17 @@ object ScenarioCatalog {
     ),
     answer = Answer(nature = setOf("arch"), location = setOf("lb", "api"), signal = setOf("lb_vs_api_duration"), cause = "queue_before_app"),
     explain = { p ->
-      "The api's concurrency limit was set to ${p.int("limit")}: only one request at a time enters the handler, the rest wait ahead of it. " +
+      "The api's concurrency limit was set to ${p.int("limit")}: only ${p.int("limit")} requests at a time enter the handler, the rest wait ahead of them. " +
         "The duration api measures (APM) starts when the handler begins, so it stays flat. The LB measures from the moment it receives the request, " +
         "so it sees the wait too. The gap between LB latency and api latency is the queueing time: saturation showing up as duration."
     },
+    steps = listOf(
+      "Problem statement: users say the app is slow, but api says its APM p99 is normal, so it must be the network.",
+      "Put the LB (Envoy) p99 and the api p99 on one chart.",
+      "The two lines split: the LB sees much more time than api does.",
+      "The gap is time the request waits before the handler starts. Check the Admission wait p99 panel.",
+      "The cause: the concurrency limit is too low, so requests queue before the app accepts them. APM cannot see that wait."
+    ),
     evidence = listOf(
       "histogram_quantile(0.99, sum by (le) (rate(envoy_http_downstream_rq_time_bucket{envoy_http_conn_manager_prefix=\"ingress\"}[1m]))) / 1000",
       "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\"}[1m])))",
@@ -465,6 +551,13 @@ object ScenarioCatalog {
         "with panic mode off, answers 503 'no healthy upstream' itself during those windows. Requests never reach api, so APM sees a lower rate, " +
         "not errors. This is 'errors the LB produces itself' from RED at many layers."
     },
+    steps = listOf(
+      "Problem statement: users get scattered 503s, and api insists APM shows no errors.",
+      "Compare 5xx at the client, the LB and api: the LB returns 5xx that api never records.",
+      "Check Envoy's healthy backends: the count drops to 0 at times, because api's /health fails.",
+      "With panic mode off, Envoy answers 503 itself. The rate reaching api drops instead of api's errors rising.",
+      "The cause: the LB produces the 503s because no backend is healthy."
+    ),
     evidence = listOf(
       "sum(rate(envoy_http_downstream_rq_xx{envoy_response_code_class=\"5\",envoy_http_conn_manager_prefix=\"ingress\"}[1m]))",
       "sum(rate(http_server_requests_total{job=\"api\",status=~\"5..\"}[1m])) or vector(0)",
@@ -508,6 +601,14 @@ object ScenarioCatalog {
         "the pricing call span; pricing's own RED confirms the latency rose on its server side, so it is neither the network nor api's pool. " +
         "pricing's CPU and event loop are quiet: it waits on something, it does not compute. The next step is latency analysis inside pricing."
     },
+    steps = listOf(
+      "Problem statement: /checkout p99 is several times higher and /products is normal.",
+      "RED by route: /checkout duration is up and the rate is flat.",
+      "Inside /checkout, find the downstream that rose: compare api's calls to pricing with the DB and Kafka.",
+      "Compare api's view of pricing with pricing's own server-side p99: the time rose on pricing's side, so it is not the network or api's pool.",
+      "pricing's CPU and event loop are quiet, so it waits on something; it does not compute.",
+      "The cause: pricing is slow. The next step is latency analysis inside pricing."
+    ),
     evidence = listOf(
       "histogram_quantile(0.99, sum by (le, route) (rate(http_client_duration_seconds_bucket{job=\"api\"}[1m])))",
       "histogram_quantile(0.99, sum by (le, route) (rate(http_server_duration_seconds_bucket{job=\"pricing\"}[1m])))",
@@ -537,6 +638,13 @@ object ScenarioCatalog {
         "Compare with the retry storm: same failing downstream, but there the client multiplies the attempts. " +
         "Errors pass through the layers unchanged here, so the first layer that produces them is the one to fix."
     },
+    steps = listOf(
+      "Problem statement: some checkouts fail with 502, mobile is not retrying, and /products is fine.",
+      "Errors at the client, the LB and api are the same count. Attempts per request stay at 1, so nothing is amplified.",
+      "api's /checkout errors come from one downstream call: read http_client_requests_total by outcome.",
+      "pricing's own RED shows 503 on /price.",
+      "The cause: pricing returns errors, and they pass through the layers unchanged. In the retry storm the client multiplies them instead."
+    ),
     evidence = listOf(
       "sum by (outcome) (rate(http_client_requests_total{job=\"api\",target=\"pricing\"}[1m]))",
       "sum by (status) (rate(http_server_requests_total{job=\"pricing\"}[1m]))",
@@ -577,6 +685,13 @@ object ScenarioCatalog {
         "pricing finishes anyway and records a 200. The same timeout mismatch as the client timeout exercise, one hop deeper: here api is the client. " +
         "A 'client' is whoever sends the request on a given hop. Fix: set the timeout from the downstream's real p99 plus a margin, and fix the regression in pricing."
     },
+    steps = listOf(
+      "Problem statement: about half of the checkouts fail with 502, and pricing says every request returns 200, just slower.",
+      "Errors at the client, the LB and api are the same. Find which downstream call fails inside api.",
+      "Read http_client_requests_total by outcome: it is a timeout on api's side, not a 5xx from pricing.",
+      "Compare api's timeout towards pricing with pricing's p99 on /price: the p99 is above the timeout.",
+      "The cause: api gives up before pricing answers. On this hop api is the client. Set the timeout from pricing's real p99."
+    ),
     evidence = listOf(
       "sum by (outcome) (rate(http_client_requests_total{job=\"api\",target=\"pricing\"}[1m]))",
       "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"pricing\",route=\"/price\"}[1m])))",
@@ -611,6 +726,13 @@ object ScenarioCatalog {
         "The container is not throttled and uses about one of its two cores, so a bigger limit changes nothing. " +
         "The slow downstream exercise stops at 'pricing is slow'; here USE on pricing names the resource."
     },
+    steps = listOf(
+      "Problem statement: /checkout p99 is high, /products is normal, and pricing uses less than 1 of its 2 cores.",
+      "Compare api's calls to pricing with pricing's own p99: pricing is slow on its own side.",
+      "USE for pricing: process CPU, event loop lag, throttling.",
+      "Process CPU sits near one core, event loop lag climbs, and there is no throttling: one thread is saturated.",
+      "The cause: CPU work on pricing's single event loop. The slow-downstream exercise stops at pricing is slow; USE names the resource."
+    ),
     evidence = listOf(
       "rate(process_cpu_seconds_total{job=\"pricing\"}[1m])",
       "histogram_quantile(0.99, sum by (le) (rate(event_loop_lag_seconds_bucket{job=\"pricing\"}[1m])))",
@@ -641,6 +763,13 @@ object ScenarioCatalog {
         "This is rate rising at a lower layer because of the cache, not because of users. The missing index on reviews was always there; " +
         "the cache is what kept it cheap, and the cache is what changed."
     },
+    steps = listOf(
+      "Problem statement: Postgres CPU is up, the DBA asks who hits the products table, and API traffic is unchanged.",
+      "Which query grew in Postgres? product_detail. Did the API rate grow with it? No.",
+      "Ask what a /products request passes through before the DB: the cache.",
+      "The cache hit ratio fell, so almost every /products misses and runs product_detail, a scan over reviews.",
+      "The cause: a config change made the cache TTL tiny. The missing index was always there; the cache kept it cheap."
+    ),
     evidence = listOf(
       "sum(rate(cache_requests_total{result=\"hit\"}[1m])) / sum(rate(cache_requests_total[1m]))",
       "sum by (query) (rate(pg_query_calls_total[1m]))"
@@ -677,6 +806,13 @@ object ScenarioCatalog {
         "The LB shows no errors either: from its side the client just went away, so the timeouts exist only in the client's numbers. " +
         "Fix: set the client timeout from the server's real p99 plus a margin, and make the server stop work the client has abandoned."
     },
+    steps = listOf(
+      "Problem statement: the app reports timeouts on orders, and api says every request returned 200.",
+      "Compare errors at the client with the LB and api: only the client sees them, and at the client they are timeouts.",
+      "Compare the server-side /checkout p99 with the client's timeout: the p99 is longer.",
+      "The client gives up and records a timeout. The server finishes and records a 200. The LB only sees the client leave.",
+      "The cause: the client timeout is shorter than the server latency. Set it from the server's real p99."
+    ),
     evidence = listOf(
       "sum by (outcome) (rate(client_requests_total{endpoint=\"checkout\"}[1m]))",
       "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\",route=\"/checkout\"}[1m])))"
@@ -706,6 +842,13 @@ object ScenarioCatalog {
         "processing time is flat and errors are zero, but lag in messages and in seconds grows steadily. " +
         "Lag is the consumer group's saturation; end-to-end latency is what users see."
     },
+    steps = listOf(
+      "Problem statement: new orders take minutes to show up, and the worker shows no errors.",
+      "The worker's RED: consume rate, errors, processing time. Processing time is flat and errors are zero.",
+      "Compare the produce rate with the consume rate: produce is above the consumer's capacity, so lag grows over time.",
+      "Split the produce rate by source: a backfill job adds extra events.",
+      "The cause: the producer sends more than the consumer can handle. Lag is the consumer group's saturation."
+    ),
     evidence = listOf(
       "sum by (source) (rate(kafka_produced_total[1m]))",
       "sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
@@ -738,6 +881,13 @@ object ScenarioCatalog {
         "Same symptom as the backlog exercise, opposite cause: there the producer grew, here the consumer shrank. " +
         "Processing time per message is the metric that tells them apart."
     },
+    steps = listOf(
+      "Problem statement: new orders take minutes, order volume is normal, and there are no errors.",
+      "The worker's RED: processing time per message rose, and the consume rate is pinned at capacity.",
+      "Compare produce with consume: the producer did not grow, so the consumer shrank.",
+      "Capacity is partitions divided by processing time. With 3 partitions it fell below the incoming order rate.",
+      "The cause: the worker got slower per message. Same symptom as the backlog, opposite cause; processing time tells them apart."
+    ),
     evidence = listOf(
       "histogram_quantile(0.99, sum by (le) (rate(kafka_processing_seconds_bucket[1m])))",
       "sum(rate(kafka_produced_total[1m])) and sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
@@ -766,6 +916,13 @@ object ScenarioCatalog {
         "Because each partition is processed in order, the whole partition holding it is blocked: exactly one partition's lag grows without end " +
         "while the others keep moving, so the total throughput barely changes. Fix: cap the retries, then send the message to a DLQ."
     },
+    steps = listOf(
+      "Problem statement: some orders are never processed, others are fine, and total throughput is almost unchanged.",
+      "Look at lag per partition, not the total: exactly one partition's lag grows in a straight line.",
+      "The worker's retries are up on that one partition only.",
+      "Read the worker log: one event fails and is retried every second, never skipped.",
+      "The cause: a poison message blocks its partition, because each partition is processed in order. Cap the retries and use a DLQ."
+    ),
     evidence = listOf(
       "kafka_consumer_lag_messages",
       "sum by (partition) (rate(kafka_consumer_retries_total[1m]))"
@@ -797,6 +954,14 @@ object ScenarioCatalog {
         "Because connections are held while waiting for the lock, api's pool drains too, but that is a consequence. " +
         "Unlike the pool exercise, here Postgres itself reports the higher exec time."
     },
+    steps = listOf(
+      "Problem statement: /checkout is slow with 503s, and the DB team says Postgres exec time went up.",
+      "Find which query's exec time rose inside Postgres: update_inventory.",
+      "Exec time is up, so look at what Postgres is doing: pg_lock_waiters is above 0 and backends wait on a lock.",
+      "Check the code path: every checkout updates the same inventory row, HOT-1.",
+      "The pool drains too, because connections are held while they wait for the lock. That is a consequence, not the cause.",
+      "The cause: lock contention on one hot row. Unlike the pool exercise, Postgres itself reports the higher exec time."
+    ),
     evidence = listOf(
       "sum by (query) (rate(pg_query_exec_seconds_total[1m])) / sum by (query) (rate(pg_query_calls_total[1m]))",
       "pg_lock_waiters",
@@ -826,6 +991,13 @@ object ScenarioCatalog {
         "reaches the container's 512 MB limit: the kernel OOM-kills the process, Docker restarts api, and Envoy answers 503 while api is down. " +
         "These are errors at the cgroup layer (USE). The sawtooth memory curve and the restart count are the main evidence."
     },
+    steps = listOf(
+      "Problem statement: about once a minute there is a burst of 503s that clears on its own. Nobody deployed.",
+      "During the errors, is api still up? Look at the restart count from process_start_time_seconds.",
+      "Watch the api container memory against its 512 MB limit right before each restart: it climbs in a sawtooth.",
+      "Memory reaches the limit, the kernel OOM-kills the process, Docker restarts api, and Envoy answers 503 while api is down.",
+      "The cause: a memory leak hits the container limit. These are errors at the cgroup layer in USE terms."
+    ),
     evidence = listOf(
       "cgroup_memory_usage_bytes{job=\"api\"} / cgroup_memory_limit_bytes{job=\"api\"}",
       "changes(process_start_time_seconds{job=\"api\"}[10m])",
@@ -854,6 +1026,13 @@ object ScenarioCatalog {
         "Host / VM CPU is near 100%, load is far above the CPU count, CPU PSI rises. Every service slows down because they all compete for CPU. " +
         "None of your services is throttled or failing: the cause sits in the shared layer."
     },
+    steps = listOf(
+      "Problem statement: every service is slower, including pricing and the worker. The rate is normal and nobody deployed.",
+      "When everything slows down at once, think of the shared resources.",
+      "USE at the host layer: CPU by mode, load against the CPU count, CPU PSI. All of them are high.",
+      "Compare cgroup CPU usage by job: the noisy batch job takes most of the host's CPU.",
+      "The cause: a noisy neighbour on the host. None of your services is throttled or failing; the cause sits in the shared layer."
+    ),
     evidence = listOf(
       "sum by (mode) (rate(node_cpu_seconds_total{mode!=\"idle\"}[1m])) / scalar(count(node_cpu_seconds_total{mode=\"idle\"}))",
       "node_load1 / scalar(count(node_cpu_seconds_total{mode=\"idle\"}))",
@@ -868,21 +1047,21 @@ object ScenarioCatalog {
   private const val PERCENT = 100
   private const val MILLIS_PER_SECOND = 1_000.0
   private const val DEFAULT_PRODUCT_DETAIL_SECONDS = 0.012
-  private const val CRAWLER_CPU_BUDGET = 1.8
+  private const val CRAWLER_CPU_BUDGET = 5.0
   private const val MIN_CRAWLER_RPS = 40
   private const val MAX_CRAWLER_RPS = 600
 
   private const val AVERAGE_BASKET = 2.5
-  private const val BASE_CHECKOUT_HOLD_MS = 25
+  private const val BASE_CHECKOUT_HOLD_MS = 50
   private const val PRICE_BASE_MS = 12
-  private const val MIN_SURGE = 4.0
-  private const val MAX_SURGE = 5.0
+  private const val MIN_SURGE = 3.8
+  private const val MAX_SURGE = 4.4
   private const val MIN_CHECKOUT_SHARE = 0.65
   private const val MAX_CHECKOUT_SHARE = 0.75
 
-  // A JVM needs a little more than the Python service did to keep answering at all under a tiny quota.
-  private const val MIN_THROTTLE_CPUS = 0.25
-  private const val MAX_THROTTLE_CPUS = 0.4
+  // api averages about 0.06 cores at 50 rps, so only a limit this low runs out inside single 100 ms periods.
+  private const val MIN_THROTTLE_CPUS = 0.07
+  private const val MAX_THROTTLE_CPUS = 0.1
   private const val CFS_PERIOD_MS = 100
   private const val NONCE_SPACE = 0x1000000
   private const val MIN_BURNERS = 4
