@@ -32,6 +32,18 @@ class DesiredStateTest {
   }
 
   @Test
+  fun `the lag exercise rolls the worker back after its fix time and keeps the backfill`() {
+    val state = LabState(active = ActiveExercise(id = "lag_after_fix", params = mapOf("slow_ms" to 100, "extra" to 85, "fix_after" to 150), started = 1_000.0, n = 1))
+
+    val before = DesiredState.of(state, now = 1_100.0)
+    val after = DesiredState.of(state, now = 1_200.0)
+
+    assertThat(before.faults.getValue("worker")).isEqualTo(mapOf<String, Any?>("process_ms" to 100))
+    assertThat(after.faults.getValue("worker")).isEqualTo(emptyMap<String, Any?>())
+    assertThat(after.faults.getValue("api")).isEqualTo(mapOf<String, Any?>("extra_events_rps" to 85))
+  }
+
+  @Test
   fun `an unknown active id is ignored instead of crashing the daemon`() {
     val state = LabState(active = ActiveExercise(id = "gone", params = emptyMap(), started = 0.0, n = 1))
 

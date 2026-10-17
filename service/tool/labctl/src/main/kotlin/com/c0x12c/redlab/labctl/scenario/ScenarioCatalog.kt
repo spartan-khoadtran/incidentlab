@@ -42,7 +42,15 @@ object ScenarioCatalog {
     poisonMessage(),
     dbLock(),
     oom(),
-    noisyNeighbor()
+    noisyNeighbor(),
+    poolTimeout(),
+    timeoutRetry(),
+    surgeQueue(),
+    lbFlapping(),
+    tailLatency(),
+    slowLeak(),
+    twoFaults(),
+    lagAfterFix()
   )
 
   val byId: Map<String, Scenario> = all.associateBy { it.id }
@@ -547,8 +555,8 @@ object ScenarioCatalog {
     ),
     answer = Answer(nature = setOf("arch"), location = setOf("lb", "api"), signal = setOf("lb_vs_api_errors"), cause = "lb_no_healthy"),
     explain = { p ->
-      "api's /health answers 503 with probability ${p.percent("prob")}. Envoy marks the backend unhealthy after 2 consecutive failures and, " +
-        "with panic mode off, answers 503 'no healthy upstream' itself during those windows. Requests never reach api, so APM sees a lower rate, " +
+      "api's /health answers 503 with probability ${p.percent("prob")}. Envoy treats a 503 from the health check as an immediate failure and marks the backend unhealthy at once; " +
+        "with panic mode off, it answers 503 'no healthy upstream' itself during those windows. Requests never reach api, so APM sees a lower rate, " +
         "not errors. This is 'errors the LB produces itself' from RED at many layers."
     },
     steps = listOf(
@@ -1041,9 +1049,397 @@ object ScenarioCatalog {
     doc = "USE at many layers > Layers and their metrics (hypervisor, host)"
   )
 
+  // ---------------------------------------------------------------- variations: same signals, a different reading
+  private fun poolTimeout() = Scenario(
+    id = "pool_timeout",
+    title = "Pool acquire timeout set too short",
+    level = 2,
+    topics = listOf("use", "db"),
+    params = { random, _ -> mapOf("pool_max" to 2, "timeout_ms" to random.nextInt(15, 26)) },
+    faults = { p ->
+      FaultSpec(services = mapOf("api" to mapOf("pool_max" to p.int("pool_max"), "pool_acquire_timeout_s" to p.int("timeout_ms") / MILLIS_PER_SECOND)))
+    },
+    marker = { "Config change: checkout-api connection pool settings tuned by the platform team" },
+    decoy = 0.5,
+    ticket = { p ->
+      "At ${p.startedAt}, a small share of /checkout requests fail with 503, in short bursts. " +
+        "The requests that succeed are about as fast as before, and Postgres is idle."
+    },
+    hints = listOf(
+      "Which layer creates the 503s? Compare the LB, api and the downstreams.",
+      "USE for the pool, errors first: look at Pool timeouts/s next to in use and max.",
+      "The pool is not full on average. How long does a request wait for a connection before it gives up?"
+    ),
+    answer = Answer(nature = setOf("arch"), location = setOf("api_db", "api"), signal = setOf("pool"), cause = "pool_timeout_short", partial = setOf("pool_exhausted")),
+    steps = listOf(
+      "Problem statement: some 503s in bursts on /checkout, normal latency for the rest, Postgres idle, a config change on the pool.",
+      "RED at the LB and api: api itself returns the 503s, so the LB is not the source.",
+      "Postgres exec time is flat and pricing is healthy, so look inside api at its software resources.",
+      "USE for the pool, errors first: Pool timeouts/s is above 0 while in use averages well under the max.",
+      "Read the config next to the metric: the pool is 2 and the acquire timeout is a few tens of ms, far below the 50 ms a checkout holds a connection.",
+      "The cause: the acquire timeout is too short, so a short burst that fills the pool turns into errors instead of a small wait."
+    ),
+    explain = { p ->
+      val busy = BASE_CONNECTIONS_IN_USE / p.int("pool_max") * PERCENT
+      "The platform team set the pool to ${p.int("pool_max")} connections and the acquire timeout to ${p.int("timeout_ms")} ms. " +
+        "A checkout holds a connection about $BASE_CHECKOUT_HOLD_MS ms, so about ${p.fixed(BASE_CONNECTIONS_IN_USE, 1)} connections are in use on average: " +
+        "${busy.roundToInt()}% of the pool. That is fine on average, but arrivals come in bursts. Now and then both connections are busy, " +
+        "and a request that waits longer than ${p.int("timeout_ms")} ms gives up with a 503. Utilization looks harmless; " +
+        "the errors column of USE (pool timeouts) is what shows the problem. Compare with the pool shrink exercise: there requests wait, " +
+        "here they give up. Fix: an acquire timeout well above the hold time, and a pool with headroom."
+    },
+    evidence = listOf(
+      "rate(db_pool_timeouts_total{job=\"api\"}[1m])",
+      "avg_over_time(db_pool_in_use{job=\"api\"}[1m]), db_pool_max{job=\"api\"}",
+      "sum by (route, status) (rate(http_server_requests_total{job=\"api\",status=~\"5..\"}[1m]))"
+    ),
+    doc = "USE method in detail > Software resources (connection pool errors); USE method in detail > Reading the numbers (errors above 0)"
+  )
+
+  private fun timeoutRetry() = Scenario(
+    id = "timeout_retry",
+    title = "Client timeouts turn into retries",
+    level = 3,
+    topics = listOf("red", "layers"),
+    params = { random, _ ->
+      mapOf("timeout" to random.nextInt(250, 301), "extra" to random.nextInt(400, 501), "frac" to round2(random.nextDouble(0.3, 0.4)), "retries" to 2)
+    },
+    faults = { p ->
+      FaultSpec(
+        services = mapOf(
+          "loadgen" to mapOf("checkout_timeout_ms" to p.int("timeout"), "retries" to p.int("retries")),
+          "pricing" to mapOf("extra_latency_ms" to p.int("extra"), "slow_fraction" to p.double("frac"))
+        )
+      )
+    },
+    decoy = 0.5,
+    ticket = { p ->
+      "At ${p.startedAt}, /checkout traffic at api is up by a third or more, but the business sees no more orders than usual. " +
+        "The app shows some timeout errors."
+    },
+    hints = listOf(
+      "Compare the user requests at the client with the attempts it sends. Are they still equal?",
+      "Which outcome do the failed attempts have at the client: 5xx or timeout?",
+      "Compare the client's /checkout timeout with the server-side /checkout p99 and with pricing's p99."
+    ),
+    answer = Answer(
+      nature = setOf("amplified"),
+      location = setOf("client", "pricing"),
+      signal = setOf("attempts_vs_requests", "client_errors_vs_server"),
+      cause = "retry_storm",
+      partial = setOf("client_timeout", "downstream_slow")
+    ),
+    steps = listOf(
+      "Problem statement: /checkout traffic is up by a third or more with no more orders, and the app shows timeouts.",
+      "Rate up but orders flat: is this real demand? Compare user requests with attempts at the client: attempts are higher.",
+      "The failed attempts at the client are timeouts, not 5xx. The server records 200s for them.",
+      "Compare the server-side /checkout p99 with the client's timeout: part of the checkouts take longer than the timeout.",
+      "Find the slow part: api's calls to pricing and pricing's own p99 rose. Part of the /price calls are slow.",
+      "The cause: slow calls make timeouts, timeouts make immediate retries, retries add load. A retry storm fed by timeouts."
+    ),
+    explain = { p ->
+      val f = p.double("frac")
+      val attempts = 1 + f + f * f
+      "About ${p.percent("frac")} of /price calls are about ${p.int("extra")} ms slower, so those checkouts take longer than the client's " +
+        "${p.int("timeout")} ms timeout. The client gives up and retries right away, up to ${p.int("retries")} times, and each retry has the same chance " +
+        "to be slow. One user checkout becomes about ${p.fixed(attempts, 2)} attempts on average, so the rate at the LB and at api rises while the real demand " +
+        "is flat. The server finishes the abandoned attempts and records 200s, so api sees more traffic, not errors. This is the loop in the causal chain: " +
+        "slowness makes timeouts, timeouts make retries, retries make load. Fix: backoff and a retry budget, a timeout set from the server's real p99, " +
+        "and the slow path in pricing."
+    },
+    evidence = listOf(
+      "sum(rate(client_attempts_total{endpoint=\"checkout\"}[1m])) / sum(rate(client_requests_total{endpoint=\"checkout\"}[1m]))",
+      "sum by (outcome) (rate(client_attempts_total{endpoint=\"checkout\"}[1m]))",
+      "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\",route=\"/checkout\"}[1m])))",
+      "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"pricing\",route=\"/price\"}[1m])))"
+    ),
+    doc = "Linking RED and USE > Causal chain; RED at many layers > Why Rate differs (retry)"
+  )
+
+  private fun surgeQueue() = Scenario(
+    id = "surge_queue",
+    title = "A real surge queues before the app",
+    level = 2,
+    topics = listOf("load", "layers", "little"),
+    params = { random, _ -> mapOf("multiplier" to round2(random.nextDouble(2.5, 3.0)), "limit" to 4) },
+    faults = { p ->
+      FaultSpec(services = mapOf("loadgen" to mapOf("surge_multiplier" to p.double("multiplier")), "api" to mapOf("admission_limit" to p.int("limit"))))
+    },
+    decoy = 0.5,
+    ticket = { p ->
+      "At ${p.startedAt}, users say the app is slow. A TV ad went out a few minutes ago. The api team says their APM p99 is normal. " +
+        "Last week they set api's concurrency limit to ${p.int("limit")} to protect the DB, and it has been fine since."
+    },
+    hints = listOf(
+      "RED at the LB: is the rate the same as 10 minutes ago? Split it by tenant.",
+      "Put the LB p99 and the api p99 on one chart. Where is the gap?",
+      "Little's Law: requests in the handler at the new rate, against the concurrency limit."
+    ),
+    answer = Answer(
+      nature = setOf("load"),
+      location = setOf("client", "lb"),
+      signal = setOf("client_rate_by_tenant", "lb_vs_api_duration"),
+      cause = "global_load",
+      partial = setOf("queue_before_app")
+    ),
+    steps = listOf(
+      "Problem statement: users say slow, a TV ad just went out, APM p99 is normal.",
+      "RED at the LB: the rate is up about 3 times. Split by tenant: every tenant grew, so it is real demand.",
+      "Compare the LB p99 with the api p99: the LB is much slower. The time is spent before the handler starts.",
+      "USE for the admission gate: waiting is above 0, and the admission wait p99 matches the gap.",
+      "Little's Law: about 1 request in the handler at normal load becomes about 3 at the new rate, close to the limit of 4. Bursts queue.",
+      "The cause: real load across every tenant. The limit is where it queues, which is why APM cannot see it."
+    ),
+    explain = { p ->
+      val inflight = BASE_IN_HANDLER * p.double("multiplier")
+      "Every tenant sends about ${p.fixed(p.double("multiplier"), 1)} times its normal rate, so this is real demand. api lets only ${p.int("limit")} requests " +
+        "into the handler at once. At the normal rate that was enough: about ${p.fixed(BASE_IN_HANDLER, 1)} request is in the handler on average. " +
+        "At the new rate Little's Law gives about ${p.fixed(inflight, 1)} in flight against a limit of ${p.int("limit")}, so bursts queue in front of the handler. " +
+        "APM starts its timer when the handler starts, so api's p99 stays flat while the LB sees the queue. Compare with the queue exercise where " +
+        "the rate is flat: there the limit changed; here the load changed and met an old limit. Fix: raise the limit with the pool and the DB in mind, " +
+        "or scale out api."
+    },
+    evidence = listOf(
+      "sum by (tenant) (rate(client_requests_total[1m]))",
+      "histogram_quantile(0.99, sum by (le) (rate(envoy_http_downstream_rq_time_bucket{envoy_http_conn_manager_prefix=\"ingress\"}[1m]))) / 1000",
+      "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\"}[1m])))",
+      "histogram_quantile(0.99, sum by (le) (rate(app_admission_wait_seconds_bucket{job=\"api\"}[1m])))"
+    ),
+    doc = "RED at many layers > Why Duration differs; Combining with other methods > Workload characterization"
+  )
+
+  private fun lbFlapping() = Scenario(
+    id = "lb_flapping",
+    title = "The LB drops a few requests now and then",
+    level = 2,
+    topics = listOf("layers", "red"),
+    params = { random, _ -> mapOf("prob" to round2(random.nextDouble(0.03, 0.05))) },
+    faults = { p -> FaultSpec(services = mapOf("api" to mapOf("health_fail_prob" to p.double("prob")))) },
+    decoy = 0.5,
+    ticket = { p ->
+      "At ${p.startedAt}, monitoring shows a small share of 503s that come and go every few seconds. " +
+        "The api team sees no errors in APM and asks whether it is worth a look."
+    },
+    hints = listOf(
+      "Compare the 5xx the LB returns with the 5xx api records itself.",
+      "Look at Envoy's healthy backends over time. Does the count drop?",
+      "The ratio is small. How many failed requests is that per hour?"
+    ),
+    answer = Answer(nature = setOf("arch"), location = setOf("lb", "api"), signal = setOf("lb_vs_api_errors"), cause = "lb_no_healthy"),
+    steps = listOf(
+      "Problem statement: a few % of 503s in short bursts, APM shows no errors.",
+      "Compare 5xx at the LB with 5xx at api: only the LB has them.",
+      "Envoy's healthy backends drop to 0 for about 2 s at a time, because api's /health fails now and then.",
+      "With panic mode off, Envoy answers 503 itself while no backend is healthy, so api never sees those requests.",
+      "Ratio and count: a few % is small, but at 50 rps it is thousands of failed requests per day. Errors above 0 deserve a look.",
+      "The cause: the LB produces the 503s because its only backend flaps between healthy and unhealthy."
+    ),
+    explain = { p ->
+      "api's /health fails with probability ${p.percent("prob")}. Envoy checks every 2 s and treats a 503 from the health check as an immediate failure. " +
+        "Each time, Envoy answers 503 itself until the next good check 2 s later, so users see short bursts of 503 that api never records. " +
+        "The ratio is small, but it adds up to many failed requests per hour. Same mechanism as the LB 503 exercise, with a much smaller and noisier " +
+        "signal: watch both the ratio and the count."
+    },
+    evidence = listOf(
+      "sum(rate(envoy_http_downstream_rq_xx{envoy_response_code_class=\"5\",envoy_http_conn_manager_prefix=\"ingress\"}[1m]))",
+      "sum(rate(http_server_requests_total{job=\"api\",status=~\"5..\"}[1m])) or vector(0)",
+      "envoy_cluster_membership_healthy{envoy_cluster_name=\"api\"}",
+      "increase(envoy_http_downstream_rq_xx{envoy_response_code_class=\"5\",envoy_http_conn_manager_prefix=\"ingress\"}[1h])"
+    ),
+    doc = "RED at many layers > Why Errors differ; RED method in detail > Errors (ratio and count)"
+  )
+
+  private fun tailLatency() = Scenario(
+    id = "tail_latency",
+    title = "Only the tail is slow",
+    level = 2,
+    topics = listOf("red", "layers"),
+    params = { random, _ -> mapOf("frac" to random.nextInt(15, 26) / THOUSANDTHS, "extra" to random.nextInt(800, 1201)) },
+    faults = { p -> FaultSpec(services = mapOf("pricing" to mapOf("extra_latency_ms" to p.int("extra"), "slow_fraction" to p.double("frac")))) },
+    marker = { "Deploy pricing v3.7: rules cache refreshed in the request path" },
+    decoy = 0.5,
+    ticket = { p -> "At ${p.startedAt}, the /checkout p99 alert fires. The mean latency panel is flat, and most users say the app is fine." },
+    hints = listOf(
+      "Read p50 and p99 of /checkout side by side. Which one moved?",
+      "Which downstream call has the same tail? Compare api's calls to pricing with the DB.",
+      "Compare api's view of pricing with pricing's own server-side p99 and p50."
+    ),
+    answer = Answer(nature = setOf("arch"), location = setOf("pricing"), signal = setOf("api_vs_downstream"), cause = "downstream_slow"),
+    steps = listOf(
+      "Problem statement: a p99 alert on /checkout, the mean is flat, most users are fine.",
+      "RED with the distribution: p99 jumped by about a second, p50 did not move. A small share of requests is very slow.",
+      "Find the span with the same tail: api's calls to pricing have it; the DB spans do not.",
+      "pricing's own p99 rose the same amount and its p50 is flat, so the slow part is inside pricing.",
+      "The cause: pricing is slow for about 2% of calls. The mean hides it; the percentiles show it."
+    ),
+    explain = { p ->
+      val meanShift = p.double("frac") * p.int("extra")
+      "About ${p.fixed(p.double("frac") * PERCENT, 1)}% of pricing's /price calls take about ${p.int("extra")} ms longer. That is more than 1% of the requests, " +
+        "so p99 of /checkout moves by about that much while p50 stays where it was. The mean moves by only about ${p.fixed(meanShift, 0)} ms. " +
+        "Percentiles show what the mean hides. pricing's own server-side p99 rose by the same amount, so the time is spent inside pricing. " +
+        "A request that called pricing many times in parallel would hit this tail most of the time: that is tail amplification."
+    },
+    evidence = listOf(
+      "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\",route=\"/checkout\"}[1m])))",
+      "histogram_quantile(0.5, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\",route=\"/checkout\"}[1m])))",
+      "histogram_quantile(0.99, sum by (le, route) (rate(http_server_duration_seconds_bucket{job=\"pricing\"}[1m])))"
+    ),
+    doc = "RED method in detail > Duration; RED at many layers > Tail amplification"
+  )
+
+  private fun slowLeak() = Scenario(
+    id = "slow_leak",
+    title = "Memory climbs slowly after a deploy",
+    level = 2,
+    topics = listOf("use", "container"),
+    params = { random, _ -> mapOf("leak" to random.nextInt(2, 4)) },
+    faults = { p -> FaultSpec(services = mapOf("api" to mapOf("leak_kb" to p.int("leak")))) },
+    marker = { "Deploy checkout-api v2.35: product page keeps rendered fragments in memory" },
+    decoy = 0.5,
+    ticket = { p -> "Since ${p.startedAt}, api's memory has been climbing on the container panel. Nothing fails yet. Is this a problem, and if so, how long do we have?" },
+    hints = listOf(
+      "Container memory against its limit: is it a step, a sawtooth, or a straight line?",
+      "How many MB per minute does it grow? Read two points 5 minutes apart.",
+      "Time to the limit = (limit − used) / growth per minute."
+    ),
+    answer = Answer(nature = setOf("arch"), location = setOf("container", "api"), signal = setOf("memory_restarts"), cause = "memory_leak", partial = setOf("oom")),
+    steps = listOf(
+      "Problem statement: memory climbs since a deploy, no errors yet, the question is how long until it breaks.",
+      "USE for the container: memory against the 512 MB limit rises in a straight line and never drops. No restarts yet.",
+      "RED is clean: no errors, normal latency. The problem is in the future, not now.",
+      "Measure the growth: two points a few minutes apart give MB per minute.",
+      "Predict: (limit − used) / growth gives the minutes until the OOM kill.",
+      "The cause: a memory leak from the deploy. Saturation that predicts a certain incident is worth acting on before users see it."
+    ),
+    explain = { p ->
+      val perMinute = p.int("leak") * BASE_RPS * SECONDS_PER_MINUTE / KB_PER_MB
+      "Each request keeps about ${p.int("leak")} KB for ever. At about $BASE_RPS requests/s that is about ${p.fixed(perMinute, 1)} MB per minute. " +
+        "Memory against the 512 MB limit climbs in a straight line with no drop, which is how a leak looks before it becomes an outage. " +
+        "Time to the OOM kill = (limit − used) / growth: with about 200 MB left, about ${(LEAK_HEADROOM_MB / perMinute).roundToInt()} minutes. " +
+        "This is saturation that predicts a certain incident, the kind worth a page even though no user is affected yet. " +
+        "Fix: roll back v2.35, then find what keeps the memory."
+    },
+    evidence = listOf(
+      "cgroup_memory_usage_bytes{job=\"api\"} / cgroup_memory_limit_bytes{job=\"api\"}",
+      "deriv(cgroup_memory_usage_bytes{job=\"api\"}[5m]) * 60 / 1e6",
+      "(cgroup_memory_limit_bytes{job=\"api\"} - cgroup_memory_usage_bytes{job=\"api\"}) / deriv(cgroup_memory_usage_bytes{job=\"api\"}[5m]) / 60"
+    ),
+    doc = "Applying on Datadog > Monitors (saturation that predicts an incident); USE at many layers > Layers and their metrics (container, cgroup)"
+  )
+
+  private fun twoFaults() = Scenario(
+    id = "two_faults",
+    title = "Two changes at once, one of them harmless",
+    level = 3,
+    topics = listOf("layers", "host"),
+    params = { random, context ->
+      mapOf("burners" to maxOf(MIN_HALF_BURNERS, (context.cpuCount ?: DEFAULT_CPU_COUNT) / 2), "extra" to random.nextInt(250, 351))
+    },
+    faults = { p ->
+      FaultSpec(services = mapOf("noisy" to mapOf("burners" to p.int("burners")), "pricing" to mapOf("price_base_ms" to PRICE_BASE_MS + p.int("extra"))))
+    },
+    marker = { "Batch job: nightly report started on the shared host" },
+    decoy = 0.3,
+    ticket = { p ->
+      "At ${p.startedAt}, /checkout p99 is several times higher and /products is normal. " +
+        "Someone already found the host CPU at about half and wants to stop the batch job."
+    },
+    hints = listOf(
+      "Host CPU is busy, but is anyone waiting for a CPU? Look at load against the CPU count, PSI and throttling.",
+      "Only /checkout is slow. Which downstream does only /checkout call?",
+      "Compare api's calls to pricing with pricing's own p99."
+    ),
+    answer = Answer(nature = setOf("arch"), location = setOf("pricing"), signal = setOf("api_vs_downstream"), cause = "downstream_slow"),
+    steps = listOf(
+      "Problem statement: /checkout slow, /products normal, a batch job started, and a teammate already blames it.",
+      "USE for the host, saturation before utilization: CPU is about half busy, but load is under the CPU count, PSI is low and nothing is throttled.",
+      "Busy is not saturated, and a host problem would slow /products too. Keep going instead of stopping at the first finding.",
+      "RED by route: only /checkout is slow. Compare its downstream spans: the pricing call rose by the same amount.",
+      "pricing's own p99 and p50 both rose, so pricing got slower on every call.",
+      "The cause: pricing is slow. The batch job is real but harmless; stopping it would change nothing for users."
+    ),
+    explain = { p ->
+      "Two things changed. A batch job keeps about half of the host's CPU busy (${p.int("burners")} threads), and pricing's /price got about " +
+        "${p.int("extra")} ms slower on every call. Only the second one hurts users. The host is busy but not saturated: load stays under the CPU count, " +
+        "CPU PSI is low and no service is throttled. /checkout rose by exactly the pricing span and /products, which never calls pricing, did not move. " +
+        "The first thing you find may be a problem, but not the problem. Stopping the batch job would have been the streetlight anti-method."
+    },
+    evidence = listOf(
+      "node_load1 / scalar(count(node_cpu_seconds_total{mode=\"idle\"}))",
+      "histogram_quantile(0.99, sum by (le, route) (rate(http_client_duration_seconds_bucket{job=\"api\"}[1m])))",
+      "histogram_quantile(0.99, sum by (le, route) (rate(http_server_duration_seconds_bucket{job=\"pricing\"}[1m])))",
+      "histogram_quantile(0.99, sum by (le, route) (rate(http_server_duration_seconds_bucket{job=\"api\"}[1m])))"
+    ),
+    doc = "USE method in detail > Order of checks (the first thing you find); Combining with other methods > Anti-methods"
+  )
+
+  private fun lagAfterFix() = Scenario(
+    id = "lag_after_fix",
+    title = "Lag stays high after the fix",
+    level = 3,
+    topics = listOf("async", "little"),
+    params = { _, _ -> mapOf("slow_ms" to SLOW_WORKER_MS, "extra" to DRAIN_BACKFILL_RPS, "fix_after" to FIX_AFTER_SECONDS) },
+    faults = { p ->
+      val worker = if (p.elapsedSeconds < p.int("fix_after")) mapOf("worker" to mapOf<String, Any?>("process_ms" to p.int("slow_ms"))) else emptyMap()
+      FaultSpec(services = worker + ("api" to mapOf("extra_events_rps" to p.int("extra"))))
+    },
+    marker = { "Deploy order-worker v1.9: fraud check added to each order" },
+    decoy = 0.3,
+    ticket = { p ->
+      "At ${p.startedAt}, orders started to show up late. The worker team found a bug in order-worker v1.9 and rolls it back about " +
+        "${p.int("fix_after") / SECONDS_PER_MINUTE.toDouble()} minutes after this ticket. Wait for the rollback, then answer: is the rollback broken, " +
+        "and when will orders be on time again?"
+    },
+    hints = listOf(
+      "After the rollback, did processing time per message go back to normal?",
+      "Compare the produce rate with the consume rate after the rollback. How big is the gap?",
+      "Drain time = lag / (consume rate − produce rate)."
+    ),
+    answer = Answer(nature = setOf("load", "arch"), location = setOf("worker"), signal = setOf("consumer_lag"), cause = "slow_drain", partial = setOf("consumer_backlog", "consumer_slow")),
+    steps = listOf(
+      "Problem statement: orders late since v1.9, a rollback promised a few minutes after the ticket.",
+      "Before the rollback: processing time per message is high and lag grows on every partition. That part is the bug.",
+      "After the rollback: processing time is back to normal, so the rollback worked.",
+      "But lag falls slowly. Compare produce with consume: a backfill job keeps the produce rate close to the worker's capacity.",
+      "Drain time = lag / (consume − produce): a large backlog over a small gap takes many minutes.",
+      "The cause: the fix worked, but the headroom is too small to drain the backlog quickly. Pause the backfill or add consumers."
+    ),
+    explain = { p ->
+      val produce = CHECKOUTS_PER_SECOND + p.int("extra")
+      val slowCapacity = PARTITIONS * MILLIS_PER_SECOND / p.int("slow_ms")
+      val backlog = (produce - slowCapacity) * p.int("fix_after")
+      val drain = MEASURED_WORKER_CAPACITY - produce
+      "Until the rollback, v1.9 spent ${p.int("slow_ms")} ms per message, so the worker handled about ${p.fixed(slowCapacity, 0)} msg/s while about " +
+        "$produce msg/s came in (orders plus a backfill job): the lag grew by about ${p.fixed(produce - slowCapacity, 0)} msg/s. After the rollback the worker " +
+        "is back to about $MEASURED_WORKER_CAPACITY msg/s, but the backfill still sends ${p.int("extra")}/s, so the backlog drains at only about $drain msg/s. " +
+        "A backlog of about ${p.fixed(backlog, 0)} messages takes about ${p.fixed(backlog / drain / SECONDS_PER_MINUTE, 0)} minutes to go. " +
+        "The rollback is not broken: processing time is back to normal. The lag falls in a slow straight line because the headroom is small. " +
+        "Fix: pause the backfill until the lag is gone, or add partitions and consumers."
+    },
+    evidence = listOf(
+      "histogram_quantile(0.99, sum by (le) (rate(kafka_processing_seconds_bucket[1m])))",
+      "sum(rate(kafka_produced_total[1m])) and sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
+      "sum(kafka_consumer_lag_messages)",
+      "sum by (source) (rate(kafka_produced_total[1m]))"
+    ),
+    doc = "RED at many layers > The async layer; Linking RED and USE > Little's Law"
+  )
+
   private fun round2(value: Double): Double = (value * HUNDREDTHS).roundToInt() / HUNDREDTHS
 
   private const val HUNDREDTHS = 100.0
+  private const val THOUSANDTHS = 1_000.0
+  private const val SECONDS_PER_MINUTE = 60
+  private const val KB_PER_MB = 1_024.0
+  private const val LEAK_HEADROOM_MB = 200.0
+  private const val MIN_HALF_BURNERS = 2
+  private const val SLOW_WORKER_MS = 100
+  private const val DRAIN_BACKFILL_RPS = 75
+
+  // Measured: 25 ms of work plus about 1.5 ms of overhead per message.
+  private const val MEASURED_WORKER_CAPACITY = 113
+  private const val FIX_AFTER_SECONDS = 150
+  private const val BASE_IN_HANDLER = 1.0
   private const val PERCENT = 100
   private const val MILLIS_PER_SECOND = 1_000.0
   private const val DEFAULT_PRODUCT_DETAIL_SECONDS = 0.012

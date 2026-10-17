@@ -21,9 +21,9 @@ class ScenarioCatalogTest {
   private val causes = Answers.CAUSES.map { it.first }.toSet()
 
   @Test
-  fun `twenty-four scenarios with unique ids and valid answer keys`() {
-    assertThat(ScenarioCatalog.all).hasSize(24)
-    assertThat(ScenarioCatalog.all.map { it.id }.toSet()).hasSize(24)
+  fun `thirty-two scenarios with unique ids and valid answer keys`() {
+    assertThat(ScenarioCatalog.all).hasSize(32)
+    assertThat(ScenarioCatalog.all.map { it.id }.toSet()).hasSize(32)
     for (scenario in ScenarioCatalog.all) {
       assertThat(scenario.level).isBetween(1, 3)
       assertThat(scenario.answer.nature.all { it in natures }).isTrue()
@@ -52,6 +52,9 @@ class ScenarioCatalogTest {
   fun `a cause is no longer a one-to-one key for a scenario`() {
     val scenariosPerCause = ScenarioCatalog.all.groupingBy { it.answer.cause }.eachCount()
     assertThat(scenariosPerCause.getValue("pool_exhausted")).isEqualTo(2)
+    assertThat(scenariosPerCause.getValue("downstream_slow")).isEqualTo(3)
+    assertThat(scenariosPerCause.getValue("lb_no_healthy")).isEqualTo(2)
+    assertThat(scenariosPerCause.getValue("global_load")).isEqualTo(2)
     assertThat(scenariosPerCause.getValue("single_thread_cpu")).isEqualTo(2)
     assertThat(scenariosPerCause.getValue("client_timeout")).isEqualTo(2)
   }

@@ -15,7 +15,8 @@ data class ExerciseContext(
 /** The random parameters of one run, plus the ticket time, with typed readers for the texts. */
 class Params(
   val values: Map<String, Any?>,
-  val startedAt: String
+  val startedAt: String,
+  val elapsedSeconds: Double = 0.0
 ) {
   fun int(key: String): Int = (values.getValue(key) as Number).toInt()
 

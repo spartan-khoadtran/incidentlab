@@ -60,10 +60,12 @@ object Answers {
       "single_thread_cpu" to "One core saturated: CPU-bound code on a single-threaded event loop",
       "n_plus_one" to "N+1 queries: each request sends far too many queries",
       "cache_miss" to "Cache misses rose, load shifted to the DB",
-      "gc_pause" to "Long GC pauses stop the JVM"
+      "gc_pause" to "Long GC pauses stop the JVM",
+      "memory_leak" to "Memory grows without limit (a leak) and will hit the limit"
     ),
     "DB client and Postgres" to listOf(
       "pool_exhausted" to "Connection pool exhausted: hold time too long, or the pool too small",
+      "pool_timeout_short" to "The pool's acquire timeout is too short: requests give up in short bursts",
       "db_lock" to "Lock contention in Postgres",
       "missing_index" to "A missing index makes one query scan the whole table",
       "disk_full" to "Disk full or disk I/O saturated on the DB host"
@@ -76,7 +78,8 @@ object Answers {
     "Async" to listOf(
       "consumer_backlog" to "The producer sends more than the consumer can handle, backlog grows",
       "consumer_slow" to "The consumer got slower per message, throughput dropped",
-      "poison_message" to "A poison message blocks one partition"
+      "poison_message" to "A poison message blocks one partition",
+      "slow_drain" to "The fix worked, but the backlog drains slowly: too little headroom"
     ),
     "Container and host" to listOf(
       "cpu_throttle" to "CPU throttling from the container's CPU limit",

@@ -12,7 +12,7 @@ data class Desired(
 
 object DesiredState {
 
-  fun of(state: LabState, catalog: ScenarioCatalog = ScenarioCatalog): Desired {
+  fun of(state: LabState, catalog: ScenarioCatalog = ScenarioCatalog, now: Double = System.currentTimeMillis() / MILLIS_PER_SECOND): Desired {
     val faults = Services.ENDPOINTS.keys.associateWith { mutableMapOf<String, Any?>() }.toMutableMap()
     for ((service, overrides) in state.base) {
       faults.getOrPut(service) { mutableMapOf() }.putAll(overrides)
@@ -20,7 +20,7 @@ object DesiredState {
     val docker = Services.BASE_DOCKER.mapValues { it.value.toMutableMap() }.toMutableMap()
     val active = state.active
     val scenario = active?.let { catalog.byId[it.id] }
-    val spec = if (active != null && scenario != null) runCatching { scenario.faults(Params(active.params, startedAt = "")) }.getOrNull() else null
+    val spec = if (active != null && scenario != null) runCatching { scenario.faults(Params(active.params, startedAt = "", elapsedSeconds = now - active.started)) }.getOrNull() else null
     if (spec != null) {
       for ((service, overrides) in spec.services) {
         faults.getOrPut(service) { mutableMapOf() }.putAll(overrides)
@@ -31,4 +31,6 @@ object DesiredState {
     }
     return Desired(faults = faults, docker = docker)
   }
+
+  private const val MILLIS_PER_SECOND = 1_000.0
 }
