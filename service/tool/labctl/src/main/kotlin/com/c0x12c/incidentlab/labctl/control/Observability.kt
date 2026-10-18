@@ -1,6 +1,5 @@
 package com.c0x12c.incidentlab.labctl.control
 
-import com.c0x12c.incidentlab.labctl.Terminal
 import java.net.URLEncoder
 import java.util.Locale
 
@@ -79,13 +78,14 @@ class HttpLabProbe(private val http: JsonHttp) : LabProbe {
   }
 }
 
-class GrafanaAnnotator(private val http: JsonHttp, private val terminal: Terminal) : Annotator {
+/** Writes annotations to Grafana. A failure is reported, not thrown: the CLI prints it, the daemon logs it. */
+class GrafanaAnnotator(private val http: JsonHttp, private val report: (String) -> Unit) : Annotator {
 
   override fun annotate(text: String, tags: List<String>, atSeconds: Double) {
     try {
       http.post("$GRAFANA/api/annotations", mapOf("time" to (atSeconds * MILLIS_PER_SECOND).toLong(), "tags" to listOf("lab") + tags, "text" to text))
     } catch (e: Exception) {
-      terminal.out("(could not write the annotation to Grafana: ${e.message})")
+      report("(could not write the annotation to Grafana: ${e.message})")
     }
   }
 
