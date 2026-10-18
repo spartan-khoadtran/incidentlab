@@ -165,6 +165,7 @@ function RampRunning({ view, onDone }: { view: ActiveView; onDone: () => void })
   const [knee, setKnee] = useState("");
   const [max, setMax] = useState("");
   const [resource, setResource] = useState("");
+  const [note, setNote] = useState("");
   const [result, setResult] = useState<RampResult | null>(isRampResult(view.result) ? view.result : null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -230,7 +231,7 @@ function RampRunning({ view, onDone }: { view: ActiveView; onDone: () => void })
             setError(new Error("Give two numbers in rps (0 for no knee) and pick a resource."));
             return;
           }
-          void run(() => api.rampAnswer({ knee_rps: k, max_rps: m, resource }));
+          void run(() => api.rampAnswer({ knee_rps: k, max_rps: m, resource, ...(note.trim() ? { note: note.trim() } : {}) }));
         }}
       >
         <label className="field">
@@ -251,6 +252,10 @@ function RampRunning({ view, onDone }: { view: ActiveView; onDone: () => void })
               </option>
             ))}
           </select>
+        </label>
+        <label className="field ramp-note">
+          <span>One line about how you read the knee (optional, kept in your history)</span>
+          <input value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="The panel or the number that showed it" />
         </label>
         <button type="submit" className="btn btn-primary" disabled={busy}>
           {busy ? "Reading Prometheus..." : "Submit"}

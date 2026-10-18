@@ -49,6 +49,7 @@ export class MockLab {
   lastResult: unknown = null;
   plan = { steps: [50, 75, 100, 125, 150, 200, 250, 300], every: 60, total_seconds: 480 };
   endsAt = 0;
+  rampNote: string | null = null;
 
   view() {
     const a = this.active!;
@@ -164,6 +165,7 @@ export class MockLab {
       case route === "POST /ramp/answer":
       case route === "POST /ramp/reveal": {
         const answered = route.endsWith("answer");
+        if (answered) this.rampNote = typeof body.note === "string" ? body.note : null;
         const body2 = {
           n: this.active?.n ?? 0,
           title: "Capacity ramp",
