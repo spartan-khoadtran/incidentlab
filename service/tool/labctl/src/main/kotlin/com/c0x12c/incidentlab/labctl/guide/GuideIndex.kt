@@ -43,7 +43,12 @@ object GuideIndex {
         "Reading monitoring data",
         "PromQL traps",
         "Metrics that lie"
-      ).associateWith { "monitoring.md" }
+      ).associateWith { "monitoring.md" } +
+      listOf(
+        "CPU profiling",
+        "Off-CPU profiling",
+        "Profiles in this lab"
+      ).associateWith { "profiling.md" }
 
   /** The pointer with its file in front of each part, or one file in front of the whole pointer when every part shares it. */
   fun where(doc: String): String {

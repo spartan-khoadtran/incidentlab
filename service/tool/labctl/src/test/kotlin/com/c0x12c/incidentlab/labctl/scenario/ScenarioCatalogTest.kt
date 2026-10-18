@@ -17,6 +17,7 @@ import com.c0x12c.incidentlab.labctl.scenario.catalog.DatabaseScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.DownstreamScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.EdgeScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.LoadScenarios
+import com.c0x12c.incidentlab.labctl.scenario.catalog.ProfilingScenarios
 import kotlin.random.Random
 import org.junit.jupiter.api.Test
 
@@ -27,7 +28,8 @@ class ScenarioCatalogTest {
   private val signals = Answers.SIGNALS.map { it.first }.toSet()
   private val causes = Answers.CAUSES.map { it.first }.toSet()
   private val layers = listOf(
-    LoadScenarios.all, EdgeScenarios.all, AppScenarios.all, DatabaseScenarios.all, DownstreamScenarios.all, AsyncScenarios.all, ContainerHostScenarios.all
+    LoadScenarios.all, EdgeScenarios.all, AppScenarios.all, DatabaseScenarios.all, DownstreamScenarios.all, AsyncScenarios.all, ContainerHostScenarios.all,
+    ProfilingScenarios.all
   )
 
   @Test
@@ -155,6 +157,25 @@ class ScenarioCatalogTest {
     val scenario = ScenarioCatalog.byId.getValue("global_surge")
     val loadgen = scenario.faults(Params(scenario.params(Random(3), ExerciseContext()), "14:05")).services.getValue("loadgen")
     assertThat(loadgen.keys).containsOnly("surge_multiplier")
+  }
+
+  @Test
+  fun `the hot code path puts 1_2 to 1_6 cores of render work on api alone`() {
+    val scenario = ScenarioCatalog.byId.getValue("hot_code_path")
+    val random = Random(9)
+    repeat(30) {
+      val params = Params(scenario.params(random, ExerciseContext()), "14:05")
+      val spec = scenario.faults(params)
+      assertThat(spec.services.keys).containsOnly("api")
+      assertThat(spec.services.getValue("api").keys).containsOnly("render_ms")
+      val cores = Baseline.BASE_RPS * params.int("render") / Baseline.MILLIS_PER_SECOND
+      assertThat(cores).isBetween(1.2, 1.6)
+    }
+    val fixed = Params(mapOf("render" to 27), "14:05")
+    assertThat(scenario.explain(fixed).contains("50 × 0.027 s = 1.35 cores")).isTrue()
+    assertThat(scenario.explain(fixed).contains("about 68% busy")).isTrue()
+    assertThat(scenario.answer.partial).containsOnly("single_thread_cpu")
+    assertThat(scenario.cli).isNotEmpty()
   }
 
   @Test

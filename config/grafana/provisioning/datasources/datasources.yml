@@ -44,3 +44,15 @@ datasources:
             query: histogram_quantile(0.99, sum by (le) (rate(kafka_processing_seconds_bucket{$$__tags}[1m]))) or max by (partition) (kafka_consumer_lag_seconds{$$__tags})
           - name: Client p99 by endpoint
             query: histogram_quantile(0.99, sum by (le, endpoint) (rate(client_duration_seconds_bucket{$$__tags}[1m])))
+      tracesToProfiles:
+        datasourceUid: pyroscope
+        profileTypeId: process_cpu:cpu:nanoseconds:cpu:nanoseconds
+        customQuery: false
+        tags:
+          - key: service.name
+            value: service_name
+  - name: Pyroscope
+    uid: pyroscope
+    type: grafana-pyroscope-datasource
+    access: proxy
+    url: http://pyroscope:4040

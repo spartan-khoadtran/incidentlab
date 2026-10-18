@@ -13,6 +13,7 @@ import com.c0x12c.incidentlab.checkout.impl.leak.MemoryLeak
 import com.c0x12c.incidentlab.checkout.impl.manager.DefaultCheckoutManager
 import com.c0x12c.incidentlab.checkout.impl.pricing.PricingClient
 import com.c0x12c.incidentlab.checkout.impl.pricing.PricingTimeoutInterceptor
+import com.c0x12c.incidentlab.checkout.impl.render.ReceiptRenderer
 import com.c0x12c.incidentlab.checkout.impl.resource.ApiGates
 import com.c0x12c.incidentlab.client.PricingApi
 import com.c0x12c.incidentlab.database.DatabaseContext
@@ -48,6 +49,9 @@ class CheckoutFactory {
 
   @Singleton
   fun memoryLeak(registry: MeterRegistry): MemoryLeak = MemoryLeak(registry)
+
+  @Singleton
+  fun receiptRenderer(objectMapper: ObjectMapper): ReceiptRenderer = ReceiptRenderer(objectMapper)
 
   @Singleton
   @Bean(preDestroy = "shutdown")
@@ -120,6 +124,7 @@ class CheckoutFactory {
     events: OrderEvents,
     inventory: InventoryCache,
     leak: MemoryLeak,
+    renderer: ReceiptRenderer,
     runtime: EventLoopRuntime,
     tracer: Tracer,
     objectMapper: ObjectMapper,
@@ -134,6 +139,7 @@ class CheckoutFactory {
     events = events,
     inventory = inventory,
     leak = leak,
+    renderer = renderer,
     runtime = runtime,
     tracer = tracer,
     objectMapper = objectMapper,

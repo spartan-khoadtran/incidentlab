@@ -4,12 +4,16 @@ How the lab is built, how to run it, and the design choices the exercises depend
 
 ## What this is
 
-incidentlab is a local training lab for incident investigation: comparing layers, Little's Law and queueing, tail latency, retry loops, Kafka lag, trend prediction, traces and false leads. Docker Compose runs a small checkout system (Envoy, api, pricing, Postgres, Redis, Kafka, worker) plus Prometheus, Grafana and Tempo. A controller injects a random fault. The learner investigates with the dashboards, submits an answer and gets a score.
+incidentlab is a local training lab for incident investigation: comparing layers, Little's Law and queueing, tail latency, retry loops, Kafka lag, trend prediction, traces and false leads. Docker Compose runs a small checkout system (Envoy, api, pricing, Postgres, Redis, Kafka, worker) plus Prometheus, Grafana, Tempo and Pyroscope. A controller injects a random fault. The learner investigates with the dashboards, submits an answer and gets a score.
 
 Everything in the repo is English: code, comments, log lines, learner-facing text, Makefile help. The study guide the learners read lives under `docs/`:
 - `investigation-guide.md`: RED and USE, the layers, Little's Law, how the lab maps to the guide.
 - `foundations.md`: statistics for latency, the latency time scales, Amdahl, USL and the queue models.
 - `monitoring.md`: counters and gauges, the PromQL traps, the metrics that lie.
+- `methods.md`: methods for the root cause and for working an incident.
+- `benchmarking.md`: benchmarking mistakes, open and closed load models.
+- `cpu.md`: CPU shares and quotas, CPU busy with no work, off-CPU time.
+- `profiling.md`: CPU and off-CPU profiling, and the profiles in this lab.
 
 Scenario and quiz `doc` fields point at their headings as `Section > Subsection (note)`. `GuideIndex` (`labctl/guide`) maps every `## ` section title to its file, so a section title must be unique across the docs files, and `GuideIndex.where(doc)` is what the "Read again in" line prints. `GuidePointersTest` reads every `docs/*.md`, checks the uniqueness, checks that the index matches the files, and checks that every pointer resolves, so a heading rename or a new section must update the pointers and the index too.
 
@@ -40,7 +44,7 @@ Development (Gradle lives in `service/`, needs a JDK on the host; Gradle downloa
 - `docker compose up -d --build api` rebuilds after a code change. All services share one image (`incidentlab-svc:latest`); other services keep the old code until you restart them too.
 - `make logs S=api` (empty `S` means all services), `make ps`.
 
-Host ports: Envoy 8080 (admin 9901), Grafana 3000, Prometheus 9090. Tempo has no host port: traces are read in Grafana. Service ports (api 8000, pricing 8001, worker 8002, loadgen 8003, pgobserver 8004, noisy 8005) are only reachable inside the compose network.
+Host ports: Envoy 8080 (admin 9901), Grafana 3000, Prometheus 9090, Pyroscope 4040. Tempo has no host port: traces are read in Grafana. Service ports (api 8000, pricing 8001, worker 8002, loadgen 8003, pgobserver 8004, noisy 8005) are only reachable inside the compose network.
 
 ## Architecture
 
@@ -61,6 +65,10 @@ loadgen is an open-model Poisson generator per tenant. It makes the root samplin
 ### One image, many launchers
 
 `service/Dockerfile` is a two-stage build: Gradle `installDist` for every deployable, then a JRE image with every distribution under `/run/app/<name>/`. `docker-compose.yml` picks the launcher per service with `SERVICE_LAUNCHER`. A new module needs no Dockerfile change, but it does need a rebuild.
+
+### Continuous profiling
+
+The runtime image downloads the Pyroscope Java agent (`io.pyroscope:agent`, pinned with its sha256 in `service/Dockerfile`) to `/run/pyroscope.jar`. Only api, pricing and worker load it, through `JAVA_TOOL_OPTIONS` and the `PYROSCOPE_*` variables of the `x-profiled` block in `docker-compose.yml`. `PYROSCOPE_APPLICATION_NAME` is the compose service name, so it is the `service_name` label in Pyroscope. The agent runs async-profiler with `itimer` (Docker's default seccomp profile blocks `perf_event_open`), plus allocation (512k) and lock (10ms) sampling, and uploads JFR every 10 s to the `pyroscope` service (grafana/pyroscope 1.x, self-profiling off). Grafana has the Pyroscope datasource (uid `pyroscope`), and Tempo's `tracesToProfiles` points at it with the `process_cpu:cpu:nanoseconds:cpu:nanoseconds` profile type. No span profiling bridge is installed, so Grafana shows no per-span flame graph: a trace links to a profile by service and time range. `docs/profiling.md` is the learner's guide to it.
 
 ### What every Micronaut service gets from shared/module-infra
 
@@ -87,13 +95,13 @@ The daemon owns fault state. A manual PUT to `/admin/faults` is reverted within 
 
 ### Scenario contract (`scenario/catalog/`)
 
-`ScenarioCatalog.all` joins one list per layer: `LoadScenarios`, `EdgeScenarios`, `AppScenarios`, `DatabaseScenarios`, `DownstreamScenarios`, `AsyncScenarios` and `ContainerHostScenarios`, each an `internal object` with `val all`. A new scenario goes into the file of its `answer.location`. `scenario/Baseline.kt` holds the numbers more than one scenario reads (the tenant mix, `BASE_RPS`, the checkout hold time, the worker capacity, the unit constants); a number only one scenario uses stays private in that file.
+`ScenarioCatalog.all` joins one list per layer: `LoadScenarios`, `EdgeScenarios`, `AppScenarios`, `DatabaseScenarios`, `DownstreamScenarios`, `AsyncScenarios`, `ContainerHostScenarios` and `ProfilingScenarios`, each an `internal object` with `val all`. A new scenario goes into the file of its `answer.location`, except a scenario that only a profile can solve, which goes into `ProfilingScenarios`. `scenario/Baseline.kt` holds the numbers more than one scenario reads (the tenant mix, `BASE_RPS`, the checkout hold time, the worker capacity, the unit constants); a number only one scenario uses stays private in that file.
 
-Each `Scenario` has: `id`, `title`, `level` (1 to 3), `topics`; `params(random, context)` (context carries `cpuCount`, `productDetailSeconds`, the measured cost of one uncached product query, used to calibrate load, and `tenants`, loadgen's default rate per tenant); `faults(params) -> FaultSpec(services, docker)` runs every daemon tick and `Params.elapsedSeconds` is the time since the start, so a fault can change mid-exercise (`lag_after_fix` rolls the worker back after `fix_after`); `ticket(params)`, `hints` (3), `explain(params)`; `steps` (the investigation trace printed after the explanation); `answer` (`nature`, `location` and `signal` are sets of accepted keys from `Answers`, `cause` one key, `partial` the causes worth 1 point: a visible consequence one step before the root cause); `evidence` (PromQL), `cli` (shell commands that prove the cause without Grafana; no scenario fills it yet), `doc`; optional `marker(params)` (real Grafana annotation 0 to 3 minutes before start) and `decoy` (probability of a fake annotation between 10 minutes before and 1 minute after start). `Answers.CAUSES` also holds `DISTRACTORS`, causes no scenario has, and some causes belong to two scenarios (`pool_exhausted`, `single_thread_cpu`, `client_timeout`), so the cause list is not a copy of the catalog.
+Each `Scenario` has: `id`, `title`, `level` (1 to 3), `topics`; `params(random, context)` (context carries `cpuCount`, `productDetailSeconds`, the measured cost of one uncached product query, used to calibrate load, and `tenants`, loadgen's default rate per tenant); `faults(params) -> FaultSpec(services, docker)` runs every daemon tick and `Params.elapsedSeconds` is the time since the start, so a fault can change mid-exercise (`lag_after_fix` rolls the worker back after `fix_after`); `ticket(params)`, `hints` (3), `explain(params)`; `steps` (the investigation trace printed after the explanation); `answer` (`nature`, `location` and `signal` are sets of accepted keys from `Answers`, `cause` one key, `partial` the causes worth 1 point: a visible consequence one step before the root cause); `evidence` (PromQL), `cli` (shell commands that prove the cause without Grafana; `Exercises` does not print it yet), `doc`; optional `marker(params)` (real Grafana annotation 0 to 3 minutes before start) and `decoy` (probability of a fake annotation between 10 minutes before and 1 minute after start). `Answers.CAUSES` also holds `DISTRACTORS`, causes no scenario has, and some causes belong to two scenarios (`pool_exhausted`, `single_thread_cpu`, `client_timeout`), so the cause list is not a copy of the catalog.
 
 Scoring: nature 1, location 1, signal 1, cause 2 (partial 1), minus 0.5 per hint; 5 points max. After scoring, `make answer` asks for a one-line note, kept in history with the missed questions. `make new` skips the last 5 played ids. `ScenarioCatalogTest` renders every scenario with a seeded random and checks the fault targets, so run it after any catalog change.
 
-The quiz data sits next to the docs file it drills: `quiz/numbers/InvestigationNumbers.kt` (the generators) and `quiz/concepts/InvestigationConcepts.kt` (the questions) for `docs/investigation-guide.md`, `FoundationsNumbers` and `FoundationsConcepts` for `docs/foundations.md`, `MonitoringNumbers` and `MonitoringConcepts` for `docs/monitoring.md`. `quiz/numbers/Formulas.kt` holds the closed forms the foundations drills share (means, Amdahl, USL, the queue waits), so `FormulasTest` can check them with known values. `Numbers.generators` and `Concepts.all` join the per-file lists with `+`, and `GuidePointersTest` checks that the drills cover every subsection.
+The quiz data sits next to the docs file it drills: `quiz/numbers/InvestigationNumbers.kt` (the generators) and `quiz/concepts/InvestigationConcepts.kt` (the questions) for `docs/investigation-guide.md`, `FoundationsNumbers` and `FoundationsConcepts` for `docs/foundations.md`, `MonitoringNumbers` and `MonitoringConcepts` for `docs/monitoring.md`. `quiz/numbers/Formulas.kt` holds the closed forms the foundations drills share (means, Amdahl, USL, the queue waits), so `FormulasTest` can check them with known values. `Numbers.generators` and `Concepts.all` join the per-file lists with `+`, and `GuidePointersTest` checks that the drills cover every subsection. `docs/profiling.md` has `ProfilingNumbers` and `ProfilingConcepts`. Every other docs file follows the same naming.
 
 ### Metric conventions
 
@@ -123,9 +131,10 @@ Changing one of these breaks the scenario named in brackets:
 - `lock_ms` (default 0) makes every checkout take one fair `ReentrantLock` in `InventoryCache` before any DB session or pricing call. Hold times are exponential around `lock_ms`, so with Poisson arrivals the lock is M/M/1 and the explanation's numbers hold. Above 90% utilization the p99 passes loadgen's 3 s timeout. [`app_lock`]
 - `price_fallback` (default false) turns a `DownstreamException` from `/price` into a 200 at the list prices, without pricing's 5% discount. [`unexplained_win`]
 - `fork_rps` (default 0, cap 200) makes noisy start and reap `/usr/bin/true` that many times a second. [`fork_decoy`]
+- `render_ms` (default 0) runs `ReceiptRenderer` on every /products and /checkout: Jackson re-serialises the response until the budget is spent, on the request's own virtual thread, never on the event loop. The budget is thread CPU time on a platform thread and wall time on a virtual thread (the JDK reports no CPU time there, and a computing virtual thread is not preempted). There is no span around it, so a trace shows only self time in api and the CPU profile names the code. Virtual threads share one carrier per core of api's 2-core limit, so the drawn 24 to 30 ms makes 1.2 to 1.5 cores at 50 rps and p99 rises on every route. [`hot_code_path`]
 
 ### Data and state
 
 - `config/postgres/init.sql` runs only when the `pgdata` volume is created. Schema changes need `make down` first.
 - Exercise state and history live in `state.json` on the `labstate` volume. `make down` deletes it. `ActiveExercise` and `HistoryEntry` carry `mode` (`incident` today, the default); a file written before the field existed still loads.
-- Grafana runs as anonymous Admin. Datasources are provisioned (Prometheus uid `prometheus`, Tempo uid `tempo`). Prometheus exemplars link to Tempo by `trace_id`. Dashboards come from `config/grafana/dashboards/`, generated by `tool/dashboards`.
+- Grafana runs as anonymous Admin. Datasources are provisioned (Prometheus uid `prometheus`, Tempo uid `tempo`, Pyroscope uid `pyroscope`). Profiles are read in Explore > Pyroscope or at http://localhost:4040, and the USE board ends with CPU flame graphs of api and pricing. Prometheus exemplars link to Tempo by `trace_id`. Dashboards come from `config/grafana/dashboards/`, generated by `tool/dashboards`.

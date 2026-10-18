@@ -97,6 +97,30 @@ class Board(
     )
   }
 
+  /** A Pyroscope flame graph for one label selector, summed over the dashboard's time range. */
+  fun flamegraph(title: String, labelSelector: String, profileTypeId: String, description: String = "", width: Int = DEFAULT_WIDTH, height: Int = FLAME_HEIGHT) {
+    panels.add(
+      mapOf(
+        "type" to "flamegraph",
+        "title" to title,
+        "description" to description,
+        "id" to id(),
+        "datasource" to PROFILES_DATASOURCE,
+        "gridPos" to place(width, height),
+        "targets" to listOf(
+          mapOf(
+            "datasource" to PROFILES_DATASOURCE,
+            "refId" to "A",
+            "queryType" to "profile",
+            "profileTypeId" to profileTypeId,
+            "labelSelector" to labelSelector,
+            "groupBy" to emptyList<String>()
+          )
+        )
+      )
+    )
+  }
+
   fun text(content: String, width: Int = FULL_WIDTH, height: Int = TEXT_HEIGHT) {
     panels.add(
       mapOf(
@@ -169,6 +193,8 @@ class Board(
     const val STAT_WIDTH = 4
     const val DEFAULT_HEIGHT = 8
     const val TEXT_HEIGHT = 3
+    const val FLAME_HEIGHT = 12
+    const val CPU_PROFILE = "process_cpu:cpu:nanoseconds:cpu:nanoseconds"
     const val STACK_FILL = 10
     const val SCHEMA_VERSION = 39
     const val ANNOTATION_LIMIT = 100
@@ -177,6 +203,7 @@ class Board(
     private const val QUANTILE = "histogram_quantile("
     val DATASOURCE = mapOf("type" to "prometheus", "uid" to "prometheus")
     val GRAFANA_DATASOURCE = mapOf("type" to "grafana", "uid" to "-- Grafana --")
+    val PROFILES_DATASOURCE = mapOf("type" to "grafana-pyroscope-datasource", "uid" to "pyroscope")
 
     /** `[RI]` in an expression becomes Grafana's rate interval. */
     fun rate(expr: String): String = expr.replace("[RI]", "[$RATE_INTERVAL]")

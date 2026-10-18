@@ -62,7 +62,8 @@ make quiz KIND=numbers     # calculations only
   limit. A manual change is reverted on the next tick.
 - **What you look at.** Prometheus scrapes `/metrics` on every service. Every service sends spans to
   Tempo. Grafana has the RED and USE dashboards by layer, and the traces too. Each dot on a latency
-  panel is an exemplar: click it to open one real request that landed in that bucket.
+  panel is an exemplar: click it to open one real request that landed in that bucket. api, pricing and
+  worker also run a profiling agent: Explore > Pyroscope shows which code uses their CPU.
 
 ### One exercise
 
