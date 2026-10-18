@@ -36,6 +36,16 @@ class BoardsTest {
   }
 
   @Test
+  fun `the CPU flame graphs query Pyroscope for the CPU profile of api and pricing`() {
+    val flames = UseBoard.build().panels.filter { it["type"] == "flamegraph" }
+    val targets = flames.map { (it["targets"] as List<*>).single() as Map<*, *> }
+
+    assertThat(flames.all { it["datasource"] == Board.PROFILES_DATASOURCE }).isTrue()
+    assertThat(targets.all { it["profileTypeId"] == "process_cpu:cpu:nanoseconds:cpu:nanoseconds" && it["queryType"] == "profile" }).isTrue()
+    assertThat(targets.map { it["labelSelector"] }).isEqualTo(listOf("{service_name=\"api\"}", "{service_name=\"pricing\"}"))
+  }
+
+  @Test
   fun `latency quantile targets ask for exemplars and rate targets do not`() {
     val targets = RedBoard.build().panels.flatMap { (it["targets"] as? List<*>).orEmpty() }.map { it as Map<*, *> }
     val (quantiles, others) = targets.partition { (it["expr"] as String).startsWith("histogram_quantile(") }

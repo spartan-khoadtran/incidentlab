@@ -104,6 +104,16 @@ object UseBoard {
     b.timeseries("Lag (seconds) by partition", listOf("kafka_consumer_lag_seconds" to "p{{partition}}"), "s")
     b.timeseries("Messages waiting in worker memory", listOf("kafka_partition_queue" to "p{{partition}}"), "short")
     b.timeseries("Processing errors/s", listOf("sum by (source) (rate(kafka_consumed_total{outcome=\"error\"}[RI])) or vector(0)" to "{{source}}"), "short")
+
+    b.row("CPU profiles (Pyroscope)")
+    b.flamegraph(
+      "api: where the CPU goes",
+      "{service_name=\"api\"}",
+      Board.CPU_PROFILE,
+      "Summed over the time range. Width is a share of CPU samples, and the x-axis is not time. Narrow the range to the incident, and compare with a range before it.",
+      width = 12
+    )
+    b.flamegraph("pricing: where the CPU goes", "{service_name=\"pricing\"}", Board.CPU_PROFILE, width = 12)
     return b
   }
 }
