@@ -18,7 +18,7 @@ internal object JvmScenarios {
     syncLogging()
   )
 
-  // api: 512 MB container, heap max 50% = 256 MB. The Serial collector gives the old generation
+  // api: -Xmx256m in a 768 MB container. The Serial collector gives the old generation
   // (Tenured Gen) 2/3 of it, about 170 MB, and the young generation 1/3.
   const val HEAP_MAX_MB = 256
   const val OLD_GEN_MAX_MB = 170

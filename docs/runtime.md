@@ -12,8 +12,9 @@ Every lab service runs the Serial collector (`-XX:+UseSerialGC`). Serial does al
 
 | Setting | Value in the lab | Where it comes from |
 |---|---|---|
-| Heap max | 50% of the container limit: 256 MB for api (512 MB) | `-XX:MaxRAMPercentage=50` |
-| Heap at start | 25% of the limit: 128 MB for api. It grows when needed | `-XX:InitialRAMPercentage=25` |
+| Heap max | 256 MB for api, fixed. pricing and worker get 50% of their container limit | `-Xmx256m` for api, `-XX:MaxRAMPercentage=50` for the others |
+| Heap at start | 128 MB for api. It grows when needed | `-Xms128m` for api, `-XX:InitialRAMPercentage=25` for the others |
+| Memory outside the heap | About 410 MB for api: metaspace, code cache, threads, the profiler agent and JFR. So api's container limit is 768 MB | `mem_limit: 768m` |
 | Young generation | 1/3 of the heap: about 85 MB for api | `NewRatio=2`, the default |
 | Old generation | 2/3 of the heap: about 170 MB for api | Same |
 | Young split | Eden 68 MB, two survivor spaces of about 8.5 MB | `SurvivorRatio=8`, the default |

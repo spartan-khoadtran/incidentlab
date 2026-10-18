@@ -13,7 +13,7 @@ internal object RuntimeConcepts {
       others = listOf(
         "The JVM keeps 86 MB free for metaspace inside the heap",
         "The metric is wrong: Tenured Gen always equals the heap max",
-        "Docker gives the JVM only 170 MB of the 512 MB limit"
+        "Docker gives the JVM only 170 MB of the 768 MB limit"
       ),
       explanation = "Tenured Gen is the old generation. Eden and the two survivor spaces hold the other third.",
       doc = "Garbage collection > Heap and GC in this lab"

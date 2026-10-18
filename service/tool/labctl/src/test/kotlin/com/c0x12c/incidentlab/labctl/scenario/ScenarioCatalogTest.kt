@@ -268,6 +268,27 @@ class ScenarioCatalogTest {
   }
 
   @Test
+  fun `the oom leak fills api's headroom in under a minute and the slow leak takes half an hour or more`() {
+    val headroom = ContainerHostScenarios.LEAK_HEADROOM_MB
+    val oom = ScenarioCatalog.byId.getValue("oom")
+    val slow = ScenarioCatalog.byId.getValue("slow_leak")
+    val random = Random(3)
+    repeat(30) {
+      val fast = oom.params(random, ExerciseContext())["leak"] as Int
+      val secondsToLimit = headroom / (fast * Baseline.BASE_RPS / ContainerHostScenarios.KB_PER_MB)
+      assertThat(secondsToLimit).isBetween(30.0, 50.0)
+      val slowKb = slow.params(random, ExerciseContext())["leak"] as Int
+      val minutesToLimit = headroom / (slowKb * Baseline.BASE_RPS * Baseline.SECONDS_PER_MINUTE / ContainerHostScenarios.KB_PER_MB)
+      assertThat(minutesToLimit).isBetween(30.0, 50.0)
+    }
+    // 150 KB × 50/s = 7.3 MB/s, 280 / 7.3 = 38 s; 2 KB × 50 × 60 = 5.9 MB/min, 280 / 5.9 = 48 min
+    assertThat(oom.explain(Params(mapOf("leak" to 150), "14:05")).contains("about 7.3 MB per second")).isTrue()
+    assertThat(oom.explain(Params(mapOf("leak" to 150), "14:05")).contains("about 38 seconds")).isTrue()
+    assertThat(slow.explain(Params(mapOf("leak" to 2), "14:05")).contains("about 48 minutes")).isTrue()
+    assertThat(oom.explain(Params(mapOf("leak" to 150), "14:05")).contains("768 MB")).isTrue()
+  }
+
+  @Test
   fun `the busy poll sets the worker's poll timeout to zero and nothing else`() {
     val scenario = ScenarioCatalog.byId.getValue("busy_poll")
     val spec = scenario.faults(Params(scenario.params(Random(1), ExerciseContext()), "14:05"))
