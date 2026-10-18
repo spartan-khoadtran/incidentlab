@@ -201,7 +201,7 @@ internal object DiskNumbers {
     return NumericQuestion(
       "Writes arrive at $arriving per second. The volume allows $limit write IOPS. How many writes wait after $seconds seconds?",
       answer, Tolerance.Relative(0.0), "writes",
-      "The backlog grows by $arriving − $limit = ${arriving - limit} writes every second: ${arriving - limit} × $seconds = ${shown(answer)}. The disk itself may still look idle.",
+      "The backlog grows by $arriving − $limit = ${arriving - limit} writes every second: ${arriving - limit} × $seconds = ${shown(answer)}. Completed IOPS stay flat at $limit while the backlog grows.",
       "Postgres and the disk > IOPS limits in the cloud"
     )
   }

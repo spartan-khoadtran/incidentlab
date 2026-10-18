@@ -38,7 +38,7 @@ The utilization law links it to IOPS: U = X × S.
 
 Example: 200 IOPS at 2 ms each keeps the disk busy 200 × 0.002 = 0.4, so 40% of the time. Turned around, S = U / X: a disk 60% busy at 300 IOPS spends 2 ms per I/O.
 
-Read `%util` with care on an SSD. An SSD and a storage array serve many I/Os at the same time. At 100% busy they can still take more work, because 100% only means "at least one I/O was in flight all the time". On a single spinning disk, 100% busy really is full. This is the time-based utilization of the main guide, see [Time-based and capacity-based](investigation-guide.md#time-based-and-capacity-based).
+Read `%util` with care on an SSD. An SSD and a storage array serve many I/Os at the same time. At 100% busy they can still take more work, because 100% only means that at least one I/O was in flight all the time. On a single spinning disk, 100% busy really is full. This is the time-based utilization of the main guide, see [Time-based and capacity-based](investigation-guide.md#time-based-and-capacity-based).
 
 ### Await and the queue
 
@@ -138,7 +138,7 @@ Two signs of a limit: IOPS stay flat at one round number while demand grows, and
 
 ## Disk panels in this lab
 
-Dashboard `02 · USE by layer` has the host disk at the bottom and the Postgres server view above the Kafka row. Read them together: the disk row says how busy the disk is, the Postgres row says who waits for it.
+Dashboard `02 · USE by layer` has the Postgres server view above the Kafka row and the host disk row after the network row. Read them together: the disk row says how busy the disk is, the Postgres row says who waits for it.
 
 ### The host disk row
 
@@ -168,4 +168,4 @@ Row "Postgres (server side)". pgobserver polls the statistics views every 2 seco
 | Checkpoints in the last minute | `increase(pg_checkpoints_total[1m])` by `kind` | `timed` or `requested`. Healthy shows one timed checkpoint every 5 minutes |
 | Checkpoint write and sync | `rate(pg_checkpoint_write_seconds_total[1m])`, `rate(pg_checkpoint_sync_seconds_total[1m])` | Moves once per checkpoint, when it ends |
 
-Compare the mean WAL sync time with the host await. Both rise when the disk is busy. A WAL sync time that rises while the host await stays flat points at a limit above the device, such as a cgroup `io.max`. Also compare with exec time by query in the same row: a disk problem slows every write query a little, not one query a lot.
+Compare the mean WAL sync time with the host await. Both rise when the disk is busy. A WAL sync time that rises while the host await stays flat points at a limit above the device, such as a cgroup `io.max`. Also compare with "Postgres: mean exec time per query" in row 5 of `01 · RED by layer`. It stays flat when the disk is slow, because Postgres times each statement but not the WAL flush at its commit.
