@@ -6,7 +6,7 @@ GRADLE   = cd service && ./gradlew
 
 .DEFAULT_GOAL := help
 .PHONY: help up up-datadog wait new hint answer reveal clear status list history quiz load ramp bench \
-        open logs ps stop down nuke check build test lint format dashboards
+        toolbox shell open logs ps stop down nuke check build test lint format dashboards
 
 help: ## List the commands
 	@echo "incidentlab: incident investigation lab"
@@ -32,6 +32,7 @@ wait:
 	@echo ""
 	@echo "  Grafana     http://localhost:3000"
 	@echo "  Traces      in Grafana: Explore > Tempo (or click an exemplar dot on a latency panel)"
+	@echo "  Profiles    in Grafana: Explore > Pyroscope (service = api, pricing, worker), or http://localhost:4040"
 	@echo "  Prometheus  http://localhost:9090"
 	@echo "  Envoy       http://localhost:8080 (admin: http://localhost:9901)"
 	@echo ""
@@ -83,6 +84,13 @@ ramp: ## Capacity ramp on the live lab: the load rises in steps, find the knee. 
 
 bench: ## Closed-loop bench on the live lab, not scored, then a before/after report. Options: CLIENTS=20 SECONDS=120
 	@$(CTL) bench $(if $(CLIENTS),--clients $(CLIENTS)) $(if $(SECONDS),--seconds $(SECONDS))
+
+toolbox: ## New CLI-only exercise: prove the cause from `make shell`, no Grafana. Options: LEVEL TOPIC ID FORCE
+	@$(CTL) new --mode toolbox $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(ID),--id $(ID)) $(if $(FORCE),--force)
+
+shell: ## Root shell on the Docker VM with the Linux tools (vmstat, pidstat, psql, bpftrace...)
+	@$(COMPOSE) up -d --no-deps toolbox
+	@$(COMPOSE) exec toolbox bash -l
 
 # ----------------------------------------------------------------------------- tools
 open: ## Open Grafana in the browser (macOS)

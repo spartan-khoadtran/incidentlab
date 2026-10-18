@@ -4,7 +4,9 @@ This file covers two exercise modes on the live lab. `make ramp` raises the load
 
 ## Capacity from a ramp test
 
-A ramp test raises the offered load in steps and measures each step. It answers three questions. How much load does the service take before latency bends? How much does it serve at most? Which resource fills first?
+A ramp test raises the offered load in steps and measures each step.
+
+It answers three questions. How much load does the service take before latency bends? How much does it serve at most? Which resource fills first?
 
 The laws below turn those answers into numbers you can plan with.
 
@@ -101,7 +103,7 @@ You can answer before the last step. Then only the steps that ran count. The ste
 
 ## Closed-loop clients in this lab
 
-loadgen is open by default: arrivals come at a set rate, whatever the service does. A closed-loop client is different. It sends one request, waits for the answer, then sends the next. Many benchmark tools work this way by default.
+loadgen is open by default: arrivals come at a set rate, whatever the service does (see [Open loop](benchmarking.md#open-loop)). A closed-loop client is different. It sends one request, waits for the answer, then sends the next. Many benchmark tools work this way by default.
 
 ### What make bench does
 
@@ -126,25 +128,19 @@ After the bench, `make answer` (or `make bench` again) prints a report. It compa
 
 The bench reaches about 267 rps with a pool of 4, and its p99 looks fine. A ramp with a pool of 4 shows a far higher p99 or timeouts near the same rate. Both are right about what they measured, but only the ramp measured what users get.
 
-Coordinated omission is the reason. When the service stalls, each closed client stops and waits. The requests it would have sent during the stall are never sent, so they are never measured.
+Two things hide the problem in the bench.
 
-Real users do not wait for each other. They keep arriving during the stall, and each one meets it.
+The first is the cap on the queue. No more than N requests are ever inside, so the mean time stays near N / X. Open arrivals at the same rate put no cap on the queue. At X max their queue grows until timeouts end it.
 
-An example with a 2 s stall in a 60 s run:
+The second is coordinated omission. When the service stalls, each closed client stops and waits. The requests it would have sent during the stall are never sent, so they are never measured. Each client records one slow sample per stall.
 
-| | Open, 200 rps | Closed, 20 clients at 100 ms |
+| A 2 s stall in a 60 s run | Open, 200 rps | Closed, 20 clients at 100 ms |
 |---|---|---|
-| Requests in the run | 12,000 | about 11,600 |
-| Requests that meet the stall | 400 or more, waiting 0 to 2 s and more | 20, one per client |
+| Requests that meet the stall | 400 or more | 20, one per client |
+| All requests in the run | 12,000 | about 11,620 |
 | Share of slow requests | 3.3% or more | 0.17% |
 | p99 | 1.4 s or more | about 100 ms |
 
-In the open case, 400 requests arrive during the stall. The 120 that arrive in its first 0.6 s (1% of 12,000) wait at least 1.4 s each. The queue they leave adds more wait after the stall, so p99 is 1.4 s or more.
+In the closed case, 20 slow samples are under 1% of the run, so p99 shows the normal time. The worked example and the two ways to fix a load test are in [Coordinated omission](benchmarking.md#coordinated-omission).
 
-In the closed case the 20 slow samples are under 1%, so p99 is the normal time.
-
-A closed loop also caps the queue. No more than N requests are ever inside, so the mean time stays near N / X. Open arrivals at the same rate put no cap on the queue. At X max their queue grows until timeouts end it.
-
-That is why the lab's loadgen is open. It draws Poisson arrivals per tenant and keeps the rate when the service slows down. The queue and its latency show on the dashboards the way users would feel them.
-
-A load test that must predict user latency needs open arrivals too. The other way is to time each request from when it should have been sent.
+That is why the lab's loadgen is open. It keeps its arrival rate when the service slows down. The queue and its latency show on the dashboards the way users would feel them. The two models side by side are in [Open and closed load models](benchmarking.md#open-and-closed-load-models).

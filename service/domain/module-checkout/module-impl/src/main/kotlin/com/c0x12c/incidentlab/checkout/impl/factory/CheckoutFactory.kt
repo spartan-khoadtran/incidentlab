@@ -8,10 +8,12 @@ import com.c0x12c.incidentlab.checkout.impl.cache.ProductCache
 import com.c0x12c.incidentlab.checkout.impl.config.CheckoutConfig
 import com.c0x12c.incidentlab.checkout.impl.db.DbSessions
 import com.c0x12c.incidentlab.checkout.impl.events.OrderEvents
+import com.c0x12c.incidentlab.checkout.impl.inventory.InventoryCache
 import com.c0x12c.incidentlab.checkout.impl.leak.MemoryLeak
 import com.c0x12c.incidentlab.checkout.impl.manager.DefaultCheckoutManager
 import com.c0x12c.incidentlab.checkout.impl.pricing.PricingClient
 import com.c0x12c.incidentlab.checkout.impl.pricing.PricingTimeoutInterceptor
+import com.c0x12c.incidentlab.checkout.impl.render.ReceiptRenderer
 import com.c0x12c.incidentlab.checkout.impl.resource.ApiGates
 import com.c0x12c.incidentlab.client.PricingApi
 import com.c0x12c.incidentlab.database.DatabaseContext
@@ -47,6 +49,9 @@ class CheckoutFactory {
 
   @Singleton
   fun memoryLeak(registry: MeterRegistry): MemoryLeak = MemoryLeak(registry)
+
+  @Singleton
+  fun receiptRenderer(objectMapper: ObjectMapper): ReceiptRenderer = ReceiptRenderer(objectMapper)
 
   @Singleton
   @Bean(preDestroy = "shutdown")
@@ -106,6 +111,9 @@ class CheckoutFactory {
   ): OrderEvents = OrderEvents(kafka, openTelemetry, tracer, objectMapper, registry).also { it.start() }
 
   @Singleton
+  fun inventoryCache(faults: Faults, tracer: Tracer, registry: MeterRegistry): InventoryCache = InventoryCache(faults, tracer, registry)
+
+  @Singleton
   fun checkoutManager(
     faults: Faults,
     products: ProductRepository,
@@ -114,7 +122,9 @@ class CheckoutFactory {
     pricing: PricingClient,
     cache: ProductCache,
     events: OrderEvents,
+    inventory: InventoryCache,
     leak: MemoryLeak,
+    renderer: ReceiptRenderer,
     runtime: EventLoopRuntime,
     tracer: Tracer,
     objectMapper: ObjectMapper,
@@ -127,7 +137,9 @@ class CheckoutFactory {
     pricing = pricing,
     cache = cache,
     events = events,
+    inventory = inventory,
     leak = leak,
+    renderer = renderer,
     runtime = runtime,
     tracer = tracer,
     objectMapper = objectMapper,

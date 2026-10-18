@@ -257,7 +257,7 @@ class RampExercise(
   private fun hhmm(epochSeconds: Double): String = Format.hhmm(epochSeconds, zone)
 
   companion object {
-    const val MODE = "ramp"
+    const val MODE = Exercises.RAMP
     const val DOC = "Capacity from a ramp test > Finding the knee; Capacity from a ramp test > The ramp in this lab"
     private const val TAG = "ramp"
     private const val PERCENT = 100

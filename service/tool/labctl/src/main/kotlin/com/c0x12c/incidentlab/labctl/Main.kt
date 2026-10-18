@@ -77,7 +77,7 @@ object Main : Logging {
 
   private fun usage(): Int {
     println(
-      "usage: labctl daemon | new [--level N] [--topic T] [--id ID] [--force] | hint | answer | reveal | clear | status | list | history | load X | " +
+      "usage: labctl daemon | new [--level N] [--topic T] [--id ID] [--force] [--mode incident|toolbox] | hint | answer | reveal | clear | status | list | history | load X | " +
         "quiz [-n N] [--kind numbers|concepts|all] | ramp [--every S] | bench [--clients N] [--seconds S]"
     )
     return USAGE_EXIT

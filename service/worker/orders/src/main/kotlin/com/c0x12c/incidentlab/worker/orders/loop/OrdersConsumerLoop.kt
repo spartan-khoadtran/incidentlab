@@ -106,7 +106,7 @@ class OrdersConsumerLoop(
     val committed = mutableMapOf<TopicPartition, Long>()
     try {
       while (scope.isActive) {
-        val records = runInterruptible { consumer.poll(Duration.ofMillis(POLL_MILLIS)) }
+        val records = runInterruptible { consumer.poll(Duration.ofMillis(faults.long(OrdersFaults.POLL_MS).coerceAtLeast(0))) }
         for (partition in records.partitions()) {
           val queue = queues.computeIfAbsent(partition) { newPartition(it) }
           for (record in records.records(partition)) {
@@ -275,7 +275,6 @@ class OrdersConsumerLoop(
   private companion object {
     const val GROUP_ID = "order-worker"
     const val REPLICATION = 1
-    const val POLL_MILLIS = 500L
     const val MAX_POLL_RECORDS = 1_000
     const val FETCH_MAX_WAIT_MS = 200
     const val PAUSE_ABOVE = 2_000

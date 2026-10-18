@@ -25,7 +25,8 @@ data class NewOptions(
   val level: Int = 0,
   val topic: String = "",
   val id: String = "",
-  val force: Boolean = false
+  val force: Boolean = false,
+  val mode: String = Exercises.INCIDENT
 )
 
 /** The learner-facing commands. Each one returns the process exit code. */
@@ -55,7 +56,7 @@ class Exercises(
     val params = scenario.params(random, context)
     val startedAt = now()
     val number = state.history.size + 1
-    store.save(state.copy(active = ActiveExercise(id = scenario.id, params = params, started = startedAt, n = number)))
+    store.save(state.copy(active = ActiveExercise(id = scenario.id, mode = options.mode, params = params, started = startedAt, n = number)))
     val rendered = Params(params, hhmm(startedAt))
     if (random.nextDouble() < scenario.decoy) {
       annotator.annotate(Answers.DECOYS.random(random), listOf("change"), startedAt + random.nextInt(-DECOY_MAX_LEAD_SECONDS, DECOY_MAX_LAG_SECONDS + 1))
@@ -65,9 +66,14 @@ class Exercises(
     terminal.out(scenario.ticket(rendered))
     terminal.out()
     terminal.out("The fault is now being applied to the system. Wait 1-2 minutes for the numbers to show, then start investigating.")
-    terminal.out("Suggested approach: problem statement -> RED at the outermost layer -> compare two adjacent layers -> USE for the suspected layer.")
-    terminal.out()
-    terminal.out(LINKS)
+    if (options.mode == TOOLBOX) {
+      terminal.out(TOOLBOX_RULES)
+      terminal.out("Suggested approach: problem statement -> the 60-second checklist -> the suspect's process, cgroup and /metrics -> the command that proves the cause.")
+    } else {
+      terminal.out("Suggested approach: problem statement -> RED at the outermost layer -> compare two adjacent layers -> USE for the suspected layer.")
+      terminal.out()
+      terminal.out(LINKS)
+    }
     terminal.out()
     terminal.out("Commands: make hint (a hint, costs 0.5 point) · make answer (submit) · make reveal (show the answer, no score) · make clear (cancel)")
     return 0
@@ -182,6 +188,9 @@ class Exercises(
       val minutes = ((now() - active.started) / SECONDS_PER_MINUTE).roundToInt()
       terminal.out("Exercise #${active.n} (level ${scenario.level}) has been running for $minutes min, ${active.hints} hint(s) used.")
       terminal.out(scenario.ticket(Params(active.params, hhmm(active.started))))
+      if (active.mode == TOOLBOX) {
+        terminal.out(TOOLBOX_RULES)
+      }
     }
     terminal.out()
     terminal.out("Services:")
@@ -199,12 +208,14 @@ class Exercises(
     for (level in 1..MAX_LEVEL) {
       terminal.out("Level $level")
       catalog.all.filter { it.level == level }.forEach { scenario ->
-        terminal.out("  - ${scenario.id.padEnd(ID_COLUMN)} ${scenario.title.padEnd(TITLE_COLUMN)} [${scenario.topics.joinToString(", ")}]")
+        val toolbox = if (scenario.cli.isNotEmpty()) " $TOOLBOX_TAG" else ""
+        terminal.out("  - ${scenario.id.padEnd(ID_COLUMN)} ${scenario.title.padEnd(TITLE_COLUMN)} [${scenario.topics.joinToString(", ")}]$toolbox")
       }
     }
     terminal.out()
     terminal.out("Topics: ${Answers.TOPICS.joinToString(", ")}")
     terminal.out("Examples: make new LEVEL=2 · make new TOPIC=async · make new ID=pool_hold")
+    terminal.out("$TOOLBOX_TAG: also playable CLI only with `make toolbox` (same options), from the shell `make shell` opens.")
     return 0
   }
 
@@ -215,13 +226,12 @@ class Exercises(
       return 0
     }
     val scored = history.filter { it.score != null }
-    val mixed = history.map { it.mode }.distinct().size > 1
     for (entry in history) {
       val score = entry.score?.let { "${plain(it)}/${plain(MAX_POINTS)}" } ?: "-"
       val at = Instant.ofEpochSecond(entry.at.toLong()).atZone(zone).format(DAY_TIME)
       val missed = if (entry.missed.isEmpty()) "" else "  missed: ${entry.missed.joinToString(", ")}"
-      val mode = if (mixed) "${entry.mode.padEnd(MODE_COLUMN)} " else ""
-      terminal.out("#${entry.n.toString().padEnd(3)} $at  ${score.padEnd(SCORE_COLUMN)} ${plain(entry.minutes).padStart(MINUTES_COLUMN)} min  ${entry.hints} hint(s)  $mode${entry.title}$missed")
+      val mode = if (entry.mode == INCIDENT) "" else " (${entry.mode})"
+      terminal.out("#${entry.n.toString().padEnd(3)} $at  ${score.padEnd(SCORE_COLUMN)} ${plain(entry.minutes).padStart(MINUTES_COLUMN)} min  ${entry.hints} hint(s)  ${entry.title}$mode$missed")
       if (entry.note.isNotEmpty()) {
         terminal.out("     note: ${entry.note}")
       }
@@ -258,13 +268,21 @@ class Exercises(
   }
 
   private fun pick(state: LabState, options: NewOptions): Scenario? {
+    val toolbox = options.mode == TOOLBOX
     if (options.id.isNotEmpty()) {
-      return catalog.byId[options.id] ?: run {
+      val scenario = catalog.byId[options.id] ?: run {
         terminal.out("No exercise '${options.id}'. See `make list`.")
-        null
+        return null
       }
+      if (toolbox && scenario.cli.isEmpty()) {
+        terminal.out("'${options.id}' has no CLI proof yet, so it cannot run with `make toolbox`. `make list` tags the ones that can ($TOOLBOX_TAG).")
+        return null
+      }
+      return scenario
     }
-    val pool = catalog.all.filter { (options.level == 0 || it.level == options.level) && (options.topic.isEmpty() || options.topic in it.topics) }
+    val pool = catalog.all.filter {
+      (options.level == 0 || it.level == options.level) && (options.topic.isEmpty() || options.topic in it.topics) && (!toolbox || it.cli.isNotEmpty())
+    }
     if (pool.isEmpty()) {
       terminal.out("No exercise matches the LEVEL/TOPIC you chose. See `make list`.")
       return null
@@ -336,6 +354,11 @@ class Exercises(
     terminal.out("EVIDENCE TO LOOK FOR (PromQL, paste into Grafana Explore or Prometheus)")
     scenario.evidence.forEach { terminal.out("  - $it") }
     terminal.out()
+    if (scenario.cli.isNotEmpty()) {
+      terminal.out("COMMANDS THAT PROVE IT (run them in `make shell`)")
+      scenario.cli.forEach { terminal.out("  $ $it") }
+      terminal.out()
+    }
     terminal.out("Read again in ${GuideIndex.where(scenario.doc)}")
   }
 
@@ -345,6 +368,7 @@ class Exercises(
     val entry = HistoryEntry(
       n = active.n,
       id = active.id,
+      mode = active.mode,
       title = scenario.title,
       level = scenario.level,
       score = score,
@@ -386,6 +410,14 @@ class Exercises(
   private fun plain(value: Double): String = if (value == value.roundToInt().toDouble()) value.roundToInt().toString() else String.format(Locale.ROOT, "%.1f", value)
 
   companion object {
+    const val INCIDENT = "incident"
+    const val TOOLBOX = "toolbox"
+    const val RAMP = "ramp"
+    const val BENCH = "bench"
+    val MODES = listOf(INCIDENT, TOOLBOX, RAMP, BENCH)
+
+    /** The modes `make new` starts. The ramp and the bench have their own commands. */
+    val NEW_MODES = listOf(INCIDENT, TOOLBOX)
     const val HINT_PENALTY = 0.5
     const val NATURE_POINTS = 1.0
     const val LOCATION_POINTS = 1.0
@@ -405,15 +437,17 @@ class Exercises(
     private const val ID_COLUMN = 18
     const val TITLE_COLUMN = 48
     private const val SCORE_COLUMN = 6
-    private const val MODE_COLUMN = 8
     private const val MINUTES_COLUMN = 5
     private const val MILLIS_PER_SECOND = 1_000.0
     private const val SECONDS_PER_MINUTE = 60.0
     private const val TENTHS = 10.0
     private val HOUR_MINUTE: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
     private val DAY_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM HH:mm")
+    private const val TOOLBOX_TAG = "[toolbox]"
+    const val TOOLBOX_RULES = "CLI only: do not open Grafana. `make shell` gives you a toolbox on the host. Prove the cause with commands."
     const val LINKS = "  Grafana     http://localhost:3000   (dashboards '01 · RED by layer' and '02 · USE by layer')\n" +
       "  Traces      in Grafana: Explore > Tempo (search, service graph), or click an exemplar dot on a latency panel\n" +
+      "  Profiles    in Grafana: Explore > Pyroscope (service = api, pricing, worker), or http://localhost:4040\n" +
       "  Prometheus  http://localhost:9090"
   }
 }

@@ -65,6 +65,25 @@ class DesiredStateTest {
   }
 
   @Test
+  fun `cpu credits keep the api at 2 cores until the credits run out`() {
+    val state = LabState(active = ActiveExercise(id = "cpu_credits", params = mapOf("credit_seconds" to 180, "cpus" to 0.08), started = 1_000.0, n = 1))
+
+    assertThat(DesiredState.of(state, now = 1_179.0).docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0)))
+    assertThat(DesiredState.of(state, now = 1_181.0).docker).isEqualTo(mapOf("api" to mapOf("cpus" to 0.08)))
+  }
+
+  @Test
+  fun `the hot code path sends render_ms to api only and keeps the api at 2 cores`() {
+    val state = LabState(active = ActiveExercise(id = "hot_code_path", params = mapOf("render" to 27), started = 0.0, n = 1))
+
+    val desired = DesiredState.of(state)
+
+    assertThat(desired.faults.getValue("api")).isEqualTo(mapOf<String, Any?>("render_ms" to 27))
+    assertThat(desired.faults.filterKeys { it != "api" }.values.all { it.isEmpty() }).isEqualTo(true)
+    assertThat(desired.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0)))
+  }
+
+  @Test
   fun `an unknown active id is ignored instead of crashing the daemon`() {
     val state = LabState(active = ActiveExercise(id = "gone", params = emptyMap(), started = 0.0, n = 1))
 

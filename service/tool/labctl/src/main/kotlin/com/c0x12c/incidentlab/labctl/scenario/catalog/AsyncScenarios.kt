@@ -17,7 +17,8 @@ internal object AsyncScenarios {
     consumerBacklog(),
     consumerSlow(),
     poisonMessage(),
-    lagAfterFix()
+    lagAfterFix(),
+    busyPoll()
   )
 
   private fun consumerBacklog() = Scenario(
@@ -52,6 +53,10 @@ internal object AsyncScenarios {
       "sum by (source) (rate(kafka_produced_total[1m]))",
       "sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
       "max(kafka_consumer_lag_seconds)"
+    ),
+    cli = listOf(
+      "for i in 1 2; do curl -s http://worker:8002/metrics | grep '^kafka_consumer_lag_messages'; sleep 15; done   # lag grows on every partition",
+      "for i in 1 2; do curl -s http://api:8000/metrics | grep '^kafka_produced_total.*outcome=\"ok\"'; sleep 10; done   # source=backfill grows much faster than source=checkout"
     ),
     doc = "RED at many layers > The async layer"
   )
@@ -93,6 +98,10 @@ internal object AsyncScenarios {
       "sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
       "max(kafka_consumer_lag_seconds)"
     ),
+    cli = listOf(
+      "for i in 1 2; do curl -s http://worker:8002/metrics | grep -E '^kafka_processing_seconds_(sum|count)'; sleep 30; done   # (sum2 - sum1) / (count2 - count1) is the time per message, far above 0.025 s",
+      "for i in 1 2; do curl -s http://api:8000/metrics | grep '^kafka_produced_total.*outcome=\"ok\"'; sleep 10; done   # only source=checkout grows: the producer did not change"
+    ),
     doc = "RED at many layers > The async layer"
   )
 
@@ -126,6 +135,9 @@ internal object AsyncScenarios {
     evidence = listOf(
       "kafka_consumer_lag_messages",
       "sum by (partition) (rate(kafka_consumer_retries_total[1m]))"
+    ),
+    cli = listOf(
+      "for i in 1 2; do curl -s http://worker:8002/metrics | grep -E '^kafka_consumer_(lag_messages|retries_total)'; sleep 15; done   # one partition: its lag and its retries grow, the others stay flat"
     ),
     doc = "RED at many layers > The async layer (poison message)"
   )
@@ -183,7 +195,56 @@ internal object AsyncScenarios {
     doc = "RED at many layers > The async layer; Linking RED and USE > Little's Law"
   )
 
+  private fun busyPoll() = Scenario(
+    id = "busy_poll",
+    title = "The worker burns a core doing nothing",
+    level = 2,
+    topics = listOf("async", "cpu", "use"),
+    params = { _, _ -> mapOf("poll_ms" to 0) },
+    faults = { p -> FaultSpec(services = mapOf("worker" to mapOf("poll_ms" to p.int("poll_ms")))) },
+    marker = { "Deploy order-worker v2.0: consumer loop rewritten without a blocking poll" },
+    decoy = 0.5,
+    ticket = { p ->
+      "At ${p.startedAt}, the CPU alarm fired on worker: 100% of its limit. The on-call asks whether the queue is backing up and whether we should " +
+        "add consumers before the evening peak."
+    },
+    hints = listOf(
+      "A CPU alarm is utilization. Before adding consumers, read the worker's RED and its saturation: consume rate, processing time, lag.",
+      "Lag is 0 and the consume rate is unchanged, so the worker is not working harder. What else keeps a thread at 100%?",
+      "A poll with no wait returns at once when there is nothing to fetch, and the loop asks again: busy, but idle. Compare process CPU with the consume rate."
+    ),
+    answer = Answer(nature = setOf("arch"), location = setOf("worker"), signal = setOf("worker_cpu_vs_lag"), cause = "busy_poll"),
+    explain = { p ->
+      "v2.0 polls Kafka with a timeout of ${p.int("poll_ms")} ms. A poll with no wait returns at once when nothing is buffered, so the loop spins: one thread stays " +
+        "on CPU and asks the broker again and again. Process CPU climbs to about one core, which is the worker's whole limit, and the cgroup starts to throttle it. " +
+        "Yet the consume rate is still about $CHECKOUTS_PER_SECOND msg/s, processing time per message barely moves and lag stays near 0. " +
+        "The work did not change, only the waiting did. Utilization without saturation is not a bottleneck. Adding consumers would add more spinning threads and change nothing for users. " +
+        "Fix: poll with a timeout again (the old $DEFAULT_POLL_MS ms), so the thread blocks while the topic is empty."
+    },
+    steps = listOf(
+      "Problem statement: a CPU alarm on worker at 100% of its limit, and a request to add consumers.",
+      "USE on the worker in order: errors 0, saturation (lag) 0, utilization 100%. Utilization alone is the finding.",
+      "RED on the worker: consume rate and processing time per message are unchanged. The worker does the same work as before.",
+      "Compare process CPU with the consume rate: a whole core for 15 msg/s is not processing. Something spins.",
+      "The deploy marker points at the consumer loop: a poll with no wait returns empty and runs again. That is busy polling.",
+      "The cause: a hot loop, not a backlog. More consumers would spin too. Put the blocking poll back."
+    ),
+    evidence = listOf(
+      "rate(process_cpu_seconds_total{job=\"worker\"}[1m])",
+      "sum(kafka_consumer_lag_messages)",
+      "sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
+      "rate(cgroup_cpu_throttled_periods_total{job=\"worker\"}[1m]) / rate(cgroup_cpu_periods_total{job=\"worker\"}[1m])"
+    ),
+    cli = listOf(
+      "top -H -b -n 1 -p $(pgrep -f orders-worker) | head -12   # one thread near 100% CPU: the Kafka poll loop spins",
+      "cat $(cg $(pgrep -f orders-worker))/cpu.stat   # nr_throttled climbs: the worker uses its whole 1-core limit",
+      "curl -s http://worker:8002/metrics | grep ^kafka_consumer_lag_messages   # lag near 0: there is no work waiting"
+    ),
+    doc = "CPU busy with no work > Busy polling"
+  )
+
   private const val NONCE_SPACE = 0x1000000
+  private const val DEFAULT_POLL_MS = 500
   private const val SLOW_WORKER_MS = 100
   private const val DRAIN_BACKFILL_RPS = 75
   private const val FIX_AFTER_SECONDS = 150

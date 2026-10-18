@@ -21,7 +21,8 @@ internal object DownstreamScenarios {
     apiTimeout(),
     pricingCpu(),
     tailLatency(),
-    twoFaults()
+    twoFaults(),
+    unexplainedWin()
   )
 
   private fun downstreamSlow() = Scenario(
@@ -194,6 +195,11 @@ internal object DownstreamScenarios {
       "histogram_quantile(0.99, sum by (le) (rate(event_loop_lag_seconds_bucket{job=\"pricing\"}[1m])))",
       "histogram_quantile(0.99, sum by (le, route) (rate(http_server_duration_seconds_bucket{job=\"pricing\"}[1m])))"
     ),
+    cli = listOf(
+      "pidstat -t -p $(pgrep -f pricing-api) 5 1 | grep Average | sort -k9 -nr | head -4   # one pricing thread takes most of the process CPU, under one core",
+      "cat $(cg $(pgrep -f pricing-api))/cpu.max; grep -E 'nr_periods|nr_throttled' $(cg $(pgrep -f pricing-api))/cpu.stat   # 2 cores, and nr_throttled stays flat",
+      "pidstat -t -p $(pgrep -f checkout-api) 5 1 | grep Average | sort -k9 -nr | head -4   # api itself is nearly idle: it waits for pricing"
+    ),
     doc = "USE method in detail > Pitfalls (total CPU hides one core); USE at many layers > A service as a resource"
   )
 
@@ -280,4 +286,61 @@ internal object DownstreamScenarios {
     ),
     doc = "USE method in detail > Order of checks (the first thing you find); Combining with other methods > Anti-methods"
   )
+
+  private fun unexplainedWin() = Scenario(
+    id = "unexplained_win",
+    title = "Good news that is not",
+    level = 3,
+    topics = listOf("layers", "red"),
+    params = { _, _ -> mapOf("error_rate" to 1.0) },
+    faults = { p ->
+      FaultSpec(
+        services = mapOf(
+          "api" to mapOf("price_fallback" to true),
+          "pricing" to mapOf("error_rate" to p.double("error_rate"), "price_base_ms" to 0)
+        )
+      )
+    },
+    marker = { "Deploy api v2.41: resilience improvements" },
+    decoy = 0.3,
+    ticket = { p ->
+      "Good news for once: at ${p.startedAt}, /checkout p99 stepped down and the error rate is zero. The PM wants to know what went right so we can do more of it. " +
+        "Explain the win."
+    },
+    hints = listOf(
+      "Latency falls when work is skipped. Which part of a /checkout got shorter? Compare the spans before and after.",
+      "api's client view of pricing: http_client_requests_total by outcome. Is pricing still answering 200?",
+      "pricing's own RED shows 5xx on every /price. api hides them with a fallback: check app_price_fallback_total and the mean order value."
+    ),
+    answer = Answer(nature = setOf("arch"), location = setOf("pricing"), signal = setOf("api_vs_downstream"), cause = "downstream_errors"),
+    explain = { p ->
+      "pricing's rules engine is down: ${p.percent("error_rate")} of /price calls fail right away with a 503. api v2.41 catches the failure and charges the list " +
+        "prices instead, so the checkout still answers 200. /checkout got faster by the whole pricing call, about $PRICE_BASE_MS ms, because a fast failure plus " +
+        "a fallback is quicker than a real quote. Errors are zero at the client, at the LB and at api. Two layers down the truth is visible: api's client view of " +
+        "pricing shows outcome=http_5xx on every call, and pricing's own RED shows 503s. The business sees it too: every order since the deploy lost its " +
+        "$PRICING_DISCOUNT_PERCENT% discount, so the mean order value went up by about that much. A fallback that hides a failure is worse than an error: nobody is " +
+        "paged, the wrong numbers look like a win, and customers pay the bill. Alert on the client outcome, on the downstream's own errors, and on a business " +
+        "metric such as the mean order value or the fallback count."
+    },
+    steps = listOf(
+      "Problem statement: p99 down, errors zero, a deploy of api minutes before. Treat a sudden win like an incident: something changed.",
+      "RED at api: /checkout p99 stepped down by about the length of one pricing call. Faster means work was skipped.",
+      "Compare adjacent layers: api's client view of pricing shows outcome=http_5xx on every call, yet api's own error rate is 0.",
+      "pricing's own RED: 503 on every /price since the same minute. The downstream is down.",
+      "Read the deploy note: resilience improvements means a fallback. app_price_fallback_total counts every checkout priced without pricing.",
+      "Check the business metric: the mean order value rose by the discount pricing used to apply. Customers are overcharged.",
+      "The cause: a downstream returns errors and a fallback hides them. Fix pricing, and alert on the outcome of the call, not only on api's status codes."
+    ),
+    evidence = listOf(
+      "sum by (outcome) (rate(http_client_requests_total{job=\"api\",target=\"pricing\"}[1m]))",
+      "sum by (status) (rate(http_server_requests_total{job=\"pricing\"}[1m]))",
+      "rate(app_price_fallback_total{job=\"api\"}[1m])",
+      "sum(rate(orders_value_total[5m])) / sum(rate(orders_total[5m]))",
+      "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\",route=\"/checkout\"}[1m])))"
+    ),
+    doc = "RED at many layers > Why Errors differ (a fallback hides errors); RED at many layers > Compare two adjacent layers"
+  )
+
+  // pricing's quote is the list prices minus this discount; the fallback charges the list prices.
+  private const val PRICING_DISCOUNT_PERCENT = 5
 }

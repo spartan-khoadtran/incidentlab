@@ -18,6 +18,9 @@ object CheckoutFaults {
   const val EXTRA_EVENTS_RPS = "extra_events_rps"
   const val POISON_NONCE = "poison_nonce"
   const val PRICING_TIMEOUT_S = "pricing_timeout_s"
+  const val LOCK_MS = "lock_ms"
+  const val PRICE_FALLBACK = "price_fallback"
+  const val RENDER_MS = "render_ms"
 
   val DEFAULTS: Map<String, Any?> = mapOf(
     // max concurrent requests the app accepts; the rest wait before the handler starts timing
@@ -46,6 +49,12 @@ object CheckoutFaults {
     EXTRA_EVENTS_RPS to 0,
     // produce one malformed event when this changes
     POISON_NONCE to null,
-    PRICING_TIMEOUT_S to 2.0
+    PRICING_TIMEOUT_S to 2.0,
+    // mean time every checkout holds the one inventory lock (exponential), outside any DB session and pricing call
+    LOCK_MS to 0,
+    // a failed pricing call is priced from the list prices and still answers 200
+    PRICE_FALLBACK to false,
+    // CPU work per request on the request's own thread: the receipt renderer
+    RENDER_MS to 0
   )
 }

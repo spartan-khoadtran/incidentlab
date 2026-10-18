@@ -36,11 +36,36 @@ class BoardsTest {
   }
 
   @Test
+  fun `the CPU flame graphs query Pyroscope for the CPU profile of api and pricing`() {
+    val flames = UseBoard.build().panels.filter { it["type"] == "flamegraph" }
+    val targets = flames.map { (it["targets"] as List<*>).single() as Map<*, *> }
+
+    assertThat(flames.all { it["datasource"] == Board.PROFILES_DATASOURCE }).isTrue()
+    assertThat(targets.all { it["profileTypeId"] == "process_cpu:cpu:nanoseconds:cpu:nanoseconds" && it["queryType"] == "profile" }).isTrue()
+    assertThat(targets.map { it["labelSelector"] }).isEqualTo(listOf("{service_name=\"api\"}", "{service_name=\"pricing\"}"))
+  }
+
+  @Test
   fun `latency quantile targets ask for exemplars and rate targets do not`() {
     val targets = RedBoard.build().panels.flatMap { (it["targets"] as? List<*>).orEmpty() }.map { it as Map<*, *> }
     val (quantiles, others) = targets.partition { (it["expr"] as String).startsWith("histogram_quantile(") }
 
     assertThat(quantiles.isNotEmpty() && quantiles.all { it["exemplar"] == true }).isTrue()
     assertThat(others.none { it["exemplar"] == true }).isTrue()
+  }
+
+  @Test
+  fun `the software resources row of the USE board ends with the inventory lock panels`() {
+    val panels = UseBoard.build().panels
+    val titles = panels.map { it["title"] as String }
+    val row = titles.indexOf("Software resources inside api")
+    val next = titles.indexOf("Runtime (process)")
+    assertThat(titles.subList(next - 3, next)).isEqualTo(
+      listOf("Inventory lock: wait p99", "Inventory lock: threads waiting (saturation)", "Inventory lock: utilization")
+    )
+    assertThat(row < next - 3).isTrue()
+    val expressions = panels.subList(next - 3, next).flatMap { (it["targets"] as List<*>) }.map { (it as Map<*, *>)["expr"] as String }
+    assertThat(expressions.any { it.contains("app_lock_wait_seconds_bucket") }).isTrue()
+    assertThat(expressions.any { it.contains("app_lock_held_seconds_total") }).isTrue()
   }
 }

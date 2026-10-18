@@ -15,6 +15,17 @@ x-svc: &svc
     TRACE_SAMPLE_RATIO: "1.0"
     LOG_FORMAT: ${LOG_FORMAT:-text}
 
+# Continuous profiling for the services under test. itimer samples CPU time without perf_event
+# access, which Docker's default seccomp profile blocks.
+x-profiled: &profiled-env
+  JAVA_TOOL_OPTIONS: -javaagent:/run/pyroscope.jar
+  PYROSCOPE_SERVER_ADDRESS: http://pyroscope:4040
+  PYROSCOPE_PROFILER_EVENT: itimer
+  PYROSCOPE_PROFILER_LOCK: 10ms
+  PYROSCOPE_PROFILER_ALLOC: 512k
+  PYROSCOPE_FORMAT: jfr
+  PYROSCOPE_UPLOAD_INTERVAL: 10s
+
 services:
   # ------------------------------------------------------------------ the system under test
   loadgen:
@@ -47,12 +58,13 @@ services:
   api:
     <<: *svc
     environment:
-      <<: *svc-env
+      <<: [*svc-env, *profiled-env]
       SERVICE_LAUNCHER: /run/app/checkout-api/bin/checkout-api
       SERVICE_NAME: api
       PORT: "8000"
       PRICING_URL: http://pricing:8001
       REDIS_HOST: redis
+      PYROSCOPE_APPLICATION_NAME: api
     cpus: "2.0"
     mem_limit: 512m
     memswap_limit: 512m
@@ -65,10 +77,11 @@ services:
   pricing:
     <<: *svc
     environment:
-      <<: *svc-env
+      <<: [*svc-env, *profiled-env]
       SERVICE_LAUNCHER: /run/app/pricing-api/bin/pricing-api
       SERVICE_NAME: pricing
       PORT: "8001"
+      PYROSCOPE_APPLICATION_NAME: pricing
     cpus: "2.0"
     mem_limit: 256m
     memswap_limit: 256m
@@ -78,11 +91,12 @@ services:
   worker:
     <<: *svc
     environment:
-      <<: *svc-env
+      <<: [*svc-env, *profiled-env]
       SERVICE_LAUNCHER: /run/app/orders-worker/bin/orders-worker
       SERVICE_NAME: worker
       PORT: "8002"
       KAFKA_PARTITIONS: "3"
+      PYROSCOPE_APPLICATION_NAME: worker
     cpus: "1.0"
     mem_limit: 512m
     memswap_limit: 512m
@@ -226,6 +240,20 @@ services:
       - ./config/tempo.yaml:/etc/tempo.yaml:ro
       - tempodata:/var/tempo
 
+  # Continuous profiles from api, pricing and worker. Read them in Grafana (Explore > Pyroscope) or at :4040.
+  pyroscope:
+    image: grafana/pyroscope:1.21.1
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/pyroscope/config.yaml
+      - -usage-stats.enabled=false
+      - -self-profiling.disable-push=true
+    volumes:
+      - pyroscopedata:/data
+    mem_limit: 768m
+    ports:
+      - "4040:4040"
+
   node-exporter:
     image: prom/node-exporter:v1.9.1
     restart: unless-stopped
@@ -237,6 +265,22 @@ services:
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
+
+  # Shell on the Docker VM for the CLI-only exercises: `make shell`. It sees every process and cgroup, read-only.
+  toolbox:
+    build: ./config/toolbox
+    image: incidentlab-toolbox:latest
+    restart: unless-stopped
+    pid: host
+    cgroup: host
+    privileged: true
+    mem_limit: 512m
+    memswap_limit: 512m
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
   # ------------------------------------------------------------------ optional: Datadog (make up-datadog)
   datadog-agent:
@@ -263,4 +307,5 @@ volumes:
   pgdata:
   promdata:
   tempodata:
+  pyroscopedata:
   labstate:

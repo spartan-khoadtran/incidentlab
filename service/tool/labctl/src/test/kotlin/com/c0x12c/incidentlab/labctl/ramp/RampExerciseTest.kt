@@ -141,7 +141,7 @@ class RampExerciseTest {
   }
 
   @Test
-  fun `reveal is not scored and history names the mode once two exist`(@TempDir dir: Path) {
+  fun `reveal is not scored and history names the ramp mode after the title`(@TempDir dir: Path) {
     val terminal = ScriptedTerminal("y")
     val ramp = ramp(dir, terminal)
     store(dir).save(
@@ -160,8 +160,8 @@ class RampExerciseTest {
     exercises.history()
 
     assertThat(store(dir).load().history.map { it.score }).containsExactly(5.0, null)
-    assertThat(terminal.lines.any { it.contains("incident ") && it.endsWith("Out of memory") }).isTrue()
-    assertThat(terminal.lines.any { it.contains("ramp     Capacity ramp (") }).isTrue()
+    assertThat(terminal.lines.any { it.endsWith("hint(s)  Out of memory") }).isTrue()
+    assertThat(terminal.lines.any { it.contains("hint(s)  Capacity ramp (") && it.endsWith(") (ramp)") }).isTrue()
   }
 
   private companion object {

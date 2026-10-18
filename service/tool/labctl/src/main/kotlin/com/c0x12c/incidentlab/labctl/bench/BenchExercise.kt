@@ -192,7 +192,7 @@ class BenchExercise(
   private fun decimal(value: Double?): String = value?.let { String.format(Locale.ROOT, "%.1f", it) } ?: "-"
 
   companion object {
-    const val MODE = "bench"
+    const val MODE = Exercises.BENCH
     const val DOC = "Closed-loop clients in this lab > What make bench does; Closed-loop clients in this lab > Why the two p99 values differ"
     private const val TAG = "bench"
     private const val LABEL_COLUMN = 24

@@ -48,7 +48,11 @@ make quiz KIND=concepts    # multiple choice only
 make quiz KIND=numbers     # calculations only
 ```
 
-Other modes on the live lab:
+### Toolbox mode
+
+`make toolbox` is `make new` without Grafana. You get the same ticket and the same four questions, but you investigate only from a shell: `make shell` opens a root shell on the Docker VM with `vmstat`, `pidstat`, the cgroup files, `psql`, `bpftrace` and `perf`. It takes the same `LEVEL`, `TOPIC`, `ID` and `FORCE` options, and `make list` tags the scenarios it can play with `[toolbox]`. The commands and what to read in them are in [docs/toolbox.md](docs/toolbox.md). `bpftrace` and `perf` need the VM kernel's support: they work on OrbStack and may fail on Docker Desktop (`kernel-check` in the shell tells you).
+
+### Ramp and bench
 
 - `make ramp`: the load rises in steps from 50 to 300 rps while something may limit the lab. You find the knee, the highest throughput and the resource that filled first. Scored from what Prometheus recorded. See [docs/capacity.md](docs/capacity.md).
 - `make bench`: closed-loop clients for 2 minutes, then a report of the minutes before against the bench. Not scored. It shows why a simple benchmark reports a better p99 than users get.
@@ -67,7 +71,8 @@ Other modes on the live lab:
   limit. A manual change is reverted on the next tick.
 - **What you look at.** Prometheus scrapes `/metrics` on every service. Every service sends spans to
   Tempo. Grafana has the RED and USE dashboards by layer, and the traces too. Each dot on a latency
-  panel is an exemplar: click it to open one real request that landed in that bucket.
+  panel is an exemplar: click it to open one real request that landed in that bucket. api, pricing and
+  worker also run a profiling agent: Explore > Pyroscope shows which code uses their CPU.
 
 ### One exercise
 

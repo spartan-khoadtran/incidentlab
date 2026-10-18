@@ -1,0 +1,10 @@
+#!/bin/sh
+# Lists the running containers with their main PID and cgroup, read from the docker socket.
+sock=/var/run/docker.sock
+engine() { curl -s --unix-socket "$sock" "http://localhost$1"; }
+printf '%-34s %-8s %s\n' NAME PID CGROUP
+for id in $(engine /containers/json | jq -r '.[].Id'); do
+  engine "/containers/$id/json" | jq -r '"\(.Name[1:]) \(.State.Pid)"'
+done | sort | while read -r name pid; do
+  printf '%-34s %-8s %s\n' "$name" "$pid" "$(cg "$pid" 2>/dev/null)"
+done

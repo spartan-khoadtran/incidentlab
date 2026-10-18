@@ -6,6 +6,7 @@ import assertk.assertions.hasMessage
 import assertk.assertions.isEqualTo
 import assertk.assertions.isInstanceOf
 import com.c0x12c.incidentlab.labctl.bench.BenchOptions
+import com.c0x12c.incidentlab.labctl.exercise.Exercises
 import com.c0x12c.incidentlab.labctl.exercise.NewOptions
 import com.c0x12c.incidentlab.labctl.quiz.QuizKind
 import com.c0x12c.incidentlab.labctl.ramp.RampOptions
@@ -18,6 +19,14 @@ class CommandLineTest {
     val options = CommandLine.newOptions(listOf("--level", "2", "--topic", "async", "--id", "pool_hold", "--force"))
 
     assertThat(options).isEqualTo(NewOptions(level = 2, topic = "async", id = "pool_hold", force = true))
+  }
+
+  @Test
+  fun `the mode flag takes incident or toolbox and nothing else`() {
+    assertThat(CommandLine.newOptions(listOf("--mode", "toolbox", "--level", "2"))).isEqualTo(NewOptions(level = 2, mode = Exercises.TOOLBOX))
+    assertThat(CommandLine.newOptions(emptyList()).mode).isEqualTo(Exercises.INCIDENT)
+    assertFailure { CommandLine.newOptions(listOf("--mode", "grafana")) }.hasMessage("MODE must be one of incident, toolbox.")
+    assertFailure { CommandLine.newOptions(listOf("--mode")) }.isInstanceOf(UsageError::class)
   }
 
   @Test
@@ -66,5 +75,11 @@ class CommandLineTest {
     assertFailure { CommandLine.benchOptions(listOf("--clients", "0")) }.hasMessage("CLIENTS must be a whole number between 1 and 200, for example `make bench CLIENTS=50`.")
     assertFailure { CommandLine.benchOptions(listOf("--seconds", "10")) }.isInstanceOf(UsageError::class)
     assertFailure { CommandLine.benchOptions(listOf("--rate", "10")) }.isInstanceOf(UsageError::class)
+  }
+
+  @Test
+  fun `make new starts only the incident and toolbox modes`() {
+    assertFailure { CommandLine.newOptions(listOf("--mode", Exercises.RAMP)) }.hasMessage("MODE must be one of incident, toolbox.")
+    assertFailure { CommandLine.newOptions(listOf("--mode", Exercises.BENCH)) }.isInstanceOf(UsageError::class)
   }
 }

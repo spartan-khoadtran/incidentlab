@@ -12,9 +12,11 @@ import com.c0x12c.incidentlab.checkout.impl.db.DbSessions
 import com.c0x12c.incidentlab.checkout.impl.db.PoolTimeoutException
 import com.c0x12c.incidentlab.checkout.impl.db.transaction
 import com.c0x12c.incidentlab.checkout.impl.events.OrderEvents
+import com.c0x12c.incidentlab.checkout.impl.inventory.InventoryCache
 import com.c0x12c.incidentlab.checkout.impl.leak.MemoryLeak
 import com.c0x12c.incidentlab.checkout.impl.pricing.DownstreamException
 import com.c0x12c.incidentlab.checkout.impl.pricing.PricingClient
+import com.c0x12c.incidentlab.checkout.impl.render.ReceiptRenderer
 import com.c0x12c.incidentlab.client.dto.checkout.CheckoutReceipt
 import com.c0x12c.incidentlab.client.dto.checkout.OrderEvent
 import com.c0x12c.incidentlab.client.dto.checkout.ProductDetail
@@ -31,13 +33,15 @@ import io.micrometer.core.instrument.MeterRegistry
 import io.opentelemetry.api.trace.Tracer
 import java.sql.Connection
 import java.time.Duration
+import kotlin.math.round
 import kotlin.random.Random
 
 /**
  * The checkout flow with every fault hook the api exercises use. The healthy path is: prices on
  * one short session, pricing called with no connection held, the order written on a second short
  * session, one event produced. The v2.31 path holds one session and one open transaction across
- * the pricing calls, which is what the pool exercise detects.
+ * the pricing calls, which is what the pool exercise detects. The v2.40 inventory refresh takes one
+ * global lock before either path, and the v2.41 fallback prices a checkout without pricing.
  */
 class DefaultCheckoutManager(
   private val faults: Faults,
@@ -47,7 +51,9 @@ class DefaultCheckoutManager(
   private val pricing: PricingClient,
   private val cache: ProductCache,
   private val events: OrderEvents,
+  private val inventory: InventoryCache,
   private val leak: MemoryLeak,
+  private val renderer: ReceiptRenderer,
   private val runtime: EventLoopRuntime,
   private val tracer: Tracer,
   private val objectMapper: ObjectMapper,
@@ -56,6 +62,8 @@ class DefaultCheckoutManager(
 
   private val cacheRequests = LabCounter(registry, "cache_requests", "Cache lookups", listOf("result"))
   private val ordersPlaced = LabCounter(registry, "orders", "Orders placed", listOf("tenant"))
+  private val ordersValue = LabCounter(registry, "orders_value", "Sum of order totals", listOf("tenant"))
+  private val priceFallbacks = LabCounter(registry, "app_price_fallback", "Checkouts priced from the list prices because pricing failed")
 
   override fun product(id: Int): Either<ClientException, ProductDetail> {
     leak.leak(faults.int(CheckoutFaults.LEAK_KB))
@@ -65,6 +73,10 @@ class DefaultCheckoutManager(
         runtime.onEventLoop { CpuBurner.burn(jitter(burn, RENDER_JITTER)) }
       }
     }
+    return loadProduct(id).onRight { detail -> render(detail) }
+  }
+
+  private fun loadProduct(id: Int): Either<ClientException, ProductDetail> {
     val ttl = faults.int(CheckoutFaults.CACHE_TTL_MS).coerceAtLeast(1)
     val key = "product:$ttl:$id"
     cache.get(key)?.let { cached ->
@@ -87,6 +99,7 @@ class DefaultCheckoutManager(
   override fun checkout(tenant: String, items: List<Int>): Either<ClientException, CheckoutReceipt> {
     val basket = items.take(MAX_ITEMS).ifEmpty { listOf(Random.nextInt(1, CATALOG_TAIL + 1)) }
     leak.leak(faults.int(CheckoutFaults.LEAK_KB))
+    inventory.refresh()
     val receipt = try {
       if (faults.bool(CheckoutFaults.RECOMMEND_IN_TXN)) {
         checkoutHoldingTheConnection(tenant, basket)
@@ -99,6 +112,7 @@ class DefaultCheckoutManager(
       return CheckoutError.PRICING_FAILED.asException(e.message).left()
     }
     ordersPlaced.increment(tenant)
+    ordersValue.labels(tenant).increment(receipt.total)
     val event = OrderEvent(
       orderId = receipt.orderId,
       tenant = tenant,
@@ -107,12 +121,21 @@ class DefaultCheckoutManager(
       source = "checkout"
     )
     events.produce(event, source = "checkout", key = receipt.orderId.toString())
+    render(receipt)
     return receipt.right()
+  }
+
+  // v2.42: the new receipt renderer. No span on purpose: the trace shows only self time in api.
+  private fun render(payload: Any) {
+    val renderMs = faults.double(CheckoutFaults.RENDER_MS)
+    if (renderMs > 0) {
+      renderer.render(payload, jitter(renderMs, RENDER_JITTER))
+    }
   }
 
   private fun checkoutWithShortSessions(tenant: String, items: List<Int>): CheckoutReceipt {
     val prices = sessions.session("load_prices") { connection -> loadPrices(connection, items) }
-    val total = pricing.price(items, prices).total
+    val total = quote(items, prices)
     val orderId = sessions.session("place_order") { connection ->
       connection.transaction { writeOrder(connection, tenant, items, total) }
     }
@@ -124,11 +147,23 @@ class DefaultCheckoutManager(
     sessions.session("checkout") { connection ->
       connection.transaction {
         val prices = loadPrices(connection, items)
-        val total = pricing.price(items, prices).total
+        val total = quote(items, prices)
         pricing.recommend(items)
         val orderId = writeOrder(connection, tenant, items, total)
         CheckoutReceipt(orderId = orderId, total = total)
       }
+    }
+
+  // v2.41: when pricing fails, charge the list prices (no discount) and answer 200 anyway.
+  private fun quote(items: List<Int>, prices: Map<Int, Double>): Double =
+    try {
+      pricing.price(items, prices).total
+    } catch (e: DownstreamException) {
+      if (!faults.bool(CheckoutFaults.PRICE_FALLBACK)) {
+        throw e
+      }
+      priceFallbacks.increment()
+      round(prices.values.sum() * CENTS) / CENTS
     }
 
   private fun loadPrices(connection: Connection, items: List<Int>): Map<Int, Double> {
@@ -175,6 +210,7 @@ class DefaultCheckoutManager(
   private companion object {
     const val MAX_ITEMS = 10
     const val CATALOG_TAIL = 500
+    const val CENTS = 100.0
     const val RENDER_JITTER = 0.2
     const val LOCK_HOLD_JITTER = 0.3
     const val PRICE_WORK_JITTER = 0.3

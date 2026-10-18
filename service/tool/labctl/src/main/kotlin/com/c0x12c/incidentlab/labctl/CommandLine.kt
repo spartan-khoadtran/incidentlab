@@ -29,6 +29,7 @@ object CommandLine {
         "--topic" -> options = options.copy(topic = topic(args.getOrNull(++index)))
         "--id" -> options = options.copy(id = args.getOrNull(++index).orEmpty())
         "--force" -> options = options.copy(force = true)
+        "--mode" -> options = options.copy(mode = mode(args.getOrNull(++index)))
         else -> throw UsageError("Unknown option '$flag'.")
       }
       index++
@@ -101,6 +102,10 @@ object CommandLine {
   private fun quizKind(raw: String?): QuizKind =
     QuizKind.entries.firstOrNull { it.flag == raw }
       ?: throw UsageError("KIND must be one of ${QuizKind.entries.joinToString(", ") { it.flag }}, for example `make quiz KIND=concepts`.")
+
+  private fun mode(raw: String?): String =
+    raw?.takeIf { it in Exercises.NEW_MODES }
+      ?: throw UsageError("MODE must be one of ${Exercises.NEW_MODES.joinToString(", ")}.")
 
   private fun level(raw: String?): Int {
     val levels = ScenarioCatalog.all.map { it.level }.distinct().sorted()

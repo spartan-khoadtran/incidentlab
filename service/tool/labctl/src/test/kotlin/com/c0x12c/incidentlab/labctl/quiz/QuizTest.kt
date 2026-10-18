@@ -3,12 +3,15 @@ package com.c0x12c.incidentlab.labctl.quiz
 import assertk.assertThat
 import assertk.assertions.hasSize
 import assertk.assertions.isBetween
+import assertk.assertions.isCloseTo
 import assertk.assertions.isEmpty
 import assertk.assertions.isEqualTo
 import assertk.assertions.isFalse
 import assertk.assertions.isNull
 import assertk.assertions.isTrue
 import com.c0x12c.incidentlab.labctl.Terminal
+import com.c0x12c.incidentlab.labctl.quiz.numbers.BenchmarkingNumbers
+import com.c0x12c.incidentlab.labctl.quiz.numbers.MethodsNumbers
 import kotlin.random.Random
 import org.junit.jupiter.api.Test
 
@@ -141,6 +144,23 @@ class QuizTest {
 
     assertThat(score).isEqualTo(0)
     assertThat(terminal.lines.any { it.startsWith("  NOT QUITE. Answer: ") && it.endsWith(drill.answer) }).isTrue()
+  }
+
+  @Test
+  fun `the benchmarking formulas give the answer worked out by hand on fixed values`() {
+    assertThat(BenchmarkingNumbers.closedLoopThroughput(clients = 20, responseMs = 50, thinkMs = 150).answer).isCloseTo(100.0, 0.001)
+    assertThat(BenchmarkingNumbers.closedLoopClients(targetRps = 500, responseMs = 100, thinkMs = 900).answer).isCloseTo(500.0, 0.001)
+    assertThat(BenchmarkingNumbers.closedLoopSlowdown(responseMs = 50, factor = 9, thinkMs = 150).answer).isCloseTo(66.667, 0.001)
+    assertThat(BenchmarkingNumbers.coordinatedOmission(stallSeconds = 2, intendedRps = 100).answer).isCloseTo(200.0, 0.001)
+    assertThat(BenchmarkingNumbers.omittedSlowShare(stallSeconds = 2, runSeconds = 60, intendedRps = 100).answer).isCloseTo(1.6667, 0.001)
+    assertThat(BenchmarkingNumbers.successThroughput(achievedRps = 320, failedPercent = 8).answer).isCloseTo(294.4, 0.001)
+  }
+
+  @Test
+  fun `the methods formulas give the answer worked out by hand on fixed values`() {
+    assertThat(MethodsNumbers.methodRSplit(taskMs = 400, stepMs = 80, factor = 4).answer).isCloseTo(340.0, 0.001)
+    assertThat(MethodsNumbers.methodRShare(taskMs = 400, stepMs = 250).answer).isCloseTo(62.5, 0.001)
+    assertThat(MethodsNumbers.baselineDrift(startMs = 200, growthPercent = 2, weeks = 4).answer).isCloseTo(216.486, 0.001)
   }
 
   private companion object {

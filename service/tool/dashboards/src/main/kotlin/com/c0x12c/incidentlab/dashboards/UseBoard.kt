@@ -31,6 +31,19 @@ object UseBoard {
     )
     b.stat("Admission limit", "app_admission_limit{job=\"api\"}", width = 4)
     b.timeseries("Admission wait p99", listOf(quantile(0.99, "app_admission_wait_seconds", selector = "{job=\"api\"}") to "wait p99"), "s", width = 10)
+    b.timeseries(
+      "Inventory lock: wait p99",
+      listOf(quantile(0.99, "app_lock_wait_seconds", selector = "{job=\"api\"}") to "lock wait p99"),
+      "s",
+      "Time a checkout waits for api's one inventory lock. Off-CPU time: the thread uses no CPU while it waits."
+    )
+    b.timeseries("Inventory lock: threads waiting (saturation)", listOf("app_lock_waiting{job=\"api\"}" to "waiting"), "short")
+    b.timeseries(
+      "Inventory lock: utilization",
+      listOf("100 * rate(app_lock_held_seconds_total{job=\"api\"}[RI])" to "held %"),
+      "percent",
+      "Share of time the lock is held. By M/M/1 the mean wait is utilization / (1 - utilization) times the hold time."
+    )
 
     b.row("Runtime (process)")
     b.timeseries(
@@ -104,6 +117,16 @@ object UseBoard {
     b.timeseries("Lag (seconds) by partition", listOf("kafka_consumer_lag_seconds" to "p{{partition}}"), "s")
     b.timeseries("Messages waiting in worker memory", listOf("kafka_partition_queue" to "p{{partition}}"), "short")
     b.timeseries("Processing errors/s", listOf("sum by (source) (rate(kafka_consumed_total{outcome=\"error\"}[RI])) or vector(0)" to "{{source}}"), "short")
+
+    b.row("CPU profiles (Pyroscope)")
+    b.flamegraph(
+      "api: where the CPU goes",
+      "{service_name=\"api\"}",
+      Board.CPU_PROFILE,
+      "Summed over the time range. Width is a share of CPU samples, and the x-axis is not time. Narrow the range to the incident, and compare with a range before it.",
+      width = 12
+    )
+    b.flamegraph("pricing: where the CPU goes", "{service_name=\"pricing\"}", Board.CPU_PROFILE, width = 12)
     return b
   }
 }

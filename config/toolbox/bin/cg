@@ -1,0 +1,13 @@
+#!/bin/sh
+# Prints the cgroup v2 directory of a process. The toolbox shares the host cgroup namespace, so the path is absolute.
+pid=$1
+if [ -z "$pid" ]; then
+  echo "usage: cg PID   (example: cg \$(pgrep -f checkout-api))" >&2
+  exit 2
+fi
+path=$(sed -n 's/^0:://p' "/proc/$pid/cgroup" 2>/dev/null)
+if [ -z "$path" ]; then
+  echo "cg: no cgroup v2 entry for PID $pid (no such process, or a cgroup v1 host)" >&2
+  exit 1
+fi
+echo "/sys/fs/cgroup$path"

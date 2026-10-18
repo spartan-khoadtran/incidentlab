@@ -1,0 +1,10 @@
+#!/bin/sh
+# bpftrace reads tracepoint formats from tracefs, and a Docker VM does not mount it inside containers.
+mountpoint -q /sys/kernel/tracing || mount -t tracefs nodev /sys/kernel/tracing
+mountpoint -q /sys/kernel/debug || mount -t debugfs nodev /sys/kernel/debug
+if [ -d /sys/kernel/tracing/events ]; then
+  echo "tracefs is mounted at /sys/kernel/tracing."
+else
+  echo "tracefs is not available: bpftrace tracepoints will not work on this VM." >&2
+  exit 1
+fi
