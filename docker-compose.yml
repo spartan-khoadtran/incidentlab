@@ -61,6 +61,8 @@ services:
       redis: { condition: service_started }
     labels:
       com.datadoghq.ad.checks: '{"openmetrics": {"instances": [{"openmetrics_endpoint": "http://%%host%%:8000/metrics", "namespace": "lab", "metrics": [".*"]}]}}'
+    # tc inside the container: the controller shapes api's traffic per destination (netem).
+    cap_add: [NET_ADMIN]
 
   pricing:
     <<: *svc

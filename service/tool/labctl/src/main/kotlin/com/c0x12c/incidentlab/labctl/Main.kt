@@ -6,6 +6,7 @@ import com.c0x12c.incidentlab.labctl.control.DockerControl
 import com.c0x12c.incidentlab.labctl.control.GrafanaAnnotator
 import com.c0x12c.incidentlab.labctl.control.HttpLabProbe
 import com.c0x12c.incidentlab.labctl.control.JsonHttp
+import com.c0x12c.incidentlab.labctl.control.NetemApplier
 import com.c0x12c.incidentlab.labctl.control.ServiceFaultApplier
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
 import com.c0x12c.incidentlab.labctl.quiz.Quiz
@@ -36,9 +37,9 @@ object Main : Logging {
         "daemon" -> {
           val docker = DockerControl.ifAvailable(System.getenv("COMPOSE_PROJECT") ?: "incidentlab", Path.of(System.getenv("DOCKER_SOCK") ?: "/var/run/docker.sock"))
           if (docker == null) {
-            info { "docker socket not found: CPU-limit exercises are disabled" }
+            info { "docker socket not found: CPU-limit and network exercises are disabled" }
           }
-          val appliers = listOfNotNull(ServiceFaultApplier(http), docker?.let { ContainerCpuApplier(it) })
+          val appliers = listOfNotNull(ServiceFaultApplier(http), docker?.let { ContainerCpuApplier(it) }, docker?.let { NetemApplier(it) })
           ControlDaemon(store, appliers).run()
           0
         }
