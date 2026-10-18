@@ -104,8 +104,8 @@ object CommandLine {
       ?: throw UsageError("KIND must be one of ${QuizKind.entries.joinToString(", ") { it.flag }}, for example `make quiz KIND=concepts`.")
 
   private fun mode(raw: String?): String =
-    raw?.takeIf { it in Exercises.MODES }
-      ?: throw UsageError("MODE must be one of ${Exercises.MODES.joinToString(", ")}.")
+    raw?.takeIf { it in Exercises.NEW_MODES }
+      ?: throw UsageError("MODE must be one of ${Exercises.NEW_MODES.joinToString(", ")}.")
 
   private fun level(raw: String?): Int {
     val levels = ScenarioCatalog.all.map { it.level }.distinct().sorted()

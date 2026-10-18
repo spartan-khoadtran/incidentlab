@@ -226,13 +226,12 @@ class Exercises(
       return 0
     }
     val scored = history.filter { it.score != null }
-    val mixed = history.any { it.mode != INCIDENT }
     for (entry in history) {
       val score = entry.score?.let { "${plain(it)}/${plain(MAX_POINTS)}" } ?: "-"
       val at = Instant.ofEpochSecond(entry.at.toLong()).atZone(zone).format(DAY_TIME)
       val missed = if (entry.missed.isEmpty()) "" else "  missed: ${entry.missed.joinToString(", ")}"
-      val mode = if (mixed) "${entry.mode.padEnd(MODE_COLUMN)} " else ""
-      terminal.out("#${entry.n.toString().padEnd(3)} $at  ${score.padEnd(SCORE_COLUMN)} ${plain(entry.minutes).padStart(MINUTES_COLUMN)} min  ${entry.hints} hint(s)  $mode${entry.title}$missed")
+      val mode = if (entry.mode == INCIDENT) "" else " (${entry.mode})"
+      terminal.out("#${entry.n.toString().padEnd(3)} $at  ${score.padEnd(SCORE_COLUMN)} ${plain(entry.minutes).padStart(MINUTES_COLUMN)} min  ${entry.hints} hint(s)  ${entry.title}$mode$missed")
       if (entry.note.isNotEmpty()) {
         terminal.out("     note: ${entry.note}")
       }
@@ -413,7 +412,12 @@ class Exercises(
   companion object {
     const val INCIDENT = "incident"
     const val TOOLBOX = "toolbox"
-    val MODES = listOf(INCIDENT, TOOLBOX)
+    const val RAMP = "ramp"
+    const val BENCH = "bench"
+    val MODES = listOf(INCIDENT, TOOLBOX, RAMP, BENCH)
+
+    /** The modes `make new` starts. The ramp and the bench have their own commands. */
+    val NEW_MODES = listOf(INCIDENT, TOOLBOX)
     const val HINT_PENALTY = 0.5
     const val NATURE_POINTS = 1.0
     const val LOCATION_POINTS = 1.0
@@ -433,7 +437,6 @@ class Exercises(
     private const val ID_COLUMN = 18
     const val TITLE_COLUMN = 48
     private const val SCORE_COLUMN = 6
-    private const val MODE_COLUMN = 8
     private const val MINUTES_COLUMN = 5
     private const val MILLIS_PER_SECOND = 1_000.0
     private const val SECONDS_PER_MINUTE = 60.0

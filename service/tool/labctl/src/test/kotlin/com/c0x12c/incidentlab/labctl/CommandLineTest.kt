@@ -76,4 +76,10 @@ class CommandLineTest {
     assertFailure { CommandLine.benchOptions(listOf("--seconds", "10")) }.isInstanceOf(UsageError::class)
     assertFailure { CommandLine.benchOptions(listOf("--rate", "10")) }.isInstanceOf(UsageError::class)
   }
+
+  @Test
+  fun `make new starts only the incident and toolbox modes`() {
+    assertFailure { CommandLine.newOptions(listOf("--mode", Exercises.RAMP)) }.hasMessage("MODE must be one of incident, toolbox.")
+    assertFailure { CommandLine.newOptions(listOf("--mode", Exercises.BENCH)) }.isInstanceOf(UsageError::class)
+  }
 }
