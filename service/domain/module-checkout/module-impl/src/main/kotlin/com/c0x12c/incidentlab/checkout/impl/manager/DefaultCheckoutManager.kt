@@ -15,6 +15,7 @@ import com.c0x12c.incidentlab.checkout.impl.events.OrderEvents
 import com.c0x12c.incidentlab.checkout.impl.leak.MemoryLeak
 import com.c0x12c.incidentlab.checkout.impl.pricing.DownstreamException
 import com.c0x12c.incidentlab.checkout.impl.pricing.PricingClient
+import com.c0x12c.incidentlab.checkout.impl.render.ReceiptRenderer
 import com.c0x12c.incidentlab.client.dto.checkout.CheckoutReceipt
 import com.c0x12c.incidentlab.client.dto.checkout.OrderEvent
 import com.c0x12c.incidentlab.client.dto.checkout.ProductDetail
@@ -48,6 +49,7 @@ class DefaultCheckoutManager(
   private val cache: ProductCache,
   private val events: OrderEvents,
   private val leak: MemoryLeak,
+  private val renderer: ReceiptRenderer,
   private val runtime: EventLoopRuntime,
   private val tracer: Tracer,
   private val objectMapper: ObjectMapper,
@@ -65,6 +67,10 @@ class DefaultCheckoutManager(
         runtime.onEventLoop { CpuBurner.burn(jitter(burn, RENDER_JITTER)) }
       }
     }
+    return loadProduct(id).onRight { detail -> render(detail) }
+  }
+
+  private fun loadProduct(id: Int): Either<ClientException, ProductDetail> {
     val ttl = faults.int(CheckoutFaults.CACHE_TTL_MS).coerceAtLeast(1)
     val key = "product:$ttl:$id"
     cache.get(key)?.let { cached ->
@@ -107,7 +113,16 @@ class DefaultCheckoutManager(
       source = "checkout"
     )
     events.produce(event, source = "checkout", key = receipt.orderId.toString())
+    render(receipt)
     return receipt.right()
+  }
+
+  // v2.42: the new receipt renderer. No span on purpose: the trace shows only self time in api.
+  private fun render(payload: Any) {
+    val renderMs = faults.double(CheckoutFaults.RENDER_MS)
+    if (renderMs > 0) {
+      renderer.render(payload, jitter(renderMs, RENDER_JITTER))
+    }
   }
 
   private fun checkoutWithShortSessions(tenant: String, items: List<Int>): CheckoutReceipt {

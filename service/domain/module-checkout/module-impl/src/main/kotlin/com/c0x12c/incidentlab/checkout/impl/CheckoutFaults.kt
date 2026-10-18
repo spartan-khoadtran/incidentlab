@@ -18,6 +18,7 @@ object CheckoutFaults {
   const val EXTRA_EVENTS_RPS = "extra_events_rps"
   const val POISON_NONCE = "poison_nonce"
   const val PRICING_TIMEOUT_S = "pricing_timeout_s"
+  const val RENDER_MS = "render_ms"
 
   val DEFAULTS: Map<String, Any?> = mapOf(
     // max concurrent requests the app accepts; the rest wait before the handler starts timing
@@ -46,6 +47,8 @@ object CheckoutFaults {
     EXTRA_EVENTS_RPS to 0,
     // produce one malformed event when this changes
     POISON_NONCE to null,
-    PRICING_TIMEOUT_S to 2.0
+    PRICING_TIMEOUT_S to 2.0,
+    // CPU work per request on the request's own thread: the receipt renderer
+    RENDER_MS to 0
   )
 }
