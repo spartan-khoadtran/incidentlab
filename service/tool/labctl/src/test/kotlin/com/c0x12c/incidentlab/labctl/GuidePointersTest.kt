@@ -3,9 +3,11 @@ package com.c0x12c.incidentlab.labctl
 import assertk.assertThat
 import assertk.assertions.isEmpty
 import assertk.assertions.isNotEmpty
+import com.c0x12c.incidentlab.labctl.bench.BenchExercise
 import com.c0x12c.incidentlab.labctl.guide.GuideIndex
 import com.c0x12c.incidentlab.labctl.quiz.Concepts
 import com.c0x12c.incidentlab.labctl.quiz.Numbers
+import com.c0x12c.incidentlab.labctl.ramp.RampExercise
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
 import java.nio.file.Files
 import java.nio.file.Path
@@ -53,7 +55,7 @@ class GuidePointersTest {
 
   @Test
   fun `every scenario and quiz pointer names a heading of the docs`() {
-    val pointers = ScenarioCatalog.all.map { it.id to it.doc } + drillPointers
+    val pointers = ScenarioCatalog.all.map { it.id to it.doc } + listOf("make ramp" to RampExercise.DOC, "make bench" to BenchExercise.DOC) + drillPointers
     val broken = pointers.flatMap { (owner, doc) ->
       doc.split("; ").mapNotNull { part ->
         val (title, subsection) = parse(part)
