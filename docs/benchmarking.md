@@ -34,7 +34,7 @@ In the lab, loadgen's users mostly browse the first 50 products, so most product
 
 ### Ignoring errors
 
-Errors are fast. A request that fails right away takes 2 ms. A request that succeeds takes 100 ms. So a run with 30% failures shows a better p99 and a higher rate than a healthy run.
+Errors are fast. A request that fails right away takes 2 ms. A request that succeeds takes 100 ms. So a run with 30% failures can show a better mean and p99 than a healthy run. In a closed loop it also shows a higher rate, because a fast error frees the client sooner.
 
 Worked example at 1,000 requests/s:
 
@@ -172,4 +172,4 @@ How to read it, in order:
 4. p99 by endpoint, against the SLO and against the baseline.
 5. The resource that was full on the server. That is the result of the test. The rps is only where it stopped.
 
-Example: offered 500 requests/s, achieved 320, success 92%, pool at 4 of 4 with 8 waiting. Success throughput is 320 × 0.92 = 294 requests/s. The result is not 320 rps. The result is that the pool of 4 caps api at about 300 good requests/s.
+Example: offered 500 requests/s, achieved 320, success 92%, the DB pool full with 8 waiting. Success throughput is 320 × 0.92 = 294 requests/s. The result is not 320 rps. The result is that the DB pool caps api at about 300 good requests/s.
