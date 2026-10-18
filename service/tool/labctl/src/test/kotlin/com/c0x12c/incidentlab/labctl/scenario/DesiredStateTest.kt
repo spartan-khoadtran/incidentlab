@@ -3,6 +3,7 @@ package com.c0x12c.incidentlab.labctl.scenario
 import assertk.assertThat
 import assertk.assertions.isEqualTo
 import com.c0x12c.incidentlab.labctl.control.DesiredState
+import com.c0x12c.incidentlab.labctl.control.Services
 import com.c0x12c.incidentlab.labctl.state.ActiveExercise
 import com.c0x12c.incidentlab.labctl.state.LabState
 import org.junit.jupiter.api.Test
@@ -10,12 +11,12 @@ import org.junit.jupiter.api.Test
 class DesiredStateTest {
 
   @Test
-  fun `with no exercise every service gets an empty override and the api keeps 2 cores`() {
+  fun `with no exercise every service gets an empty override, the api keeps 2 cores and postgres has no IOPS limit`() {
     val desired = DesiredState.of(LabState())
 
-    assertThat(desired.faults.keys).isEqualTo(setOf("api", "pricing", "worker", "loadgen", "noisy"))
+    assertThat(desired.faults.keys).isEqualTo(setOf("api", "pricing", "worker", "loadgen", "noisy", "pgobserver"))
     assertThat(desired.faults.values.all { it.isEmpty() }).isEqualTo(true)
-    assertThat(desired.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0)))
+    assertThat(desired.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0), "postgres" to mapOf("write_iops" to "max")))
   }
 
   @Test
@@ -28,7 +29,7 @@ class DesiredStateTest {
     val desired = DesiredState.of(state)
 
     assertThat(desired.faults.getValue("loadgen")).isEqualTo(mapOf<String, Any?>("rate_multiplier" to 1.5))
-    assertThat(desired.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 0.3)))
+    assertThat(desired.docker.getValue("api")).isEqualTo(mapOf("cpus" to 0.3))
   }
 
   @Test
@@ -57,6 +58,6 @@ class DesiredStateTest {
     val desired = DesiredState.of(state)
 
     assertThat(desired.faults.getValue("api")).isEqualTo(emptyMap<String, Any?>())
-    assertThat(desired.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0)))
+    assertThat(desired.docker).isEqualTo(Services.BASE_DOCKER)
   }
 }

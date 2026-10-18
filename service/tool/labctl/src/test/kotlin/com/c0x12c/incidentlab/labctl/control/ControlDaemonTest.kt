@@ -21,6 +21,6 @@ class ControlDaemonTest {
     daemon.applyOnce()
 
     assertThat(seen.size).isEqualTo(2)
-    assertThat(seen.map { it.docker }.toSet()).isEqualTo(setOf(mapOf("api" to mapOf("cpus" to 0.3))))
+    assertThat(seen.map { it.docker.getValue("api") }.toSet()).isEqualTo(setOf(mapOf("cpus" to 0.3)))
   }
 }

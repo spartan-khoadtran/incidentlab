@@ -12,9 +12,9 @@ import java.nio.file.Path
 import kotlin.math.roundToLong
 
 /**
- * The one thing the controller does through the Docker socket: resize the api container's CPU
- * limit for the throttling exercise. Raw engine API calls over the unix socket; the containers are
- * found by the labels compose puts on them.
+ * What the controller does through the Docker socket: resize the api container's CPU limit for the
+ * throttling exercise, and find a container's id for the cgroup applier. Raw engine API calls over
+ * the unix socket; the containers are found by the labels compose puts on them.
  */
 class DockerControl(
   private val project: String,
@@ -37,7 +37,7 @@ class DockerControl(
     }
   }
 
-  private fun containerId(service: String): String? {
+  fun containerId(service: String): String? {
     val filters = LabJson.mapper.writeValueAsString(
       mapOf("label" to listOf("com.docker.compose.project=$project", "com.docker.compose.service=$service"))
     )
