@@ -106,6 +106,10 @@ services:
       - pg_stat_statements.track=all
       - -c
       - max_connections=200
+      - -c
+      - track_io_timing=on
+      - -c
+      - track_wal_io_timing=on
     volumes:
       - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - pgdata:/var/lib/postgresql/data

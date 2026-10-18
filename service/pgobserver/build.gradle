@@ -6,8 +6,9 @@ plugins {
 group "com.c0x12c.incidentlab.pgobserver"
 version "1.0-SNAPSHOT"
 
-// pgobserver: Postgres seen from the inside, the lab's database monitoring. Polls
-// pg_stat_statements and pg_stat_activity and republishes them as the pg_* series.
+// pgobserver: Postgres seen from the inside, and the lab's agent inside it. Polls
+// the statistics views as the pg_* series, applies the checkpoint settings an exercise asks for,
+// and runs the review_stats writer when a fault turns it on.
 dependencies {
   implementation(libs.kotlin.stdlib)
 

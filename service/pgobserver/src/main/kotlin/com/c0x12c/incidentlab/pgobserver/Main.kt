@@ -2,7 +2,7 @@ package com.c0x12c.incidentlab.pgobserver
 
 import io.micronaut.runtime.Micronaut
 
-// pgobserver: Postgres seen from the inside. pg_stat_statements and pg_stat_activity as Prometheus series.
+// pgobserver: Postgres seen from the inside (the statistics views as Prometheus series) and the lab's fault agent for Postgres.
 object Main {
   @JvmStatic
   fun main(args: Array<String>) {
