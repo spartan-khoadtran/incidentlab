@@ -49,13 +49,14 @@ describe("Load and capacity", () => {
     await user.click(await screen.findByRole("button", { name: "Start the ramp" }));
     const now = await screen.findByRole("listitem", { current: "step" });
     expect(now.textContent).toBe("75");
-    await user.type(screen.getByRole("textbox", { name: "Knee (rps)" }), "75");
+    await user.type(screen.getByRole("textbox", { name: /^Knee/ }), "75");
     await user.type(screen.getByRole("textbox", { name: "Highest throughput (rps)" }), "75");
     await user.selectOptions(screen.getByRole("combobox", { name: "Resource that filled first" }), "mock_pool");
     await user.click(screen.getByRole("button", { name: "Submit" }));
     expect(await screen.findByText("Mock ramp explanation.")).toBeTruthy();
     expect(screen.getByText("310 ms")).toBeTruthy();
     expect(screen.getByText("0.4%")).toBeTruthy();
+    expect(screen.getByText(/Mock resource: the pool \(missed\)/)).toBeTruthy();
   });
 
   it("runs a bench and shows the minutes before against the bench", async () => {
@@ -63,6 +64,9 @@ describe("Load and capacity", () => {
     renderCapacity();
     await user.click(await screen.findByRole("button", { name: "Start the bench" }));
     expect(await screen.findByText("Mock bench explanation.")).toBeTruthy();
-    expect(screen.getByText("p99 ms")).toBeTruthy();
+    expect(screen.getByText("Clients: p99")).toBeTruthy();
+    expect(screen.getByText("120 ms")).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Save to history and go back" }));
+    expect(await screen.findByRole("button", { name: "Start the bench" })).toBeTruthy();
   });
 });

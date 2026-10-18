@@ -59,7 +59,15 @@ export function HistoryTab() {
         </section>
         <section>
           <h2 className="panel-title">The cause you miss most</h2>
-          <p>{history.most_missed_cause ? history.most_missed_cause.label : "None yet."}</p>
+          <p>
+            {history.most_missed_cause ? (
+              <>
+                {history.most_missed_cause.label} <span className="muted small">({history.most_missed_cause.count} times)</span>
+              </>
+            ) : (
+              "None yet."
+            )}
+          </p>
         </section>
       </div>
       <h2 className="panel-title">Every exercise</h2>
@@ -91,7 +99,7 @@ export function HistoryTab() {
                   <span className="history-title">{e.title}</span>
                   <span className="muted small">
                     {" "}
-                    {e.mode !== "incident" ? `${e.mode} · ` : ""}level {e.level}
+                    {e.mode !== "incident" ? `${e.mode}` : ""}{e.mode !== "incident" && e.level ? " · " : ""}{e.level ? `level ${e.level}` : ""}
                   </span>
                   {e.note ? <span className="history-note">{e.note}</span> : null}
                 </td>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { api, ApiError, parseNumber, rampResources } from "../src/lib/api.ts";
+import { api, ApiError, parseNumber } from "../src/lib/api.ts";
 import { dashboardUrl, exerciseRange, promqlUrl } from "../src/lib/grafana.ts";
 import { MockLab } from "./mock-lab.ts";
 import { mockServer } from "./msw.ts";
@@ -60,10 +60,12 @@ describe("helpers", () => {
     expect(parseNumber("")).toBeNull();
   });
 
-  it("accepts the ramp resources as a list or wrapped in an object", () => {
-    const o = [{ key: "pool", label: "Pool" }];
-    expect(rampResources(o)).toEqual(o);
-    expect(rampResources({ resources: o })).toEqual(o);
+  it("rebuilds an answered exercise from GET /api/exercise, with the result next to the reveal", async () => {
+    await api.start({});
+    await api.answer({ nature: "mock_arch", location: "mock_lb", signal: "mock_gap", cause: "mock_queue" });
+    const view = await api.exercise();
+    expect(view.reveal?.id).toBe("mock_fault");
+    expect(view.result && "verdicts" in view.result ? view.result.score : null).toBe(5);
   });
 
   it("builds a Grafana 11 Explore link with the Prometheus datasource and the exercise range", () => {

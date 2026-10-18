@@ -1,7 +1,6 @@
 import { CopyButton } from "../../components/Copy";
 import { GuideLinks } from "../../components/LabUi";
 import type { Option, Options, Result, Reveal, Verdict } from "../../lib/api";
-import { lab } from "../../lib/data";
 import { promqlUrl, type TimeRange } from "../../lib/grafana";
 import type { Choices } from "./AnswerForm";
 
@@ -25,7 +24,6 @@ function plain(n: number): string {
 export function ResultView({
   reveal,
   result,
-  savedScore = null,
   choices,
   options,
   toolbox,
@@ -34,7 +32,6 @@ export function ResultView({
 }: {
   reveal: Reveal;
   result: Result | null;
-  savedScore?: number | null;
   choices: Choices | null;
   options: Options | null;
   toolbox: boolean;
@@ -50,11 +47,6 @@ export function ResultView({
           <div className="score" aria-label={`Score ${plain(result.score)} out of ${plain(result.max)}`}>
             <span className="score-value">{plain(result.score)}</span>
             <span className="score-max">/ {plain(result.max)}</span>
-          </div>
-        ) : savedScore !== null ? (
-          <div className="score" aria-label={`Score ${plain(savedScore)} out of ${lab.scoring.max_points}`}>
-            <span className="score-value">{plain(savedScore)}</span>
-            <span className="score-max">/ {lab.scoring.max_points}</span>
           </div>
         ) : (
           <div className="score score-none">

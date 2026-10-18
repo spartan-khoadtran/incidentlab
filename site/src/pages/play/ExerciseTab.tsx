@@ -25,7 +25,6 @@ export function ExerciseTab() {
   const [error, setError] = useState<unknown>(null);
   const [confirmReveal, setConfirmReveal] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [savedScore, setSavedScore] = useState<number | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -34,12 +33,8 @@ export function ExerciseTab() {
         if (!live) return;
         setView(v);
         setReveal(v.reveal ?? null);
+        if (v.result && "verdicts" in v.result && v.result.verdicts && "nature" in v.result.verdicts) setResult(v.result as Result);
         setLoaded(true);
-        if (v.reveal)
-          api.history().then(
-            (h) => live && setSavedScore(h.entries.find((e) => e.n === v.n)?.score ?? null),
-            () => undefined,
-          );
       },
       (e) => {
         if (!live) return;
@@ -77,6 +72,27 @@ export function ExerciseTab() {
   };
 
   if (!loaded) return <p className="lab-wait">Reading the open exercise...</p>;
+
+  if (error instanceof ApiError && error.code === "stale_exercise") {
+    return (
+      <div className="callout">
+        <p>{error.message}</p>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() =>
+            act("clear", async () => {
+              await api.clear();
+              reset();
+              await refresh();
+            })
+          }
+        >
+          Clear it
+        </button>
+      </div>
+    );
+  }
 
   if (view && (view.mode === "ramp" || view.mode === "bench")) {
     return (
@@ -118,7 +134,7 @@ export function ExerciseTab() {
   if (reveal) {
     return (
       <div className="play-result">
-        <ResultView reveal={reveal} result={result} savedScore={savedScore} choices={choices} options={options} toolbox={toolbox} grafanaUrl={status?.links.grafana ?? null} range={range} />
+        <ResultView reveal={reveal} result={result} choices={choices} options={options} toolbox={toolbox} grafanaUrl={status?.links.grafana ?? null} range={range} />
         <div className="result-actions">
           <button
             type="button"

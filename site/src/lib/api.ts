@@ -26,9 +26,14 @@ export interface ActiveView {
   hints: string[];
   answered: boolean;
   rules: string | null;
-  reveal?: Reveal;
+  /** From the start of a ramp. */
   plan?: RampPlan;
+  /** From the start of a bench. */
   ends_at?: number;
+  /** Once an incident is answered or revealed. */
+  reveal?: Reveal;
+  /** Once it is answered: a Result for an incident, a RampResult for a ramp. */
+  result?: Result | RampResult;
 }
 
 export interface GuideRef {
@@ -50,6 +55,7 @@ export interface Reveal {
 }
 
 export interface Result {
+  n: number;
   score: number;
   raw: number;
   max: number;
@@ -81,7 +87,7 @@ export interface HistoryEntry {
   n: number;
   id: string;
   title: string;
-  level: number;
+  level: number | null;
   mode: Mode;
   score: number | null;
   hints: number;
@@ -95,7 +101,7 @@ export interface History {
   entries: HistoryEntry[];
   average: number | null;
   by_topic: { topic: string; average: number; count: number }[];
-  most_missed_cause: Option | null;
+  most_missed_cause: (Option & { count: number }) | null;
 }
 
 export interface Answer {
@@ -115,23 +121,58 @@ export interface NewExercise {
 }
 
 export interface RampRow {
-  rps_offered: number;
-  rps_achieved: number;
-  p99: number;
-  error_share: number;
+  step: number;
+  target_rps: number;
+  rps_offered: number | null;
+  rps_achieved: number | null;
+  /** Seconds. */
+  p99: number | null;
+  error_share: number | null;
+  knee: boolean;
 }
 
 export interface RampResult {
-  score: number;
+  n: number;
+  title: string;
+  score: number | null;
   max: number;
+  steps_run: number;
+  steps_total: number;
   table: RampRow[];
-  measured: { knee_rps: number; max_rps: number; resource: string };
+  measured: { knee_rps: number | null; knee_step: number | null; max_rps: number | null; resource: string; resource_label: string };
+  given: { knee_rps: number; max_rps: number; resource: string } | null;
+  verdicts: { knee: boolean; max: boolean; resource: boolean } | null;
+  missed: string[];
+  prometheus_down: boolean;
   explanation: string;
+  guide: GuideRef[];
 }
 
-export type BenchRow = Record<string, number | string | null>;
+/** p50 and p99 in seconds, rates in requests per second. Null when Prometheus had no data. */
+export interface BenchRow {
+  rate_rps: number | null;
+  p50: number | null;
+  p99: number | null;
+  error_share: number | null;
+}
 
-export type BenchReport = { before: BenchRow; during: BenchRow; explanation: string };
+export interface BenchWindow {
+  client: BenchRow;
+  api: BenchRow;
+  /** Seconds. */
+  client_mean: number | null;
+  api_in_flight: number | null;
+}
+
+export interface BenchReport {
+  n: number;
+  clients: number;
+  seconds: number;
+  before: BenchWindow;
+  during: BenchWindow;
+  explanation: string;
+  guide: GuideRef[];
+}
 
 export interface QuizQuestion {
   index: number;
@@ -200,21 +241,17 @@ export const api = {
   history: () => call<History>("GET", "/history"),
   load: (multiplier: number) => call<{ multiplier: number; rps: number }>("POST", "/load", { multiplier }),
   ramp: (every?: number) => call<ActiveView>("POST", "/ramp", every ? { every } : {}),
-  rampOptions: () => call<Option[] | { resources: Option[] }>("GET", "/ramp/options"),
-  rampAnswer: (body: { knee_rps: number; max_rps: number; resource: string }) => call<RampResult>("POST", "/ramp/answer", body),
+  rampOptions: () => call<{ resources: Option[] }>("GET", "/ramp/options"),
+  rampAnswer: (body: { knee_rps: number; max_rps: number; resource: string; note?: string }) => call<RampResult>("POST", "/ramp/answer", body),
+  rampReveal: () => call<RampResult>("POST", "/ramp/reveal"),
   bench: (body: { clients?: number; seconds?: number }) => call<ActiveView>("POST", "/bench", body),
   benchReport: () => call<BenchReport>("GET", "/bench/report"),
+  benchClose: () => call<BenchReport>("POST", "/bench/report"),
   quiz: (body: { count?: number; kind?: "numbers" | "concepts" | "all" }) => call<{ session: string; questions: QuizQuestion[] }>("POST", "/quiz", body),
+  /** A number question also takes the text as typed (`"12,5"`); the daemon reads it like the CLI. */
   quizAnswer: (session: string, index: number, answer: number | string) =>
     call<QuizVerdict>("POST", `/quiz/${encodeURIComponent(session)}/${index}`, { answer }),
 };
-
-/** `GET /api/ramp/options` is written as "resource Options"; accept a bare list or one wrapped in an object. */
-export function rampResources(body: Option[] | Record<string, unknown>): Option[] {
-  if (Array.isArray(body)) return body;
-  const list = Object.values(body).find(Array.isArray);
-  return (list as Option[] | undefined) ?? [];
-}
 
 /** A number typed by a learner: a comma or a dot both work as the decimal sign, like the CLI. */
 export function parseNumber(raw: string): number | null {

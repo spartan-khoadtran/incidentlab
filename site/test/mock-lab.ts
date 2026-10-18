@@ -46,6 +46,9 @@ export class MockLab {
   history: unknown[] = [];
   load = 1;
   quiz = new Map<string, { kind: string; answer: string }[]>();
+  lastResult: unknown = null;
+  plan = { steps: [50, 75, 100, 125, 150, 200, 250, 300], every: 60, total_seconds: 480 };
+  endsAt = 0;
 
   view() {
     const a = this.active!;
@@ -63,6 +66,9 @@ export class MockLab {
       answered: a.answered,
       rules: a.mode === "toolbox" ? "Mock rules: no Grafana, prove it from make shell." : null,
       ...(a.answered || a.revealed ? { reveal: MOCK_REVEAL } : {}),
+      ...(a.answered && this.lastResult ? { result: this.lastResult } : {}),
+      ...(a.mode === "ramp" ? { plan: this.plan } : {}),
+      ...(a.mode === "bench" ? { ends_at: this.endsAt } : {}),
     };
   }
 
@@ -116,7 +122,8 @@ export class MockLab {
         this.active.answered = true;
         const missed = keys.filter((k) => verdicts[k] !== "correct");
         this.history.push({ n: this.active.n, id: MOCK_REVEAL.id, title: MOCK_REVEAL.title, level: 2, mode: this.active.mode, score, hints: this.active.hints_used, minutes: 4.2, at: Date.now() / 1000, missed, note: String(body.note ?? "") });
-        return { status: 200, body: { score, raw, max: 5, hints_used: this.active.hints_used, verdicts, missed, reveal: MOCK_REVEAL } };
+        this.lastResult = { n: this.active.n, score, raw, max: 5, hints_used: this.active.hints_used, verdicts, missed, reveal: MOCK_REVEAL };
+        return { status: 200, body: this.lastResult };
       }
       case route === "POST /exercise/reveal":
         if (!this.active) return err(404, "no_exercise", "No exercise is open.");
@@ -133,7 +140,7 @@ export class MockLab {
             entries: this.history,
             average: scored.length ? scored.reduce((s, e) => s + (e.score ?? 0), 0) / scored.length : null,
             by_topic: scored.length ? [{ topic: "red", average: 3.5, count: scored.length }] : [],
-            most_missed_cause: scored.length ? OPTIONS.causes[2] : null,
+            most_missed_cause: scored.length ? { ...OPTIONS.causes[2], count: 1 } : null,
           },
         };
       }
@@ -145,37 +152,63 @@ export class MockLab {
       }
       case route === "POST /ramp": {
         if (this.active) return err(409, "exercise_open", "An exercise is open.");
-        if (this.load !== 1) return err(409, "load_not_default", "Set the load back to 1 first.");
+        if (this.load !== 1) return err(409, "load_not_one", "Set the load back to 1 first.");
         this.n += 1;
         const every = Number(body.every ?? 60);
         this.active = { n: this.n, mode: "ramp", level: null, started_at: Date.now() / 1000 - every - 5, hints_used: 0, answered: false, revealed: false };
-        const steps = [50, 75, 100, 125, 150, 200, 250, 300];
-        return { status: 201, body: { ...this.view(), plan: { steps, every, total_seconds: steps.length * every } } };
+        this.plan = { ...this.plan, every, total_seconds: this.plan.steps.length * every };
+        return { status: 201, body: this.view() };
       }
       case route === "GET /ramp/options":
-        return { status: 200, body: [OPTION("mock_pool", "Mock resource: the pool"), OPTION("mock_cores", "Mock resource: api CPU")] };
+        return { status: 200, body: { resources: [OPTION("mock_pool", "Mock resource: the pool"), OPTION("mock_cores", "Mock resource: api CPU")] } };
       case route === "POST /ramp/answer":
-        return {
-          status: 200,
-          body: {
-            score: 2,
-            max: 3,
-            table: [
-              { rps_offered: 50, rps_achieved: 50, p99: 0.08, error_share: 0 },
-              { rps_offered: 75, rps_achieved: 74.6, p99: 0.31, error_share: 0.004 },
-            ],
-            measured: { knee_rps: 75, max_rps: 75, resource: "Mock resource: the pool" },
-            explanation: "Mock ramp explanation.",
-          },
+      case route === "POST /ramp/reveal": {
+        const answered = route.endsWith("answer");
+        const body2 = {
+          n: this.active?.n ?? 0,
+          title: "Capacity ramp",
+          score: answered ? 2 : null,
+          max: 3,
+          steps_run: 2,
+          steps_total: 8,
+          table: [
+            { step: 1, target_rps: 50, rps_offered: 50, rps_achieved: 50, p99: 0.08, error_share: 0, knee: false },
+            { step: 2, target_rps: 75, rps_offered: 75.2, rps_achieved: 74.6, p99: 0.31, error_share: 0.004, knee: true },
+          ],
+          measured: { knee_rps: 75, knee_step: 2, max_rps: 74.6, resource: "mock_pool", resource_label: "Mock resource: the pool" },
+          given: answered ? { knee_rps: Number(body.knee_rps), max_rps: Number(body.max_rps), resource: String(body.resource) } : null,
+          verdicts: answered ? { knee: true, max: true, resource: false } : null,
+          missed: answered ? ["resource"] : [],
+          prometheus_down: false,
+          explanation: "Mock ramp explanation.",
+          guide: [{ pointer: "Capacity from a ramp test > Finding the knee", file: "capacity.md" }],
         };
+        return { status: 200, body: body2 };
+      }
       case route === "POST /bench": {
         if (this.active) return err(409, "exercise_open", "An exercise is open.");
         this.n += 1;
         this.active = { n: this.n, mode: "bench", level: null, started_at: Date.now() / 1000, hints_used: 0, answered: false, revealed: false };
-        return { status: 201, body: { ...this.view(), ends_at: Date.now() / 1000 - 1 } };
+        this.endsAt = Date.now() / 1000 - 1;
+        return { status: 201, body: this.view() };
       }
       case route === "GET /bench/report":
-        return { status: 200, body: { before: { p99_ms: 120, rps: 50 }, during: { p99_ms: 35, rps: 410 }, explanation: "Mock bench explanation." } };
+      case route === "POST /bench/report": {
+        const row = (rate: number, p50: number, p99: number) => ({ rate_rps: rate, p50, p99, error_share: 0 });
+        if (route.startsWith("POST")) this.active = null;
+        return {
+          status: 200,
+          body: {
+            n: this.n,
+            clients: 20,
+            seconds: 120,
+            before: { client: row(50, 0.04, 0.12), api: row(50, 0.03, 0.1), client_mean: 0.05, api_in_flight: 2.5 },
+            during: { client: row(410, 0.03, 0.035), api: row(410, 0.03, 0.034), client_mean: 0.031, api_in_flight: 19.8 },
+            explanation: "Mock bench explanation.",
+            guide: [{ pointer: "Closed-loop clients in this lab > What make bench does", file: "capacity.md" }],
+          },
+        };
+      }
       case route === "POST /quiz": {
         const session = `s${this.quiz.size + 1}`;
         const questions = [
@@ -186,14 +219,15 @@ export class MockLab {
           { kind: "number", answer: "10" },
           { kind: "choice", answer: "The load balancer" },
         ]);
-        return { status: 200, body: { session, questions } };
+        return { status: 201, body: { session, questions } };
       }
       default: {
         const quiz = route.match(/^POST \/quiz\/([^/]+)\/(\d+)$/);
         if (quiz) {
           const q = this.quiz.get(quiz[1])?.[Number(quiz[2])];
           if (!q) return err(404, "no_question", "No such question.");
-          const correct = q.kind === "number" ? Math.abs(Number(body.answer) - Number(q.answer)) < 0.5 : body.answer === q.answer;
+          const given = typeof body.answer === "string" && q.kind === "number" ? Number(body.answer.replace(",", ".")) : body.answer;
+          const correct = q.kind === "number" ? Math.abs(Number(given) - Number(q.answer)) < 0.5 : given === q.answer;
           return { status: 200, body: { correct, answer: q.answer, explanation: "Mock explanation: L = λ × W.", guide: [{ pointer: "Linking RED and USE > Little's Law", file: "investigation-guide.md" }] } };
         }
         return err(404, "not_found", "No such endpoint.");

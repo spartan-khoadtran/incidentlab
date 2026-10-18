@@ -568,11 +568,16 @@
 }
 
 @media (min-width: 900px) {
-  .question-cause {
+  .question-cause,
+  .question-signal .question-group {
     columns: 2;
+    column-gap: 18px;
   }
   .question-cause legend {
     column-span: all;
+  }
+  .question-signal .choice {
+    break-inside: avoid;
   }
 }
 
