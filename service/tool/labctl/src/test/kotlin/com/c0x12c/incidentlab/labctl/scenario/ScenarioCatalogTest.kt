@@ -209,8 +209,8 @@ class ScenarioCatalogTest {
     val pg = bursts.faults(Params(bursts.params(random, ExerciseContext()), "14:05")).services.getValue("pgobserver")
     assertThat(pg["checkpoint_timeout_s"]).isEqualTo(30)
     assertThat(pg["checkpoint_completion_target"]).isEqualTo(0.1)
-    assertThat(pg["max_wal_size_mb"]).isEqualTo(64)
-    assertThat((pg["stats_rows_per_s"] as Int)).isBetween(250, 400)
+    assertThat(pg.containsKey("max_wal_size_mb")).isFalse()
+    assertThat((pg["stats_rows_per_s"] as Int)).isBetween(2000, 3000)
 
     val iops = ScenarioCatalog.byId.getValue("iops_limit")
     val iopsSpec = iops.faults(Params(iops.params(random, ExerciseContext()), "14:05"))
@@ -228,12 +228,15 @@ class ScenarioCatalogTest {
 
   @Test
   fun `the checkpoint explanation works out the dirty pages and the burst window`() {
-    val explain = ScenarioCatalog.byId.getValue("checkpoint_bursts").explain(Params(mapOf("rows" to 300), "14:05"))
+    val scenario = ScenarioCatalog.byId.getValue("checkpoint_bursts")
+    val explain = scenario.explain(Params(mapOf("rows" to 2500), "14:05"))
 
-    // 300 × 30 = 9000 updates; 2560 × (1 − e^(−9000/2560)) = 2484 pages = 19.4 MB; 30 × 0.1 = 3 s → 6.5 MB/s
-    assertThat(explain.contains("9000 updates")).isTrue()
-    assertThat(explain.contains("2484 pages (19.4 MB)")).isTrue()
-    assertThat(explain.contains("= 3 s (about 6.5 MB/s)")).isTrue()
+    // 2500 × 30 = 75000 updates; 16410 × (1 − e^(−75000/16410)) = 16240 pages = 126.9 MB; 30 × 0.1 = 3 s → 42.3 MB/s
+    assertThat(explain.contains("75000 updates")).isTrue()
+    assertThat(explain.contains("16240 pages (126.9 MB)")).isTrue()
+    assertThat(explain.contains("= 3 s (about 42.3 MB/s)")).isTrue()
+    val pgobserver = scenario.faults(Params(mapOf("rows" to 2500), "14:05")).services.getValue("pgobserver")
+    assertThat(pgobserver.keys).containsOnly("checkpoint_timeout_s", "checkpoint_completion_target", "stats_rows_per_s")
   }
 
   @Test

@@ -86,7 +86,6 @@ internal object DiskScenarios {
           "pgobserver" to mapOf(
             "checkpoint_timeout_s" to CHECKPOINT_TIMEOUT_S,
             "checkpoint_completion_target" to CHECKPOINT_TARGET,
-            "max_wal_size_mb" to MAX_WAL_SIZE_MB,
             "stats_rows_per_s" to p.int("rows")
           )
         )
@@ -95,7 +94,7 @@ internal object DiskScenarios {
     marker = { "Config change: postgres checkpoint tuning" },
     decoy = 0.3,
     ticket = { p ->
-      "Since ${p.startedAt}, /checkout p99 spikes about every half minute, then drops back. p50 is flat. " +
+      "Since ${p.startedAt}, /checkout p99 spikes about every half minute on a 20 s window, then drops back. p50 is flat. " +
         "At the same time the DBA applied new Postgres settings for faster crash recovery and moved the review stats job onto this database. " +
         "That job ran for months on the old host without trouble."
     },
@@ -110,14 +109,15 @@ internal object DiskScenarios {
       val pages = (STATS_PAGES * (1 - exp(-perInterval.toDouble() / STATS_PAGES))).roundToInt()
       val mb = pages * PAGE_KB / KB_PER_MB
       val window = CHECKPOINT_TIMEOUT_S * CHECKPOINT_TARGET
-      "The DBA set checkpoint_timeout to $CHECKPOINT_TIMEOUT_S s (from 300), checkpoint_completion_target to $CHECKPOINT_TARGET (from 0.9) " +
-        "and max_wal_size to $MAX_WAL_SIZE_MB MB (from 1024), and reloaded. The review stats job rewrites ${p.int("rows")} random rows per second. " +
+      "The DBA set checkpoint_timeout to $CHECKPOINT_TIMEOUT_S s (from 300) and checkpoint_completion_target to $CHECKPOINT_TARGET (from 0.9), " +
+        "and reloaded. The review stats job rewrites ${p.int("rows")} random rows per second. " +
         "In $CHECKPOINT_TIMEOUT_S s that is $perInterval updates over about $STATS_PAGES pages, so about $pages pages (${p.fixed(mb, 1)} MB) are dirty at each checkpoint. " +
         "Before, a checkpoint spread its writes over 300 x 0.9 = 270 s. Now it writes them in $CHECKPOINT_TIMEOUT_S x $CHECKPOINT_TARGET = ${p.fixed(window, 0)} s " +
         "(about ${p.fixed(mb / window, 1)} MB/s) and flushes them at once, every $CHECKPOINT_TIMEOUT_S s. " +
-        "Right after each checkpoint, the first change to every page also writes a full page image to the WAL, so the WAL jumps too. " +
-        "The commits that land in that window wait behind the burst: p99 spikes every $CHECKPOINT_TIMEOUT_S s and p50 does not move. " +
-        "The small max_wal_size can also make the WAL request a checkpoint before the timer fires, so some may show as requested. " +
+        "Right after each checkpoint starts, the first change to every page also writes a full page image to the WAL: about ${p.fixed(mb, 0)} MB of WAL, " +
+        "most of it in the first 10 s or so, and every commit must flush its WAL behind it. " +
+        "The commits that land in those seconds wait behind the burst. Only a few percent of checkouts do, so p50 does not move, and p99 spikes " +
+        "every $CHECKPOINT_TIMEOUT_S s. Read it on a short window such as 20 s: a 1-minute window holds two bursts and looks flat and high. " +
         "The job alone writes at a steady rate: a steady load cannot make a 30 s pattern, the checkpoint timer does. " +
         "Fix: put the three settings back (or at least a completion target near 0.9 and a timeout of minutes), with a reload."
     },
@@ -131,8 +131,8 @@ internal object DiskScenarios {
       "The cause: checkpoint bursts. Each checkpoint writes and flushes its pages at once, and the commits in that window wait."
     ),
     evidence = listOf(
-      "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\",route=\"/checkout\"}[1m])))",
-      "histogram_quantile(0.5, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\",route=\"/checkout\"}[1m])))",
+      "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\",route=\"/checkout\"}[20s])))",
+      "histogram_quantile(0.5, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\",route=\"/checkout\"}[20s])))",
       "increase(pg_checkpoints_total[1m])",
       "rate(pg_wal_bytes_total[1m])",
       "rate(pg_checkpoint_sync_seconds_total[1m])",
@@ -140,8 +140,8 @@ internal object DiskScenarios {
       "100 * rate(node_disk_io_time_seconds_total[1m])"
     ),
     cli = listOf(
-      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"SELECT name, setting, sourcefile FROM pg_settings WHERE name IN ('checkpoint_timeout', 'checkpoint_completion_target', 'max_wal_size')\"   # 30, 0.1 and 64, set in postgresql.auto.conf",
-      "for i in 1 2; do PGPASSWORD=lab psql -h postgres -U lab lab -c 'SELECT checkpoints_timed, checkpoints_req, checkpoint_write_time, checkpoint_sync_time, buffers_checkpoint FROM pg_stat_bgwriter'; sleep 60; done   # about two more checkpoints a minute later, a few thousand buffers each",
+      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"SELECT name, setting, sourcefile FROM pg_settings WHERE name IN ('checkpoint_timeout', 'checkpoint_completion_target')\"   # 30 and 0.1, set in postgresql.auto.conf",
+      "for i in 1 2; do PGPASSWORD=lab psql -h postgres -U lab lab -c 'SELECT checkpoints_timed, checkpoints_req, checkpoint_write_time, checkpoint_sync_time, buffers_checkpoint FROM pg_stat_bgwriter'; sleep 60; done   # about two more checkpoints a minute later, about 16,000 buffers each",
       "iostat -xz 1 60   # writes to the disk come in bursts every 30 s, quiet in between"
     ),
     doc = "Postgres and the disk > Checkpoints; Disk panels in this lab > The Postgres row"
@@ -211,12 +211,11 @@ internal object DiskScenarios {
 
   private const val CHECKPOINT_TIMEOUT_S = 30
   private const val CHECKPOINT_TARGET = 0.1
-  private const val MAX_WAL_SIZE_MB = 64
-  private const val MIN_STATS_ROWS = 250
-  private const val MAX_STATS_ROWS = 400
+  private const val MIN_STATS_ROWS = 2_000
+  private const val MAX_STATS_ROWS = 3_000
 
-  // review_stats: 200,000 rows at fillfactor 50, about 78 rows per 8 kB page.
-  private const val STATS_PAGES = 2_560
+  // review_stats: 1,280,000 rows at fillfactor 50, about 78 rows per 8 kB page.
+  private const val STATS_PAGES = 16_410
   private const val PAGE_KB = 8.0
   private const val KB_PER_MB = 1_024.0
 

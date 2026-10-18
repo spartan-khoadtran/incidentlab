@@ -19,8 +19,9 @@ import kotlin.random.Random
 
 /**
  * A steady write job: once a second it rewrites `stats_rows_per_s` random rows of `review_stats`, in
- * one transaction. The rows sit on about 2,500 pages, so the job dirties most of the table between two
- * checkpoints. The fillfactor leaves room on each page, so every update is HOT and the table does not grow.
+ * one transaction. The rows sit on about 16,400 pages (128 MB, inside Postgres's 256 MB of shared
+ * buffers), so the job dirties most of the table between two checkpoints. The fillfactor leaves room
+ * on each page, so every update is HOT and the table does not grow.
  */
 @Singleton
 class StatsWriter(
@@ -52,8 +53,9 @@ class StatsWriter(
       if (!ready) {
         db.withConnection { connection ->
           connection.execute(CREATE)
-          if (connection.execute(FILL) > 0) {
-            info { "review_stats created with $ROWS rows" }
+          val added = connection.execute(FILL)
+          if (added > 0) {
+            info { "review_stats filled to $ROWS rows ($added added)" }
           }
         }
         ready = true
@@ -73,11 +75,11 @@ class StatsWriter(
   }
 
   private companion object {
-    const val ROWS = 200_000
+    const val ROWS = 1_280_000
     const val CREATE = "CREATE TABLE IF NOT EXISTS review_stats (id int PRIMARY KEY, score float8 NOT NULL, " +
       "refreshed_at timestamptz NOT NULL DEFAULT now()) WITH (fillfactor = 50)"
-    const val FILL = "INSERT INTO review_stats (id, score) SELECT g, random() FROM generate_series(1, $ROWS) g " +
-      "WHERE NOT EXISTS (SELECT 1 FROM review_stats)"
+    const val FILL = "INSERT INTO review_stats (id, score) " +
+      "SELECT g, random() FROM generate_series((SELECT coalesce(max(id), 0) + 1 FROM review_stats), $ROWS) g"
     const val REFRESH = "/* q=refresh_review_stats */ UPDATE review_stats SET score = random(), refreshed_at = now() WHERE id = ANY(?)"
   }
 }
