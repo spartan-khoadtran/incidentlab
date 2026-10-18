@@ -1,8 +1,8 @@
 package com.c0x12c.incidentlab.labctl.control
 
-import com.c0x12c.incidentlab.labctl.Terminal
 import java.net.URLEncoder
 import java.util.Locale
+import java.util.concurrent.Executors
 
 /** One evaluation of a PromQL expression. */
 data class Sample(
@@ -67,9 +67,12 @@ class HttpLabProbe(private val http: JsonHttp) : LabProbe {
         .takeIf { it.isNotEmpty() }
     }.getOrNull()
 
+  /** All services at once, so one that hangs costs one timeout, not one per service. */
   override fun serviceStatus(): Map<String, String?> =
-    Services.ENDPOINTS.mapValues { (_, url) ->
-      runCatching { http.get("$url/admin/faults") }.exceptionOrNull()?.javaClass?.simpleName
+    Executors.newVirtualThreadPerTaskExecutor().use { pool ->
+      Services.ENDPOINTS
+        .mapValues { (_, url) -> pool.submit<String?> { runCatching { http.get("$url/admin/faults") }.exceptionOrNull()?.javaClass?.simpleName } }
+        .mapValues { (_, check) -> check.get() }
     }
 
   companion object {
@@ -79,13 +82,14 @@ class HttpLabProbe(private val http: JsonHttp) : LabProbe {
   }
 }
 
-class GrafanaAnnotator(private val http: JsonHttp, private val terminal: Terminal) : Annotator {
+/** Writes annotations to Grafana. A failure is reported, not thrown: the CLI prints it, the daemon logs it. */
+class GrafanaAnnotator(private val http: JsonHttp, private val report: (String) -> Unit) : Annotator {
 
   override fun annotate(text: String, tags: List<String>, atSeconds: Double) {
     try {
       http.post("$GRAFANA/api/annotations", mapOf("time" to (atSeconds * MILLIS_PER_SECOND).toLong(), "tags" to listOf("lab") + tags, "text" to text))
     } catch (e: Exception) {
-      terminal.out("(could not write the annotation to Grafana: ${e.message})")
+      report("(could not write the annotation to Grafana: ${e.message})")
     }
   }
 

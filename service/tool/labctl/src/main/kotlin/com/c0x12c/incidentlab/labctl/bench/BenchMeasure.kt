@@ -1,11 +1,16 @@
 package com.c0x12c.incidentlab.labctl.bench
 
 import com.c0x12c.incidentlab.labctl.control.LabProbe
+import com.fasterxml.jackson.annotation.JsonIgnore
+import com.fasterxml.jackson.annotation.JsonProperty
 
 /** One window at one layer. A null is a number Prometheus had no data for. */
 data class LayerReading(
+  @get:JsonProperty("rate_rps")
   val rate: Double?,
+  @get:JsonProperty("p50")
   val p50Seconds: Double?,
+  @get:JsonProperty("p99")
   val p99Seconds: Double?,
   val errorShare: Double?
 )
@@ -13,9 +18,12 @@ data class LayerReading(
 data class WindowReading(
   val client: LayerReading,
   val api: LayerReading,
+  @get:JsonProperty("client_mean")
   val clientMeanSeconds: Double?,
+  @get:JsonProperty("api_in_flight")
   val apiInflight: Double?
 ) {
+  @get:JsonIgnore
   val empty: Boolean
     get() = listOf(client.rate, client.p99Seconds, api.rate, api.p99Seconds, clientMeanSeconds, apiInflight).all { it == null }
 }

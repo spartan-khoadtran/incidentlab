@@ -1,5 +1,11 @@
 package com.c0x12c.incidentlab.labctl.guide
 
+/** One part of a `doc` pointer and the docs file that holds its section, null when no file does. */
+data class GuidePointer(
+  val pointer: String,
+  val file: String?
+)
+
 /**
  * Which file under docs/ owns each `## ` section. A `doc` pointer names a section and a subsection,
  * so this is how a pointer finds its file. A section title must be unique across the files.
@@ -79,6 +85,8 @@ object GuideIndex {
     val files = parts.map { part -> fileOf[section(part)]?.let { "$DIRECTORY/$it" } ?: DIRECTORY }
     return if (files.distinct().size == 1) "${files.first()}: $doc" else parts.indices.joinToString("; ") { "${files[it]}: ${parts[it]}" }
   }
+
+  fun pointers(doc: String): List<GuidePointer> = doc.split("; ").map { GuidePointer(it, fileOf[section(it)]) }
 
   private fun section(pointer: String): String = pointer.replace(NOTE, "").substringBefore(" > ").trim()
 

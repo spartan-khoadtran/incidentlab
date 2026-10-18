@@ -2,7 +2,7 @@
 
 A lab for the part of on-call nobody teaches: you get a ticket, a few dashboards, some traces, and a
 system that is slow or failing for a reason you do not know yet. incidentlab runs a small checkout system with
-Docker Compose (Envoy, api, pricing, Postgres, Redis, Kafka, worker) plus Prometheus, Grafana and Tempo.
+Docker Compose (Envoy, api, pricing, Postgres, Redis, Kafka, worker) plus Prometheus, Grafana, Tempo and Pyroscope.
 It injects a random fault and opens a ticket. You find the cause, and the lab scores four answers: the
 kind of problem, the layer, the signal that proves it and the root cause.
 
