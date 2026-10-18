@@ -58,6 +58,7 @@ class CheckoutFactory {
   @Singleton
   fun receiptRenderer(objectMapper: ObjectMapper): ReceiptRenderer = ReceiptRenderer(objectMapper)
 
+  @Singleton
   fun heapPressure(registry: MeterRegistry): HeapPressure = HeapPressure(registry)
 
   @Singleton
