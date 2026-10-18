@@ -19,7 +19,9 @@ object GuideIndex {
     "End-to-end investigation example",
     "Cheat sheet",
     "References"
-  ).associateWith { "investigation-guide.md" }
+  ).associateWith { "investigation-guide.md" } +
+    listOf("Statistics for latency", "Latency time scales", "Modeling and scaling laws").associateWith { "foundations.md" } +
+    listOf("Reading monitoring data", "PromQL traps", "Metrics that lie").associateWith { "monitoring.md" }
 
   /** The pointer with its file in front of each part, or one file in front of the whole pointer when every part shares it. */
   fun where(doc: String): String {
