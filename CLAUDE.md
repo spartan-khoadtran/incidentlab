@@ -26,6 +26,8 @@ Exercises (each one runs the `labctl` CLI inside the `control` container):
 - `make hint`, `make answer`, `make reveal`, `make clear`, `make status`, `make list`, `make history`
 - `make quiz N=50 KIND=numbers|concepts|all`: theory drills from the guide, numeric (`Numbers`) and multiple choice (`Concepts`). Default KIND is `all`. Does not need the lab running.
 - `make load X=1.5`: multiply the background load (default 50 rps).
+- `make ramp STEP=60`: a capacity ramp (mode `ramp`). The load rises through 50 to 300 rps, `STEP` seconds per step, under a hidden limit. `make answer` then asks the knee, the highest throughput and the limiting resource, scored from Prometheus. Refused unless `make load` is 1.
+- `make bench CLIENTS=20 SECONDS=120`: closed-loop clients for a while (mode `bench`, not scored). `make answer` or `make bench` after it prints the 2 minutes before against the bench window.
 
 Development (Gradle lives in `service/`, needs a JDK on the host; Gradle downloads JDK 21 itself):
 - `make build` (`./gradlew installDist`), `make test`, `make lint` (ktlint), `make format`.
@@ -76,6 +78,8 @@ loadgen is an open-model Poisson generator per tenant. It makes the root samplin
 3. PUTs that dict to each service's `/admin/faults`. A service not named by the scenario gets `{}`, which resets it.
 4. Sets the api container's CPU limit through the Docker socket (`DockerControl`, raw engine API over `docker-java-transport-zerodep`). Base is 2.0 cores; a scenario's `docker` map overrides it.
 
+Step 2 asks the fault sources in `DesiredState.SOURCES` (`FaultSource`: an id and params in, a `FaultSpec` or null out). `ScenarioCatalog`, `RampCatalog` and `BenchCatalog` are the sources, so an id must be unique across them, and `make new` only picks from `ScenarioCatalog`. A mode other than `incident` implements `ExerciseMode` (answer, reveal, hint, status), and `Exercises` hands those commands to it while it is the active mode.
+
 Steps 3 and 4 are `Applier`s (`ServiceFaultApplier` and `ContainerCpuApplier` in `control/Applier.kt`). `ControlDaemon` runs the list that `Main` wires; the CPU applier is only wired when the docker socket exists.
 
 The daemon owns fault state. A manual PUT to `/admin/faults` is reverted within 3 seconds. To change behavior, change `state.json` through the `make` commands, or change the scenario.
@@ -88,7 +92,7 @@ Each `Scenario` has: `id`, `title`, `level` (1 to 3), `topics`; `params(random, 
 
 Scoring: nature 1, location 1, signal 1, cause 2 (partial 1), minus 0.5 per hint; 5 points max. After scoring, `make answer` asks for a one-line note, kept in history with the missed questions. `make new` skips the last 5 played ids. `ScenarioCatalogTest` renders every scenario with a seeded random and checks the fault targets, so run it after any catalog change.
 
-The quiz data sits next to the docs file it drills: `quiz/numbers/InvestigationNumbers.kt` (the generators) and `quiz/concepts/InvestigationConcepts.kt` (the questions) for `docs/investigation-guide.md`. `Numbers.generators` and `Concepts.all` join the per-file lists with `+`, and `GuidePointersTest` checks that the drills cover every subsection.
+The quiz data sits next to the docs file it drills: `quiz/numbers/InvestigationNumbers.kt` (the generators) and `quiz/concepts/InvestigationConcepts.kt` (the questions) for `docs/investigation-guide.md`. `Numbers.generators` and `Concepts.all` join the per-file lists with `+`, and `GuidePointersTest` checks that the drills cover every subsection. `CapacityNumbers` and `CapacityConcepts` drill `docs/capacity.md` (the ramp and the bench).
 
 ### Metric conventions
 
@@ -96,6 +100,7 @@ The quiz data sits next to the docs file it drills: `quiz/numbers/InvestigationN
 - `http_client_*`: api calling pricing (`target`, `route`). `db_client_session_seconds{op}`: pool wait plus hold. `db_client_duration_seconds{query}`: the statement only. `db_pool_*`, `app_admission_*`: software resources inside api.
 - `pg_*` come from pgobserver, which names queries from the `/* q=name */` comment at the start of each SQL string in `module-repository`. A new statement must carry that comment or it will not show up.
 - `kafka_*`: produce (api) and consume, lag, retries (worker). `client_*`: loadgen. Prometheus job names equal compose service names.
+- `client_closed_clients`: the closed-loop clients loadgen runs. 0 means the open model.
 
 ### Design choices the exercises depend on
 
@@ -112,9 +117,11 @@ Changing one of these breaks the scenario named in brackets:
 - `noisy` has `cpu_shares: 65536`. [`noisy_neighbor`]
 - No index on `reviews.product_id`; the Redis cache keeps `product_detail` cheap. The cache key includes the TTL, so a config change starts with an empty cache. [`cache_miss`, `tenant_spike`]
 - The worker processes each partition in order and retries a failed message for ever. [`poison_message`, `consumer_backlog`]
+- The ramp drives `surge_multiplier`, so its steps are only right with `rate_multiplier` at 1. Each hidden limit fills inside 50 to 300 rps (pool 2, 3 or 4, api at 0.2 or 0.3 cores, using `API_CORES_AT_BASE`). The other setups open the pool to 24, because the default pool of 4 fills at about 267 rps. [`ramp`]
+- loadgen's `closed_clients` above 0 stops every open arrival, crawler included, and runs that many clients with no think time. A client that is no longer wanted finishes its request first. [`bench`]
 
 ### Data and state
 
 - `config/postgres/init.sql` runs only when the `pgdata` volume is created. Schema changes need `make down` first.
-- Exercise state and history live in `state.json` on the `labstate` volume. `make down` deletes it. `ActiveExercise` and `HistoryEntry` carry `mode` (`incident` today, the default); a file written before the field existed still loads.
+- Exercise state and history live in `state.json` on the `labstate` volume. `make down` deletes it. `ActiveExercise` and `HistoryEntry` carry `mode` (`incident`, the default, `ramp` or `bench`); a file written before the field existed still loads.
 - Grafana runs as anonymous Admin. Datasources are provisioned (Prometheus uid `prometheus`, Tempo uid `tempo`). Prometheus exemplars link to Tempo by `trace_id`. Dashboards come from `config/grafana/dashboards/`, generated by `tool/dashboards`.

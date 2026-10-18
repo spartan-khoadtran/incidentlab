@@ -48,6 +48,11 @@ make quiz KIND=concepts    # multiple choice only
 make quiz KIND=numbers     # calculations only
 ```
 
+Other modes on the live lab:
+
+- `make ramp`: the load rises in steps from 50 to 300 rps while something may limit the lab. You find the knee, the highest throughput and the resource that filled first. Scored from what Prometheus recorded. See [docs/capacity.md](docs/capacity.md).
+- `make bench`: closed-loop clients for 2 minutes, then a report of the minutes before against the bench. Not scored. It shows why a simple benchmark reports a better p99 than users get.
+
 ## How it works
 
 ### The system
