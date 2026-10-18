@@ -1,9 +1,10 @@
 name: incidentlab
 
 # Shared settings for the JVM services: one image, a different launcher per service.
+# Only control builds it, because parallel builds of one tag fail with "image already exists".
 x-svc: &svc
-  build: ./service
   image: incidentlab-svc:latest
+  pull_policy: never
   restart: unless-stopped
   environment: &svc-env
     TZ: ${TZ:-Asia/Ho_Chi_Minh}
@@ -202,6 +203,7 @@ services:
   # Lab controller: applies the faults of the current exercise. `make new/hint/answer` run inside it.
   control:
     <<: *svc
+    build: ./service
     command: ["/run/app/labctl/bin/labctl", "daemon"]
     mem_limit: 256m
     memswap_limit: 256m

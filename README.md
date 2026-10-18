@@ -139,7 +139,7 @@ make test      # unit tests
 make lint      # ktlint
 ```
 
-To rebuild one service after a change: `docker compose up -d --build api`. Every service shares the
+To rebuild one service after a change: `docker compose build control && docker compose up -d api`. Every service shares the
 `incidentlab-svc` image, so this rebuilds the image once; restart the other services to pick it up.
 
 ## Datadog (optional, experimental)

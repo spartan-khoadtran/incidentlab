@@ -50,7 +50,7 @@ Development (Gradle lives in `service/`, needs a JDK on the host; Gradle downloa
 - One module: `cd service && ./gradlew :tool:labctl:test` or `./gradlew :api:checkout:installDist`.
 - One test class: `cd service && ./gradlew :tool:labctl:test --tests '*ExercisesTest*'`.
 - `make dashboards` regenerates the Grafana JSON from `service/tool/dashboards` through the built image. Grafana reads the bind-mounted folder, so no restart is needed. Do not edit the JSON by hand.
-- `docker compose up -d --build api` rebuilds after a code change. All services share one image (`incidentlab-svc:latest`); other services keep the old code until you restart them too.
+- `docker compose build control && docker compose up -d api` rebuilds after a code change. All JVM services share one image (`incidentlab-svc:latest`), and only `control` declares its `build:` (the others have `pull_policy: never`), so Compose builds it once. Other services keep the old code until you restart them too.
 - `make logs S=api` (empty `S` means all services), `make ps`.
 - `make site` opens the handbook (http://localhost:4000, the `site` service).
 - The handbook alone: `cd site && npm ci && npm run dev` (Node 22). `npm run build`, `npm run lint`, `npm test`, `npm run check:data`.
