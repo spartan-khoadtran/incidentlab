@@ -17,6 +17,8 @@ object Answers {
     "pricing" to "The pricing service",
     "cache" to "Redis / cache",
     "worker" to "The Kafka consumer (worker)",
+    "network" to "The network between two services",
+    "disk" to "Disk I/O under Postgres or the host",
     "container" to "The api container / cgroup",
     "host" to "The shared host / VM"
   )
@@ -67,19 +69,23 @@ object Answers {
       "pool_exhausted" to "Connection pool exhausted: hold time too long, or the pool too small",
       "pool_timeout_short" to "The pool's acquire timeout is too short: requests give up in short bursts",
       "db_lock" to "Lock contention in Postgres",
-      "missing_index" to "A missing index makes one query scan the whole table",
-      "disk_full" to "Disk full or disk I/O saturated on the DB host"
+      "missing_index" to "A missing index makes one query scan the whole table"
     ),
     "Downstream service" to listOf(
       "downstream_slow" to "A downstream service is slow",
-      "downstream_errors" to "A downstream service returns errors",
-      "packet_loss" to "Packet loss or a slow network between services"
+      "downstream_errors" to "A downstream service returns errors"
     ),
     "Async" to listOf(
       "consumer_backlog" to "The producer sends more than the consumer can handle, backlog grows",
       "consumer_slow" to "The consumer got slower per message, throughput dropped",
       "poison_message" to "A poison message blocks one partition",
       "slow_drain" to "The fix worked, but the backlog drains slowly: too little headroom"
+    ),
+    "Network" to listOf(
+      "packet_loss" to "Packet loss or a slow network between services"
+    ),
+    "Disk and storage" to listOf(
+      "disk_full" to "Disk full or disk I/O saturated on the DB host"
     ),
     "Container and host" to listOf(
       "cpu_throttle" to "CPU throttling from the container's CPU limit",
@@ -102,7 +108,9 @@ object Answers {
     "Deploy loadgen-ios v5.2: display bug fix"
   )
 
-  val TOPICS: List<String> = listOf("red", "load", "layers", "use", "container", "runtime", "db", "async", "host", "little")
+  val TOPICS: List<String> = listOf(
+    "red", "load", "layers", "use", "container", "runtime", "db", "async", "host", "little", "cpu", "jvm", "disk", "network", "profiling", "capacity"
+  )
 
   fun label(options: List<Pair<String, String>>, key: String): String = options.first { it.first == key }.second
 }
