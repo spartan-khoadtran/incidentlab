@@ -134,6 +134,7 @@ The lab runs one more container, `toolbox`. It is a root shell on the Docker VM 
 The toolbox adds a few helpers:
 - `pid SERVICE` prints the host PID of a lab container's main process, from the docker socket: `pid api`, `pid pricing`, `pid worker`, `pid noisy`, `pid postgres`. For api, pricing, worker and noisy that is the java process. For postgres it is the postmaster.
 - Use `pid`, not `pgrep`. With `pid: host`, `pgrep -x postgres` also matches the Postgres of any other project on the same VM.
+- `cid SERVICE` prints a lab container's id, found by its compose labels. Use it for calls to the docker socket: `curl -s --unix-socket /var/run/docker.sock http://localhost/containers/$(cid api)/json`.
 - `cg PID` prints the cgroup directory of a process. `cat $(cg $(pid api))/cpu.max` reads api's CPU limit.
 - `containers` lists the containers with their main PID.
 - `kernel-check` says which kernel features work on this VM. Run it first.

@@ -2,9 +2,9 @@
 
 `labctl daemon` serves this API on port 8090 (`LAB_API_PORT`), next to the control loop. The site's nginx proxies `/api/` to `http://control:8090`, so the browser calls it as `/api/...` on port 4000. Port 8090 is not published to the host.
 
-JSON in and out, snake_case keys. Every response has `Content-Type: application/json`. Every path starts with `/api/`, exactly as written below: nginx and the vite dev server pass the path through unchanged.
+JSON in and out, snake_case keys. Every response has `Content-Type: application/json; charset=utf-8`. Every path starts with `/api/`, exactly as written below: nginx and the vite dev server pass the path through unchanged.
 
-Times are epoch seconds (a number). Every duration is a number of seconds, even when the field name has no unit (`p50`, `p99`, `client_mean`). Rates are requests per second.
+Times are epoch seconds (a number). Every duration is a number of seconds, even when the field name has no unit (`p50`, `p99`, `client_mean`). The one exception is `minutes` in a history entry: it is in minutes. Rates are requests per second.
 
 ## Errors
 
@@ -23,15 +23,15 @@ An error is an HTTP status plus `{"error": "<code>", "message": "<one plain sent
 | 502 | `lab_down`: nginx sends it when the controller does not answer |
 | 503 | `prometheus_down` |
 
-`wrong_mode` means the open exercise is a ramp or a bench and the call is for an incident, or the other way round. `stale_exercise` means the exercise was started by an older catalog: clear it, then start a new one. `exercise_changed` means the call sent a `key`, and the open exercise has another key, or none is open: it was cleared, or another one started since the page read it. Nothing changed; read `GET /api/exercise` again. `ramp_running` means a ramp step is running: the ramp holds the load at 1 until its last step ends, `seconds_left` from now.
+`wrong_mode` means the open exercise is a ramp or a bench and the call is for an incident, or the other way round. `stale_exercise` means the exercise was started by an older catalog: clear it, then start a new one. `exercise_changed` means the call sent a `key`, and the open exercise has another key, or none is open: it was cleared, or another one started since the page read it. Nothing changed. Read `GET /api/exercise` again. `ramp_running` means a ramp step is running: the ramp holds the load at 1 until its last step ends, `seconds_left` from now.
 
 ## The exercise key
 
-Every exercise gets a random `key` when it starts. `n` is not enough: it repeats after a clear. The hint, answer, reveal and clear calls of every mode take an optional `key` in the body. Without it, the call acts on whatever exercise is open. With it, the call acts only when that exercise is still the open one, else 409 `exercise_changed`. The site always sends the key of the exercise it shows. The key is not a spoiler: it is random and says nothing about the scenario.
+Every exercise gets a random `key` when it starts. `n` is not enough: it repeats after a clear. The hint, answer, reveal and clear calls of every mode take an optional `key` in the body. So does `POST /api/bench/report`. Without it, the call acts on whatever exercise is open. With it, the call acts only when that exercise is still the open one, else 409 `exercise_changed`. The site always sends the key of the exercise it shows. The key is not a spoiler: it is random and says nothing about the scenario.
 
 ## Write calls
 
-Every POST must send `Content-Type: application/json` and `X-Lab-Client: web`. Without both: 403 `forbidden`. No CORS header is ever sent, and OPTIONS returns 403, so a page on another origin cannot call the API. A request whose `Host` is not `localhost`, `127.0.0.1`, `[::1]` or `control` gets 403 `forbidden_host`, so a page that rebinds its DNS name to 127.0.0.1 cannot call it either. `labctl api` listens on the loopback address only. A POST with no body counts as `{}`. No GET changes the state.
+Every POST must send `Content-Type: application/json` and `X-Lab-Client: web`. Without both: 403 `forbidden`. No CORS header is ever sent, and OPTIONS returns 403. So a page on another origin cannot call the API. A request whose `Host` is not `localhost`, `127.0.0.1`, `[::1]` or `control` gets 403 `forbidden_host`. So a page that points its own DNS name at 127.0.0.1 cannot call it either. `labctl api` listens on the loopback address only. A POST with no body counts as `{}`. No GET changes the state.
 
 ## No-spoiler rule
 
@@ -62,7 +62,7 @@ Result = {
   verdicts: { nature: "correct"|"wrong", location: ..., signal: ..., cause: "correct"|"partial"|"wrong" },
   missed: [string], reveal: Reveal
 }
-HistoryEntry = { n, id, mode, title, level, score: number|null, hints, minutes, at, missed: [string], note }
+HistoryEntry = { n, id, mode, title, level: int (0 for a ramp or a bench), score: number|null, hints, minutes, at, missed: [string], note }
 ```
 
 ## Endpoints
@@ -77,23 +77,23 @@ HistoryEntry = { n, id, mode, title, level, score: number|null, hints, minutes, 
 
 ### Incident and toolbox
 
-- `POST /api/exercises` body `{ mode?: "incident"|"toolbox", level?: int, topic?: string, id?: string, force?: bool }` -> 201 `ActiveView`. 409 `exercise_open` when one is open and `force` is not true. 400 for a bad mode, level, topic or id, or `no_cli` for an id without CLI proof in toolbox mode. 409 `unsupported` (with `missing`, the container settings keys) when the controller cannot apply what the scenario needs, for example with no docker socket; a random pick skips such scenarios and gives this error only when none is left. 409 `load_not_one` when the load multiplier is not 1 and the id is a scenario tuned for the default load; a random pick skips those. Writes the same Grafana annotations as `make new`.
+- `POST /api/exercises` body `{ mode?: "incident"|"toolbox", level?: int, topic?: string, id?: string, force?: bool }` -> 201 `ActiveView`. 409 `exercise_open` when one is open and `force` is not true. 400 for a bad mode, level, topic or id. 400 `no_cli` for an id without CLI proof in toolbox mode. 400 `no_match` when no scenario fits the level, topic and mode. 409 `unsupported` (with `missing`, the container settings keys) when the controller cannot apply what the scenario needs. No docker socket is one example. A random pick skips such scenarios, and gives this error only when none is left. 409 `load_not_one` when the load multiplier is not 1 and the id is a scenario tuned for the default load. A random pick skips those, and gives `load_not_one` when every match needs load 1. Writes the same Grafana annotations as `make new`.
 - `GET /api/exercise` -> the open exercise in any mode, so a page reload can rebuild itself: `ActiveView`, plus
   - `plan: { steps: [rps], every, total_seconds }` for a ramp, and `ends_at` (epoch seconds) for a bench, from the start;
   - `reveal: Reveal` once an incident is answered or revealed;
-  - `result` once it is answered: the same `Result` that `POST /api/exercise/answer` returned, or the same `RampResult` that `POST /api/ramp/answer` returned. A reveal is not an answer, so a revealed exercise has no `result`. A ramp's `result` is read again from Prometheus and is left out when Prometheus does not answer.
+  - `result` once it is answered. For an incident it is the same `Result` that `POST /api/exercise/answer` returned. For a ramp it is the same `RampResult` that `POST /api/ramp/answer` returned. A reveal is not an answer, so a revealed exercise has no `result`. A ramp's `result` is read again from Prometheus and is left out when Prometheus does not answer.
 
-  404 `no_exercise`.
-- `POST /api/exercise/hint` body `{ key?: string }` -> `ActiveView` with the new hint at the end of `hints`. 409 `no_hints_left` (also for a ramp or a bench), or `already_answered`.
+  404 `no_exercise`. 409 `stale_exercise`.
+- `POST /api/exercise/hint` body `{ key?: string }` -> `ActiveView` with the new hint at the end of `hints`. 409 `no_hints_left` (also for a ramp or a bench), `already_answered`, `exercise_changed` or `stale_exercise`.
 - `POST /api/exercise/answer` body `{ nature, location, signal, cause, note?: string, key?: string }` -> `Result`. Keys come from `/api/options`. 400 `unknown_key` or `missing_field`. 409 `already_answered`, or `exercise_changed`. Keeps the history entry like `make answer`, note included (one line, at most 500 characters). Does not clear the fault.
 - `POST /api/exercise/reveal` body `{ key?: string }` -> `Reveal`. Not scored. 409 `exercise_changed`. The first reveal adds a history entry with `score: null`, like `make reveal`. Does not clear the fault.
-- `POST /api/exercise/clear` body `{ key?: string }` -> `{ cleared: true }`. Ends the open exercise of any mode, with the annotation "lab: fault cleared". A ramp or a bench that ends before its time also loses its annotations that are still in the future. 409 `exercise_changed` when `key` names another exercise than the open one; with no exercise open, it still answers `{ cleared: true }`.
+- `POST /api/exercise/clear` body `{ key?: string }` -> `{ cleared: true }` when it ended an exercise, `{ cleared: false }` when none was open. Ends the open exercise of any mode, with the annotation "lab: fault cleared". A ramp or a bench that ends before its time also loses its annotations that are still in the future: the call queues them and the control daemon deletes them within a few seconds, so a slow Grafana does not slow the call. 409 `exercise_changed` when `key` names another exercise than the open one. With no exercise open, it answers `{ cleared: false }` and adds no annotation.
 
 ### Capacity ramp
 
 - `GET /api/ramp/options` -> `{ resources: [Option] }`: the resources the third question offers.
 - `POST /api/ramp` body `{ every?: int }` (30 to 300 s, default 60) -> 201 `ActiveView` (mode ramp) plus `plan: { steps: [rps], every, total_seconds }`. 409 `exercise_open`, or `load_not_one` when the load multiplier is not 1.
-- `POST /api/ramp/answer` body `{ knee_rps: number, max_rps: number, resource: string, note?: string, key?: string }` -> `RampResult`. `knee_rps` is 0 when there was no knee. 409 `too_early` (with `seconds_left`) before the last step ends, `already_answered`, `exercise_changed`. 400 `unknown_key` for a resource. 503 `prometheus_down`. Keeps the history entry. Does not stop the ramp.
+- `POST /api/ramp/answer` body `{ knee_rps: number, max_rps: number, resource: string, note?: string, key?: string }` -> `RampResult`. `knee_rps` is 0 when there was no knee. 409 `too_early` (with `seconds_left`) before the last step ends, `already_answered`, `exercise_changed`. 400 `missing_field` when a rate is missing, below 0 or not finite, or when `resource` is missing. 400 `unknown_key` for a resource. 503 `prometheus_down`. Keeps the history entry. Does not stop the ramp.
 - `POST /api/ramp/reveal` body `{ key?: string }` -> `RampResult` with `score`, `given` and `verdicts` null. 409 `exercise_changed`. The table is empty and `prometheus_down` is true when Prometheus does not answer.
 
 ```
@@ -118,7 +118,7 @@ Window = { client: Row, api: Row, client_mean: number|null, api_in_flight: numbe
 BenchReport = { n, clients, seconds, before: Window, during: Window, explanation: string, guide: [GuidePointer] }
 ```
 
-`before` is the 2 minutes before the bench, with the open load. `during` is the bench window without its first 10 s. `client` is what loadgen measured: `rate_rps` is what the clients sent, and `error_share` is the share of requests that failed for them (a timeout, a 5xx or a connection error; a 4xx does not count). `api` is api's own view: `rate_rps` is what api served, and `error_share` is its share of 5xx. `client_mean` is the mean response time the clients saw. `api_in_flight` is the mean number of requests inside api. A null is a number Prometheus had no data for.
+`before` is the 2 minutes before the bench, with the open load. `during` is the bench window without its first 10 s. `client` is what loadgen measured. Its `rate_rps` is what the clients sent. Its `error_share` is the share of requests that failed for them: a timeout, a 5xx or a connection error (a 4xx does not count). `api` is api's own view. Its `rate_rps` is what api served, and its `error_share` is its share of 5xx. `client_mean` is the mean response time the clients saw. `api_in_flight` is the mean number of requests inside api. A null is a number Prometheus had no data for.
 
 ### Quiz
 

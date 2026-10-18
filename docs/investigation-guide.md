@@ -379,7 +379,7 @@ Where each layer of this guide lives in the dashboards:
 | Downstream, seen from the app | Dashboard 01, row 4. DB session p99 (pool wait plus hold), queries/s, mean query time from the app, calls to pricing p99 and outcomes, cache hit ratio, new TCP connections against calls to pricing |
 | Downstream, seen by itself | Dashboard 01, row 5. pricing's own rate and p99; Postgres queries/s and mean exec time, counted by Postgres |
 | Async | Dashboard 01, row 6. Produce/s and consume/s, processing time, end-to-end p99, lag and retries by partition |
-| Software resources | Dashboard `02 · USE by layer`, row 1. DB pool in use, max and waiting, acquire wait p99, pool timeouts, admission waiting and wait p99 |
+| Software resources | Dashboard `02 · USE by layer`, row 1. DB pool in use, max and waiting, acquire wait p99, pool timeouts, admission waiting and wait p99, inventory lock wait p99, threads waiting and utilization |
 | Runtime | Dashboard 02, row 2. Event loop lag p99, process CPU in cores, RSS, restarts, CPU user against system |
 | Container, cgroup | Dashboard 02, row 3. CPU usage against the limit, share of throttled periods, memory against the limit, PSI, OOM kills |
 | Host | Dashboard 02, row 4. CPU by mode, load against the CPU count, PSI, memory available, steal time |

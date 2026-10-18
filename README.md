@@ -57,11 +57,15 @@ make quiz KIND=numbers     # calculations only
 - `make ramp`: the load rises in steps from 50 to 300 rps while something may limit the lab. You find the knee, the highest throughput and the resource that filled first. Scored from what Prometheus recorded. See [docs/capacity.md](docs/capacity.md).
 - `make bench`: closed-loop clients for 2 minutes, then a report of the minutes before against the bench. Not scored. It shows why a simple benchmark reports a better p99 than users get.
 
+A ramp starts only when `make load` is 1. While it runs, `make load` is refused. You can answer only after the last step. After a bench, `make answer` prints the bench report.
+
 ## How it works
 
 ### The system
 
 ![incidentlab architecture](docs/diagrams/architecture.png)
+
+The diagram shows the checkout system, the fault loop and the main monitoring tools. Pyroscope, the toolbox, the handbook site, pgobserver, noisy and node-exporter are not on it.
 
 - **Request path.** `loadgen` sends about 50 rps of checkout traffic through Envoy to `api`. `api` reads
   products from Redis and Postgres, calls `pricing`, then writes each order to Kafka. `worker` consumes
@@ -99,7 +103,7 @@ For an interactive view (zoom, search, trace a path), open `docs/diagrams/archit
 
 ## Quick start
 
-You need Docker Desktop (give it 4 CPUs and 8 GB RAM, because 15 containers run at once and the CPU
+You need Docker Desktop (give it 4 CPUs and 8 GB RAM, because 18 containers run at once and the CPU
 exercises need cores to spare) or OrbStack (no settings needed), and `make`.
 Nothing else is installed on your machine: the services are built inside Docker.
 
@@ -117,13 +121,13 @@ make down      # stop and remove everything
 
 ### The handbook
 
-`make up` also starts a small website at http://localhost:4000 (`make site` opens it). It has the guide with a search, the system diagram, every command, and the catalog by level and topic. It shows scenario titles only, never an answer. It is built from this repo, so it always matches the docs and the Makefile.
+`make up` also starts a small website at http://localhost:4000 (`make site` opens it). It has the guide with search, the system diagram, every command and the catalog (titles only). The Play page runs the lab from the browser: exercises, hints, answers, the ramp, the bench and your history. It shows the answer only after you answer or reveal. The Quiz page asks the drills one at a time. The site is built from this repo, so it always matches the docs and the Makefile.
 
 ## Layout
 
 - `service/`: the Kotlin services, one Gradle build. `tool/labctl` is the controller and the CLI;
-  `tool/labctl/.../scenario/catalog/` holds the answers, do not read it before you play.
-- `config/`: Envoy, Prometheus, Grafana (pre-built dashboards), Postgres.
+  `tool/labctl/.../scenario/catalog/` and `tool/labctl/.../ramp/RampCatalog.kt` hold the answers. Do not read them before you play.
+- `config/`: Envoy, Prometheus, Grafana (pre-built dashboards), Tempo, Postgres and the toolbox image.
 - `service/tool/dashboards`: regenerates the Grafana dashboards (`make dashboards`).
 - `docs/`: the study guide. Every exercise and quiz question points at one of its sections.
 - `site/`: the handbook at http://localhost:4000, a React site built from the docs, the Makefile and docker-compose.yml.
