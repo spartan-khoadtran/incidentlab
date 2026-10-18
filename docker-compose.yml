@@ -65,7 +65,6 @@ services:
       PRICING_URL: http://pricing:8001
       REDIS_HOST: redis
       PYROSCOPE_APPLICATION_NAME: api
-      PYROSCOPE_LABELS: service=api
     cpus: "2.0"
     mem_limit: 512m
     memswap_limit: 512m
@@ -83,7 +82,6 @@ services:
       SERVICE_NAME: pricing
       PORT: "8001"
       PYROSCOPE_APPLICATION_NAME: pricing
-      PYROSCOPE_LABELS: service=pricing
     cpus: "2.0"
     mem_limit: 256m
     memswap_limit: 256m
@@ -99,7 +97,6 @@ services:
       PORT: "8002"
       KAFKA_PARTITIONS: "3"
       PYROSCOPE_APPLICATION_NAME: worker
-      PYROSCOPE_LABELS: service=worker
     cpus: "1.0"
     mem_limit: 512m
     memswap_limit: 512m
@@ -245,11 +242,12 @@ services:
 
   # Continuous profiles from api, pricing and worker. Read them in Grafana (Explore > Pyroscope) or at :4040.
   pyroscope:
-    image: grafana/pyroscope:2.4.0
+    image: grafana/pyroscope:1.21.1
     restart: unless-stopped
     command:
       - -config.file=/etc/pyroscope/config.yaml
       - -usage-stats.enabled=false
+      - -self-profiling.disable-push=true
     volumes:
       - pyroscopedata:/data
     mem_limit: 768m
