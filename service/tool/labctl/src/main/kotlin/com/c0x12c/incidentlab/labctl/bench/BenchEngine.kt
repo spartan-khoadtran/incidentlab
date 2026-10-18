@@ -110,7 +110,7 @@ class BenchEngine(
     if (record) {
       val at = now()
       val closed = store.withLock { state, write ->
-        (state.active?.key == active.key).also { if (it) write(state.queueFutureMarks(active, at).copy(active = null, history = state.history + entry(active, params))) }
+        (state.active?.key == active.key).also { if (it) write(state.queueFutureMarks(state.active, at).copy(active = null, history = state.history + entry(active, params))) }
       }
       if (!closed) return Refused(Refusal.ExerciseChanged)
     }

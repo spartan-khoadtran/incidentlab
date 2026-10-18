@@ -1,19 +1,23 @@
 package com.c0x12c.incidentlab.labctl.control
 
+import assertk.assertFailure
 import assertk.assertThat
 import assertk.assertions.containsExactly
 import assertk.assertions.isEmpty
 import assertk.assertions.isEqualTo
 import assertk.assertions.isFalse
+import assertk.assertions.isInstanceOf
 import assertk.assertions.isNull
 import com.c0x12c.incidentlab.labctl.LabJson
 import com.github.dockerjava.transport.DockerHttpClient
 import java.io.ByteArrayOutputStream
+import java.net.SocketTimeoutException
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -92,10 +96,36 @@ class DockerControlTest {
   }
 
   @Test
-  fun `an engine error at start wires no container applier instead of stopping the daemon`() {
-    val broken = DockerEngine { method, path, _ -> throw IllegalStateException("docker $method $path -> 500") }
+  fun `an engine that does not answer is tried again with a growing wait, then its appliers join`() {
+    var calls = 0
+    val flaky = DockerEngine { method, path, body ->
+      calls += 1
+      if (calls <= 2) throw SocketTimeoutException("Read timed out")
+      FakeEngine(container(3, "foo", "api"), container(6, "foo", "postgres")).call(method, path, body)
+    }
+    val waits = mutableListOf<Duration>()
+    var joined: List<Applier>? = null
 
-    assertThat(DockerControl(broken, "foo").containerAppliers { cgroupStub }).isEmpty()
+    DockerControl.discover(open = { DockerControl(flaky, "foo") }, cgroups = { cgroupStub }, ready = { joined = it }, sleep = { waits += it })
+
+    assertThat(waits).containsExactly(Duration.ofSeconds(5), Duration.ofSeconds(10))
+    assertThat(joined!!.flatMap { it.dockerKeys }.sorted()).containsExactly(ContainerCpuApplier.CPUS, NetemApplier.NETEM, CgroupApplier.WRITE_IOPS)
+  }
+
+  @Test
+  fun `a missing socket or project ends the discovery at once with no appliers`() {
+    var joined = false
+
+    DockerControl.discover(open = { null }, cgroups = { cgroupStub }, ready = { joined = true }, sleep = { error("no wait expected") })
+
+    assertThat(joined).isFalse()
+  }
+
+  @Test
+  fun `a project lookup that times out is thrown, so the discovery can try again`() {
+    val stalled = DockerEngine { _, _, _ -> throw SocketTimeoutException("Read timed out") }
+
+    assertFailure { DockerControl.projectOf(stalled, listOf("abc")) }.isInstanceOf(SocketTimeoutException::class)
   }
 
   @Test
@@ -186,7 +216,7 @@ class DockerControlTest {
     }
 
     private fun inspect(id: String): Map<String, Any> {
-      val found = containers.firstOrNull { it.id.startsWith(id) } ?: throw IllegalStateException("docker GET /containers/$id/json -> 404")
+      val found = containers.firstOrNull { it.id.startsWith(id) } ?: throw DockerStatusException(404, "docker GET /containers/$id/json -> 404")
       return mapOf("Id" to found.id, "Config" to mapOf("Labels" to found.labels))
     }
   }

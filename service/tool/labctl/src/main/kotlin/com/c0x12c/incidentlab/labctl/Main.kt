@@ -6,7 +6,6 @@ import com.c0x12c.incidentlab.labctl.bench.BenchEngine
 import com.c0x12c.incidentlab.labctl.bench.BenchExercise
 import com.c0x12c.incidentlab.labctl.control.AnnotationCleanup
 import com.c0x12c.incidentlab.labctl.control.Annotator
-import com.c0x12c.incidentlab.labctl.control.Applier
 import com.c0x12c.incidentlab.labctl.control.Capabilities
 import com.c0x12c.incidentlab.labctl.control.CapabilitiesFile
 import com.c0x12c.incidentlab.labctl.control.CgroupApplier
@@ -61,15 +60,18 @@ object Main : Logging {
       when (command) {
         "daemon" -> {
           val grafana = GrafanaAnnotator(http) { warn { it } }
-          val services = listOf<Applier>(ServiceFaultApplier(http))
-          ControlDaemon(store, services, capabilities).publishCapabilities()
-          serveApi(store, probe, grafana, capabilities, loopbackOnly = false)
-          val docker = DockerControl.ifAvailable(Path.of(System.getenv("DOCKER_SOCK") ?: "/var/run/docker.sock"), System.getenv("COMPOSE_PROJECT"))
-          val containerAppliers = docker?.containerAppliers { containerId ->
-            CgroupApplier.ifAvailable(containerId, hostPath("CGROUP_ROOT", "/host/cgroup"), hostPath("HOST_VOLUMES", "/host/volumes"), hostPath("HOST_SYS", "/host/sys"))
-          }.orEmpty()
-          val daemon = ControlDaemon(store, services + containerAppliers, capabilities, cleanup = AnnotationCleanup(store, grafana) { warn { it } })
+          val daemon = ControlDaemon(store, listOf(ServiceFaultApplier(http)), capabilities, cleanup = AnnotationCleanup(store, grafana) { warn { it } })
           daemon.publishCapabilities()
+          serveApi(store, probe, grafana, capabilities, loopbackOnly = false)
+          Thread.ofVirtual().name("docker-discovery").start {
+            DockerControl.discover(
+              open = { DockerControl.ifAvailable(Path.of(System.getenv("DOCKER_SOCK") ?: "/var/run/docker.sock"), System.getenv("COMPOSE_PROJECT")) },
+              cgroups = { containerId ->
+                CgroupApplier.ifAvailable(containerId, hostPath("CGROUP_ROOT", "/host/cgroup"), hostPath("HOST_VOLUMES", "/host/volumes"), hostPath("HOST_SYS", "/host/sys"))
+              },
+              ready = daemon::add
+            )
+          }
           daemon.run()
           0
         }
