@@ -37,10 +37,31 @@ class BoardsTest {
 
   @Test
   fun `latency quantile targets ask for exemplars and rate targets do not`() {
-    val targets = RedBoard.build().panels.flatMap { (it["targets"] as? List<*>).orEmpty() }.map { it as Map<*, *> }
+    val targets = RedBoard.build().panels.filter { it["type"] == "timeseries" }.flatMap { (it["targets"] as? List<*>).orEmpty() }.map { it as Map<*, *> }
     val (quantiles, others) = targets.partition { (it["expr"] as String).startsWith("histogram_quantile(") }
 
     assertThat(quantiles.isNotEmpty() && quantiles.all { it["exemplar"] == true }).isTrue()
     assertThat(others.none { it["exemplar"] == true }).isTrue()
+  }
+
+  @Test
+  fun `heatmaps read Prometheus buckets as they are`() {
+    val heatmaps = (RedBoard.build().panels + UseBoard.build().panels).filter { it["type"] == "heatmap" }
+    assertThat(heatmaps.size).isEqualTo(2)
+    for (panel in heatmaps) {
+      val target = (panel["targets"] as List<*>).single() as Map<*, *>
+      assertThat(target["format"]).isEqualTo("heatmap")
+      val expr = target["expr"] as String
+      assertThat(expr.startsWith("sum by (le) (increase(") && expr.endsWith("_seconds_bucket{job=\"api\"}[${Board.RATE_INTERVAL}]))")).isTrue()
+      assertThat((panel["options"] as Map<*, *>)["calculate"]).isEqualTo(false)
+    }
+  }
+
+  @Test
+  fun `the JVM row closes the USE board`() {
+    val panels = UseBoard.build().panels
+    val lastRow = panels.last { it["type"] == "row" }
+    assertThat(lastRow["title"]).isEqualTo("JVM (heap, GC, virtual threads)")
+    assertThat(panels.size - panels.indexOf(lastRow) - 1).isEqualTo(8)
   }
 }

@@ -81,6 +81,55 @@ class Board(
     )
   }
 
+  /**
+   * A Prometheus histogram as a heatmap: requests (or events) per bucket per interval, read as
+   * buckets by Grafana (`format: heatmap`), not recomputed by the panel (`calculate: false`).
+   */
+  fun heatmap(
+    title: String,
+    metric: String,
+    selector: String = "",
+    unit: String = "s",
+    description: String = "",
+    exemplars: Boolean = false,
+    width: Int = DEFAULT_WIDTH,
+    height: Int = DEFAULT_HEIGHT
+  ) {
+    panels.add(
+      mapOf(
+        "type" to "heatmap",
+        "title" to title,
+        "description" to description,
+        "id" to id(),
+        "datasource" to DATASOURCE,
+        "gridPos" to place(width, height),
+        "targets" to listOf(
+          mapOf(
+            "datasource" to DATASOURCE,
+            "expr" to rate("sum by (le) (increase(${metric}_bucket$selector[RI]))"),
+            "format" to "heatmap",
+            "legendFormat" to "{{le}}",
+            "refId" to "A",
+            "exemplar" to exemplars
+          )
+        ),
+        "fieldConfig" to mapOf("defaults" to emptyMap<String, Any?>(), "overrides" to emptyList<Any>()),
+        "options" to mapOf(
+          "calculate" to false,
+          "yAxis" to mapOf("axisPlacement" to "left", "unit" to unit),
+          "rowsFrame" to mapOf("layout" to "auto"),
+          "color" to mapOf("mode" to "scheme", "scheme" to "Oranges", "fill" to "dark-orange", "scale" to "exponential", "exponent" to HEATMAP_EXPONENT, "steps" to HEATMAP_STEPS, "reverse" to false),
+          "filterValues" to mapOf("le" to HEATMAP_HIDE_BELOW),
+          "cellGap" to 1,
+          "showValue" to "never",
+          "legend" to mapOf("show" to true),
+          "tooltip" to mapOf("mode" to "single", "yHistogram" to false, "showColorScale" to false),
+          "exemplars" to mapOf("color" to "rgba(255,0,255,0.7)")
+        )
+      )
+    )
+  }
+
   fun stat(title: String, expr: String, unit: String = "short", description: String = "", width: Int = STAT_WIDTH, height: Int = DEFAULT_HEIGHT) {
     panels.add(
       mapOf(
@@ -172,6 +221,9 @@ class Board(
     const val STACK_FILL = 10
     const val SCHEMA_VERSION = 39
     const val ANNOTATION_LIMIT = 100
+    const val HEATMAP_EXPONENT = 0.5
+    const val HEATMAP_STEPS = 64
+    const val HEATMAP_HIDE_BELOW = 1e-9
     const val TAG = "lab"
     const val RATE_INTERVAL = "\$__rate_interval"
     private const val QUANTILE = "histogram_quantile("

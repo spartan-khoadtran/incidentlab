@@ -103,6 +103,13 @@ object RedBoard {
       "s",
       "Failed requests may be very fast (fail fast) or very slow (timeout)."
     )
+    b.heatmap(
+      "api latency heatmap (requests per bucket)",
+      "http_server_duration_seconds",
+      "{job=\"api\"}",
+      description = "The whole distribution over time. A band far above the main one is a tail; dots are exemplars to open in Tempo.",
+      exemplars = true
+    )
 
     b.row("4 · Downstream as seen from api")
     b.timeseries(
