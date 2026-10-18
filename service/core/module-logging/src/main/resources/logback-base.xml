@@ -42,5 +42,5 @@
   <logger name="org.apache.kafka" level="WARN"/>
   <logger name="org.redisson" level="WARN"/>
   <logger name="com.zaxxer.hikari" level="WARN"/>
-  <logger name="com.c0x12c.redlab" level="${LOG_LEVEL}"/>
+  <logger name="com.c0x12c.incidentlab" level="${LOG_LEVEL}"/>
 </included>

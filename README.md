@@ -1,7 +1,7 @@
-# redlab: practice incident investigation
+# incidentlab: practice incident investigation
 
 A lab for the part of on-call nobody teaches: you get a ticket, a few dashboards, some traces, and a
-system that is slow or failing for a reason you do not know yet. redlab runs a small checkout system with
+system that is slow or failing for a reason you do not know yet. incidentlab runs a small checkout system with
 Docker Compose (Envoy, api, pricing, Postgres, Redis, Kafka, worker) plus Prometheus, Grafana and Tempo.
 It injects a random fault and opens a ticket. You find the cause, and the lab scores four answers: the
 kind of problem, the layer, the signal that proves it and the root cause.
@@ -52,7 +52,7 @@ make quiz KIND=numbers     # calculations only
 
 ### The system
 
-![redlab architecture](docs/diagrams/architecture.png)
+![incidentlab architecture](docs/diagrams/architecture.png)
 
 - **Request path.** `loadgen` sends about 50 rps of checkout traffic through Envoy to `api`. `api` reads
   products from Redis and Postgres, calls `pricing`, then writes each order to Kafka. `worker` consumes
@@ -123,7 +123,7 @@ make lint      # ktlint
 ```
 
 To rebuild one service after a change: `docker compose up -d --build api`. Every service shares the
-`redlab-svc` image, so this rebuilds the image once; restart the other services to pick it up.
+`incidentlab-svc` image, so this rebuilds the image once; restart the other services to pick it up.
 
 ## Datadog (optional, experimental)
 

@@ -4,7 +4,7 @@ plugins {
   alias(libs.plugins.allopen)
 }
 
-group "com.c0x12c.redlab.pricingapi"
+group "com.c0x12c.incidentlab.pricingapi"
 version "1.0-SNAPSHOT"
 
 // api:pricing: the synchronous downstream of checkout. POST /price (fast) and POST /recommend (slow
@@ -43,6 +43,6 @@ allOpen {
 }
 
 application {
-  mainClass.set("com.c0x12c.redlab.pricingapi.Main")
+  mainClass.set("com.c0x12c.incidentlab.pricingapi.Main")
   applicationName = "pricing-api"
 }

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "redlab architecture",
+    "title": "incidentlab architecture",
     "output": "architecture.html",
     "quality_profile": "showcase"
   },

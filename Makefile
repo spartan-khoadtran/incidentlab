@@ -9,7 +9,7 @@ GRADLE   = cd service && ./gradlew
         open logs ps stop down nuke check build test lint format dashboards
 
 help: ## List the commands
-	@echo "redlab: incident investigation lab (RED & USE)"
+	@echo "incidentlab: incident investigation lab"
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-11s\033[0m %s\n", $$1, $$2}'
 
 # ----------------------------------------------------------------------------- lifecycle

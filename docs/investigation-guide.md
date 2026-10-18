@@ -1,6 +1,6 @@
 # Investigating incidents with RED and USE
 
-This is the study guide for redlab. The incident exercises on the live lab (`make new`, then `make answer`) and the theory drills (`make quiz`, no lab needed) point at its sections, written as `Section > Subsection`. The section [In this lab](#in-this-lab) maps every layer in the guide to a dashboard row.
+This is the study guide for incidentlab. The incident exercises on the live lab (`make new`, then `make answer`) and the theory drills (`make quiz`, no lab needed) point at its sections, written as `Section > Subsection`. The section [In this lab](#in-this-lab) maps every layer in the guide to a dashboard row.
 
 ## Overview
 
@@ -358,7 +358,7 @@ When you know where it is slow, pick a fix in this order: do not do it, do it on
 
 ## In this lab
 
-redlab is a place to practice this process on a running system, not only to read about it. Every exercise is the same loop: a ticket, a change event or two on the charts, the dashboards and traces, and four questions.
+incidentlab is a place to practice this process on a running system, not only to read about it. Every exercise is the same loop: a ticket, a change event or two on the charts, the dashboards and traces, and four questions.
 
 The four questions of `make answer` and the step of the process they test:
 
@@ -369,7 +369,7 @@ The four questions of `make answer` and the step of the process they test:
 
 Where each layer of this guide lives in the dashboards:
 
-| Layer in the guide | In redlab |
+| Layer in the guide | In incidentlab |
 |---|---|
 | Client | loadgen. Dashboard `01 · RED by layer`, row 1. User requests by outcome, error rate, latency, requests by tenant, attempts vs user requests, p99 by endpoint |
 | Load balancer | Envoy. Dashboard 01, row 2. 5xx at the LB against 5xx api records itself, LB p99 against api p99, healthy backends |
@@ -393,7 +393,7 @@ Two habits the lab rewards:
 
 ## Applying on Datadog
 
-Each layer of RED and USE has its own data source in Datadog. A good dashboard for one service puts RED along the request path at the top and USE by layer below it, read top to bottom. The metric names below are common examples; check them in Metrics Explorer, because they depend on the integration and the agent version. redlab has an optional profile (`make up-datadog`) that sends traces to a Datadog Agent instead of Tempo.
+Each layer of RED and USE has its own data source in Datadog. A good dashboard for one service puts RED along the request path at the top and USE by layer below it, read top to bottom. The metric names below are common examples; check them in Metrics Explorer, because they depend on the integration and the agent version. incidentlab has an optional profile (`make up-datadog`) that sends traces to a Datadog Agent instead of Tempo.
 
 ### Data sources by layer
 

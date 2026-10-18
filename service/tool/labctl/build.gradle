@@ -2,7 +2,7 @@ plugins {
   id("application")
 }
 
-group "com.c0x12c.redlab.labctl"
+group "com.c0x12c.incidentlab.labctl"
 version "1.0-SNAPSHOT"
 
 // tool:labctl: the lab controller and its CLI. `labctl daemon` keeps every service in the desired
@@ -21,6 +21,6 @@ dependencies {
 }
 
 application {
-  mainClass.set("com.c0x12c.redlab.labctl.Main")
+  mainClass.set("com.c0x12c.incidentlab.labctl.Main")
   applicationName = "labctl"
 }

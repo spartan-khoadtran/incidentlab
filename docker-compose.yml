@@ -1,9 +1,9 @@
-name: redlab
+name: incidentlab
 
 # Shared settings for the JVM services: one image, a different launcher per service.
 x-svc: &svc
   build: ./service
-  image: redlab-svc:latest
+  image: incidentlab-svc:latest
   restart: unless-stopped
   environment: &svc-env
     TZ: ${TZ:-Asia/Ho_Chi_Minh}
@@ -176,7 +176,7 @@ services:
     environment:
       <<: *svc-env
       SERVICE_NAME: control
-      COMPOSE_PROJECT: redlab
+      COMPOSE_PROJECT: incidentlab
       GRAFANA_URL: http://grafana:3000
       PROMETHEUS_URL: http://prometheus:9090
       LAB_STATE: /state/state.json
@@ -246,8 +246,8 @@ services:
     environment:
       DD_API_KEY: ${DD_API_KEY:-}
       DD_SITE: ${DD_SITE:-datadoghq.com}
-      DD_HOSTNAME: redlab-local
-      DD_TAGS: env:redlab
+      DD_HOSTNAME: incidentlab-local
+      DD_TAGS: env:incidentlab
       DD_APM_ENABLED: "true"
       DD_APM_NON_LOCAL_TRAFFIC: "true"
       DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT: 0.0.0.0:4318

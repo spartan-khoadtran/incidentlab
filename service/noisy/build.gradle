@@ -3,7 +3,7 @@ plugins {
   alias(libs.plugins.ksp)
 }
 
-group "com.c0x12c.redlab.noisy"
+group "com.c0x12c.incidentlab.noisy"
 version "1.0-SNAPSHOT"
 
 // noisy: a batch job sharing the same machine. Idle unless an exercise turns its burners
@@ -28,6 +28,6 @@ dependencies {
 }
 
 application {
-  mainClass.set("com.c0x12c.redlab.noisy.Main")
+  mainClass.set("com.c0x12c.incidentlab.noisy.Main")
   applicationName = "noisy"
 }

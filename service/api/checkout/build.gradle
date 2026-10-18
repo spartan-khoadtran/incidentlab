@@ -4,7 +4,7 @@ plugins {
   alias(libs.plugins.allopen)
 }
 
-group "com.c0x12c.redlab.checkoutapi"
+group "com.c0x12c.incidentlab.checkoutapi"
 version "1.0-SNAPSHOT"
 
 // api:checkout: the service users hit through Envoy. GET /products/{id} (Redis, then Postgres),
@@ -48,6 +48,6 @@ allOpen {
 }
 
 application {
-  mainClass.set("com.c0x12c.redlab.checkoutapi.Main")
+  mainClass.set("com.c0x12c.incidentlab.checkoutapi.Main")
   applicationName = "checkout-api"
 }

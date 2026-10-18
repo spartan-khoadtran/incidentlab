@@ -25,7 +25,7 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "redlab"
+rootProject.name = "incidentlab"
 
 // ─── core: infra, knows no domain and no framework ───
 include(

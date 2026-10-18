@@ -4,11 +4,11 @@ How the lab is built, how to run it, and the design choices the exercises depend
 
 ## What this is
 
-redlab is a local training lab for incident investigation: comparing layers, Little's Law and queueing, tail latency, retry loops, Kafka lag, trend prediction, traces and false leads. Docker Compose runs a small checkout system (Envoy, api, pricing, Postgres, Redis, Kafka, worker) plus Prometheus, Grafana and Tempo. A controller injects a random fault. The learner investigates with the dashboards, submits an answer and gets a score.
+incidentlab is a local training lab for incident investigation: comparing layers, Little's Law and queueing, tail latency, retry loops, Kafka lag, trend prediction, traces and false leads. Docker Compose runs a small checkout system (Envoy, api, pricing, Postgres, Redis, Kafka, worker) plus Prometheus, Grafana and Tempo. A controller injects a random fault. The learner investigates with the dashboards, submits an answer and gets a score.
 
 Everything in the repo is English: code, comments, log lines, learner-facing text, Makefile help. The study guide the learners read is `docs/investigation-guide.md`. Scenario and quiz `doc` fields point at its headings as `Section > Subsection (note)`; `GuidePointersTest` checks that every pointer resolves, so a heading rename must update the pointers too.
 
-`service/tool/labctl/src/main/kotlin/com/c0x12c/redlab/labctl/scenario/ScenarioCatalog.kt` holds the answers. The README tells learners not to read it.
+`service/tool/labctl/src/main/kotlin/com/c0x12c/incidentlab/labctl/scenario/ScenarioCatalog.kt` holds the answers. The README tells learners not to read it.
 
 ## Commands
 
@@ -32,7 +32,7 @@ Development (Gradle lives in `service/`, needs a JDK on the host; Gradle downloa
 - One module: `cd service && ./gradlew :tool:labctl:test` or `./gradlew :api:checkout:installDist`.
 - One test class: `cd service && ./gradlew :tool:labctl:test --tests '*ExercisesTest*'`.
 - `make dashboards` regenerates the Grafana JSON from `service/tool/dashboards` through the built image. Grafana reads the bind-mounted folder, so no restart is needed. Do not edit the JSON by hand.
-- `docker compose up -d --build api` rebuilds after a code change. All services share one image (`redlab-svc:latest`); other services keep the old code until you restart them too.
+- `docker compose up -d --build api` rebuilds after a code change. All services share one image (`incidentlab-svc:latest`); other services keep the old code until you restart them too.
 - `make logs S=api` (empty `S` means all services), `make ps`.
 
 Host ports: Envoy 8080 (admin 9901), Grafana 3000, Prometheus 9090. Tempo has no host port: traces are read in Grafana. Service ports (api 8000, pricing 8001, worker 8002, loadgen 8003, pgobserver 8004, noisy 8005) are only reachable inside the compose network.
@@ -51,7 +51,7 @@ loadgen is an open-model Poisson generator per tenant. It makes the root samplin
 - `shared/`: `module-exception` (`ClientException`, `ErrorResponse`, `CheckoutError`), `module-client` (DTOs and the Retrofit `PricingApi`), `module-infra` (the Micronaut glue every service inherits: `/admin/faults`, `/metrics`, the RED filter, the event loop probe, `AppDatabaseConfig` and `DatabaseFactory`, `AppKafkaConfig`, the error handler).
 - `domain/module-checkout/`: `module-api` (interfaces), `module-repository` (the SQL, one `/* q=name */` statement each, timed per call), `module-impl` (the manager, DB sessions, pricing client, cache, Kafka producer, backfill job, admission filter, `CheckoutFactory`).
 - Deployables are thin composition roots with an `object Main` and an `application.yml`: `api/checkout`, `api/pricing`, `worker/orders` (the Kafka consumer), `loadgen`, `noisy`, `pgobserver` (flat: a load generator, a batch job and an exporter are neither an api nor a worker), `tool/labctl` (plain Kotlin, no Micronaut), `tool/dashboards`.
-- Conventions: `@Factory` classes build the plain classes; the classes themselves are never `@Singleton` unless they are loops or filters. Typed `@ConfigurationProperties` data classes bind `app.*`. Package root is `com.c0x12c.redlab`; `core/module-logging` keeps `com.c0x12c.logging`. JDK 21 toolchain (the BLOCKING executor runs on virtual threads). ktlint with the copied `.editorconfig`.
+- Conventions: `@Factory` classes build the plain classes; the classes themselves are never `@Singleton` unless they are loops or filters. Typed `@ConfigurationProperties` data classes bind `app.*`. Package root is `com.c0x12c.incidentlab`; `core/module-logging` keeps `com.c0x12c.logging`. JDK 21 toolchain (the BLOCKING executor runs on virtual threads). ktlint with the copied `.editorconfig`.
 
 ### One image, many launchers
 

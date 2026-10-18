@@ -3,7 +3,7 @@ plugins {
   alias(libs.plugins.ksp)
 }
 
-group "com.c0x12c.redlab.worker.orders"
+group "com.c0x12c.incidentlab.worker.orders"
 version "1.0-SNAPSHOT"
 
 // worker:orders: the Kafka consumer behind the async exercises. One sequential worker per
@@ -46,6 +46,6 @@ dependencies {
 }
 
 application {
-  mainClass.set("com.c0x12c.redlab.worker.orders.Main")
+  mainClass.set("com.c0x12c.incidentlab.worker.orders.Main")
   applicationName = "orders-worker"
 }

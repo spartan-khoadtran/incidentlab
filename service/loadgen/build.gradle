@@ -3,7 +3,7 @@ plugins {
   alias(libs.plugins.ksp)
 }
 
-group "com.c0x12c.redlab.loadgen"
+group "com.c0x12c.incidentlab.loadgen"
 version "1.0-SNAPSHOT"
 
 // loadgen: plays the users (web, iOS, Android, a partner integration). Open-model load:
@@ -43,6 +43,6 @@ dependencies {
 }
 
 application {
-  mainClass.set("com.c0x12c.redlab.loadgen.Main")
+  mainClass.set("com.c0x12c.incidentlab.loadgen.Main")
   applicationName = "loadgen"
 }

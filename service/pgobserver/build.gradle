@@ -3,7 +3,7 @@ plugins {
   alias(libs.plugins.ksp)
 }
 
-group "com.c0x12c.redlab.pgobserver"
+group "com.c0x12c.incidentlab.pgobserver"
 version "1.0-SNAPSHOT"
 
 // pgobserver: Postgres seen from the inside, the lab's database monitoring. Polls
@@ -30,6 +30,6 @@ dependencies {
 }
 
 application {
-  mainClass.set("com.c0x12c.redlab.pgobserver.Main")
+  mainClass.set("com.c0x12c.incidentlab.pgobserver.Main")
   applicationName = "pgobserver"
 }
