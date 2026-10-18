@@ -52,8 +52,10 @@ describe("Load and capacity", () => {
     await user.type(screen.getByRole("textbox", { name: /^Knee/ }), "75");
     await user.type(screen.getByRole("textbox", { name: "Highest throughput (rps)" }), "75");
     await user.selectOptions(screen.getByRole("combobox", { name: "Resource that filled first" }), "mock_pool");
+    await user.type(screen.getByRole("textbox", { name: /how you read the knee/ }), "p99 bent at step 2");
     await user.click(screen.getByRole("button", { name: "Submit" }));
     expect(await screen.findByText("Mock ramp explanation.")).toBeTruthy();
+    expect(state.lab.rampNote).toBe("p99 bent at step 2");
     expect(screen.getByText("310 ms")).toBeTruthy();
     expect(screen.getByText("0.4%")).toBeTruthy();
     expect(screen.getByText(/Mock resource: the pool \(missed\)/)).toBeTruthy();
