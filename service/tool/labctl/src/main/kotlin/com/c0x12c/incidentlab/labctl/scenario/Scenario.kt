@@ -66,6 +66,8 @@ class Scenario(
   val steps: List<String>,
   val explain: (Params) -> String,
   val evidence: List<String>,
+  /** Shell commands that prove the cause without Grafana. */
+  val cli: List<String> = emptyList(),
   val doc: String,
   /** A real change event, written as a Grafana annotation up to 3 minutes before the start. */
   val marker: ((Params) -> String)? = null,

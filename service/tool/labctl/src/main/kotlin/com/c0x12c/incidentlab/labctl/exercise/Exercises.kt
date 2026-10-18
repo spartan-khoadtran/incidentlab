@@ -5,6 +5,7 @@ import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.LabProbe
 import com.c0x12c.incidentlab.labctl.quiz.Quiz
 import com.c0x12c.incidentlab.labctl.scenario.Answers
+import com.c0x12c.incidentlab.labctl.scenario.Baseline
 import com.c0x12c.incidentlab.labctl.scenario.ExerciseContext
 import com.c0x12c.incidentlab.labctl.scenario.Params
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
@@ -240,7 +241,7 @@ class Exercises(
       val loadgen = state.base["loadgen"].orEmpty() + ("rate_multiplier" to x)
       state.copy(base = state.base + ("loadgen" to loadgen))
     }
-    terminal.out("Background load = ${plain(x)} x ${ScenarioCatalog.BASE_RPS} rps = ${plain(ScenarioCatalog.BASE_RPS * x)} rps (applied within a few seconds).")
+    terminal.out("Background load = ${plain(x)} x ${Baseline.BASE_RPS} rps = ${plain(Baseline.BASE_RPS * x)} rps (applied within a few seconds).")
     return 0
   }
 

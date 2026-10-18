@@ -10,6 +10,13 @@ import assertk.assertions.isFalse
 import assertk.assertions.isNotEmpty
 import assertk.assertions.isTrue
 import com.c0x12c.incidentlab.labctl.control.Services
+import com.c0x12c.incidentlab.labctl.scenario.catalog.AppScenarios
+import com.c0x12c.incidentlab.labctl.scenario.catalog.AsyncScenarios
+import com.c0x12c.incidentlab.labctl.scenario.catalog.ContainerHostScenarios
+import com.c0x12c.incidentlab.labctl.scenario.catalog.DatabaseScenarios
+import com.c0x12c.incidentlab.labctl.scenario.catalog.DownstreamScenarios
+import com.c0x12c.incidentlab.labctl.scenario.catalog.EdgeScenarios
+import com.c0x12c.incidentlab.labctl.scenario.catalog.LoadScenarios
 import kotlin.random.Random
 import org.junit.jupiter.api.Test
 
@@ -19,11 +26,15 @@ class ScenarioCatalogTest {
   private val locations = Answers.LOCATIONS.map { it.first }.toSet()
   private val signals = Answers.SIGNALS.map { it.first }.toSet()
   private val causes = Answers.CAUSES.map { it.first }.toSet()
+  private val layers = listOf(
+    LoadScenarios.all, EdgeScenarios.all, AppScenarios.all, DatabaseScenarios.all, DownstreamScenarios.all, AsyncScenarios.all, ContainerHostScenarios.all
+  )
 
   @Test
-  fun `thirty-two scenarios with unique ids and valid answer keys`() {
-    assertThat(ScenarioCatalog.all).hasSize(32)
-    assertThat(ScenarioCatalog.all.map { it.id }.toSet()).hasSize(32)
+  fun `every layer adds scenarios with unique ids and valid answer keys`() {
+    assertThat(layers.all { it.isNotEmpty() }).isTrue()
+    assertThat(ScenarioCatalog.all).hasSize(layers.sumOf { it.size })
+    assertThat(ScenarioCatalog.all.map { it.id }.toSet()).hasSize(ScenarioCatalog.all.size)
     for (scenario in ScenarioCatalog.all) {
       assertThat(scenario.level).isBetween(1, 3)
       assertThat(scenario.answer.nature.all { it in natures }).isTrue()
@@ -134,7 +145,7 @@ class ScenarioCatalogTest {
     assertThat(scenario.marker!!(params).contains(if (params.string("tenant") == "ios") "iOS" else "Android")).isTrue()
 
     val fallback = Params(scenario.params(Random(2), ExerciseContext()), "14:05")
-    assertThat(fallback.int("total")).isEqualTo(ScenarioCatalog.BASE_RPS)
+    assertThat(fallback.int("total")).isEqualTo(Baseline.BASE_RPS)
   }
 
   @Test
@@ -146,8 +157,8 @@ class ScenarioCatalogTest {
 
   @Test
   fun `the baseline numbers come from one tenant mix`() {
-    assertThat(ScenarioCatalog.BASE_RPS).isEqualTo(50)
-    assertThat(ScenarioCatalog.BASE_TENANTS.values.sum()).isEqualTo(ScenarioCatalog.BASE_RPS)
+    assertThat(Baseline.BASE_RPS).isEqualTo(50)
+    assertThat(Baseline.BASE_TENANTS.values.sum()).isEqualTo(Baseline.BASE_RPS)
   }
 
   @Test
