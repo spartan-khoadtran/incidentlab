@@ -67,6 +67,16 @@ object LabExport {
     val quizQuestions: Int
   )
 
+  data class Range(val min: Double, val max: Double)
+
+  /** The bounds `CommandLine` accepts, so a slider on the site offers only values the lab takes. */
+  data class Limits(
+    val loadMultiplier: Range,
+    val rampStepSeconds: Range,
+    val benchClients: Range,
+    val benchSeconds: Range
+  )
+
   data class Export(
     val scenarios: List<ScenarioCard>,
     val topics: List<String>,
@@ -77,6 +87,7 @@ object LabExport {
     val tickSeconds: Long,
     val recentWindow: Int,
     val defaults: Defaults,
+    val limits: Limits,
     val counts: Counts
   )
 
@@ -119,6 +130,12 @@ object LabExport {
         benchClients = BenchCatalog.DEFAULT_CLIENTS,
         benchSeconds = BenchCatalog.DEFAULT_SECONDS,
         quizQuestions = Main.DEFAULT_QUIZ_QUESTIONS
+      ),
+      limits = Limits(
+        loadMultiplier = Range(Exercises.MIN_LOAD, Exercises.MAX_LOAD),
+        rampStepSeconds = Range(RampPlan.MIN_STEP_SECONDS.toDouble(), RampPlan.MAX_STEP_SECONDS.toDouble()),
+        benchClients = Range(BenchCatalog.MIN_CLIENTS.toDouble(), BenchCatalog.MAX_CLIENTS.toDouble()),
+        benchSeconds = Range(BenchCatalog.MIN_SECONDS.toDouble(), BenchCatalog.MAX_SECONDS.toDouble())
       ),
       counts = Counts(
         scenarios = scenarios.size,

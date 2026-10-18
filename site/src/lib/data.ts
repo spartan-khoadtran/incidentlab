@@ -50,6 +50,7 @@ export interface Lab {
     bench_seconds: number;
     quiz_questions: number;
   };
+  limits: Record<"load_multiplier" | "ramp_step_seconds" | "bench_clients" | "bench_seconds", { min: number; max: number }>;
   counts: { scenarios: number; toolbox: number; causes: number; signals: number; numbers: number; concepts: number };
 }
 
