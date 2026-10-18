@@ -16,7 +16,8 @@ internal object ContainerHostScenarios {
     cpuThrottle(),
     oom(),
     slowLeak(),
-    noisyNeighbor()
+    noisyNeighbor(),
+    cpuCredits()
   )
 
   private fun cpuThrottle() = Scenario(
@@ -171,6 +172,52 @@ internal object ContainerHostScenarios {
     doc = "USE at many layers > Layers and their metrics (hypervisor, host)"
   )
 
+  private fun cpuCredits() = Scenario(
+    id = "cpu_credits",
+    title = "A burstable VM runs out of CPU credits",
+    level = 2,
+    topics = listOf("use", "container", "cpu"),
+    params = { random, _ ->
+      mapOf("credit_seconds" to random.nextInt(MIN_CREDIT_SECONDS, MAX_CREDIT_SECONDS + 1), "cpus" to round2(random.nextDouble(MIN_THROTTLE_CPUS, MAX_THROTTLE_CPUS)))
+    },
+    faults = { p -> if (p.elapsedSeconds < p.int("credit_seconds")) FaultSpec() else FaultSpec(docker = mapOf("api" to mapOf("cpus" to p.double("cpus")))) },
+    decoy = 0.3,
+    ticket = { p ->
+      "At ${p.startedAt}, api moved to a smaller burstable VM to save cost. Right now every panel looks normal. The on-call lead asks you to keep " +
+        "watching for a few minutes: 'this kind of VM does not always stay fast'. When something changes, tell us what changed and why."
+    },
+    hints = listOf(
+      "Nothing is wrong yet. Write down the baseline now: api p99 by route, CPU usage against the limit, the throttled share. Then wait.",
+      "When p99 rises on every route with a flat rate and no deploy, do USE for api at the container layer: did the usage move, or did the limit?",
+      "cgroup_cpu_limit_cores for api fell and the throttled share climbs. The VM ran at full speed on credits, then dropped to its baseline."
+    ),
+    answer = Answer(nature = setOf("arch"), location = setOf("container"), signal = setOf("cgroup_cpu"), cause = "cpu_credits", partial = setOf("cpu_throttle")),
+    explain = { p ->
+      val minutes = p.int("credit_seconds") / SECONDS_PER_MINUTE.toDouble()
+      "A burstable VM earns CPU credits while it stays under its baseline and spends them above it. api ran at full speed for about ${p.fixed(minutes, 1)} minutes " +
+        "on the credits the VM had. Then the balance hit zero and, in standard mode, the VM fell to its baseline. From then on api gets about ${p.double("cpus")} cores: p99 rises on every " +
+        "route, the rate stays flat, and nobody deployed. The lab has no hypervisor, so it models the drop as a lower CPU quota: cgroup_cpu_limit_cores falls and the " +
+        "throttled share climbs. On a real burstable instance the quota does not move. The hypervisor withholds the CPU, so steal time rises inside the VM and the " +
+        "credit balance metric runs down to zero before the slowdown. Either way the work did not change, the ceiling did. " +
+        "Fix: a non-burstable instance for a service with steady load, or unlimited mode, which keeps bursting and bills the extra CPU."
+    },
+    steps = listOf(
+      "Problem statement: api moved to a burstable VM, nothing is wrong yet, and the lead expects that to change. Write down the baseline before it does.",
+      "Watch RED: after a few minutes p99 rises on every route, the rate is flat, and there is no deploy marker. Suspect architecture.",
+      "USE for api at the container layer: CPU usage against the limit and the throttled share both jump, while the host still has idle CPU.",
+      "Compare the limit itself before and after: cgroup_cpu_limit_cores fell. The work is the same, the ceiling moved.",
+      "Ask why a ceiling moves by itself: a burstable VM spends credits above its baseline and drops to the baseline when they run out.",
+      "The cause: out of CPU credits. On a real cloud VM you would see steal time rise and the credit balance fall. The lab shows it as a lower quota."
+    ),
+    evidence = listOf(
+      "cgroup_cpu_limit_cores{job=\"api\"}",
+      "rate(cgroup_cpu_usage_seconds_total{job=\"api\"}[1m]) / cgroup_cpu_limit_cores{job=\"api\"}",
+      "rate(cgroup_cpu_throttled_periods_total{job=\"api\"}[1m]) / rate(cgroup_cpu_periods_total{job=\"api\"}[1m])",
+      "histogram_quantile(0.99, sum by (le, route) (rate(http_server_duration_seconds_bucket{job=\"api\"}[1m])))"
+    ),
+    doc = "CPU shares and quotas > CPU credits on burstable instances"
+  )
+
   // api averages about 0.06 cores at 50 rps, so only a limit this low runs out inside single 100 ms periods.
   private const val MIN_THROTTLE_CPUS = 0.07
   private const val MAX_THROTTLE_CPUS = 0.1
@@ -182,4 +229,8 @@ internal object ContainerHostScenarios {
   private const val MIN_BURNERS = 4
   private const val KB_PER_MB = 1_024.0
   private const val LEAK_HEADROOM_MB = 200.0
+
+  // How long the VM runs at full speed before its credits are gone.
+  private const val MIN_CREDIT_SECONDS = 120
+  private const val MAX_CREDIT_SECONDS = 240
 }

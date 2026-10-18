@@ -2,7 +2,9 @@ package com.c0x12c.incidentlab.labctl.scenario.catalog
 
 import com.c0x12c.incidentlab.labctl.scenario.Answer
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.AVERAGE_BASKET
+import com.c0x12c.incidentlab.labctl.scenario.Baseline.CHECKOUTS_PER_SECOND
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.MILLIS_PER_SECOND
+import com.c0x12c.incidentlab.labctl.scenario.Baseline.PERCENT
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.PRODUCTS_PER_SECOND
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
@@ -14,7 +16,9 @@ internal object AppScenarios {
   val all: List<Scenario> = listOf(
     nPlusOne(),
     singleThreadCpu(),
-    cacheMiss()
+    cacheMiss(),
+    appLock(),
+    forkDecoy()
   )
 
   private fun nPlusOne() = Scenario(
@@ -136,4 +140,117 @@ internal object AppScenarios {
     ),
     doc = "RED at many layers > Why Rate differs (cache)"
   )
+
+  private fun appLock() = Scenario(
+    id = "app_lock",
+    title = "Checkouts wait for each other on one lock",
+    level = 2,
+    topics = listOf("use", "runtime"),
+    params = { random, _ ->
+      val utilization = random.nextDouble(MIN_LOCK_UTILIZATION, MAX_LOCK_UTILIZATION)
+      mapOf("lock_ms" to (utilization * MILLIS_PER_SECOND / CHECKOUTS_PER_SECOND).roundToInt())
+    },
+    faults = { p -> FaultSpec(services = mapOf("api" to mapOf("lock_ms" to p.int("lock_ms")))) },
+    marker = { "Deploy api v2.40: inventory cache rewrite" },
+    decoy = 0.5,
+    ticket = { p ->
+      "At ${p.startedAt}, /checkout p99 is many times higher than before. api CPU is low, pricing and Postgres look normal, and /products is fine. " +
+        "The rate did not change. What is /checkout waiting for?"
+    },
+    hints = listOf(
+      "Only /checkout is slow and every downstream is flat. Where does a request spend time when it neither computes nor waits on a downstream?",
+      "USE for api's software resources: the pool is fine and admission is fine. Look at the inventory lock panels: threads waiting and wait time.",
+      "rate(app_lock_held_seconds_total) is the lock's utilization. By M/M/1, at 90% the mean wait is 9 times the hold time."
+    ),
+    answer = Answer(nature = setOf("arch"), location = setOf("api"), signal = setOf("lock_wait"), cause = "app_lock"),
+    explain = { p ->
+      val hold = p.int("lock_ms").toDouble()
+      val rho = CHECKOUTS_PER_SECOND * hold / MILLIS_PER_SECOND
+      val wait = rho / (1 - rho) * hold
+      val atLock = hold / (1 - rho)
+      val waiting = CHECKOUTS_PER_SECOND * wait / MILLIS_PER_SECOND
+      "v2.40 refreshes an inventory cache on every checkout under one global lock. Each refresh holds it about ${hold.roundToInt()} ms on average. " +
+        "At about $CHECKOUTS_PER_SECOND checkouts/s the lock is busy $CHECKOUTS_PER_SECOND × ${p.fixed(hold / MILLIS_PER_SECOND, 3)} s = " +
+        "${(rho * PERCENT).roundToInt()}% of the time: that is its utilization. Arrivals and hold times are both random, so the lock is an M/M/1 queue. " +
+        "The mean wait is ρ / (1 − ρ) × hold = ${p.fixed(rho, 2)} / ${p.fixed(1 - rho, 2)} × ${hold.roundToInt()} ms ≈ ${wait.roundToInt()} ms. " +
+        "Wait plus hold is hold / (1 − ρ) ≈ ${atLock.roundToInt()} ms. In M/M/1 that time has an exponential spread, so its p99 is about " +
+        "${p.fixed(P99_OF_EXPONENTIAL, 1)} times the mean: about ${p.fixed(atLock * P99_OF_EXPONENTIAL / MILLIS_PER_SECOND, 1)} s on top of the normal checkout. " +
+        "Little's Law gives the threads waiting: $CHECKOUTS_PER_SECOND/s × ${p.fixed(wait / MILLIS_PER_SECOND, 3)} s ≈ ${p.fixed(waiting, 1)}. " +
+        "CPU is low because a waiting thread uses none. Pool, pricing and Postgres are flat because the lock sits outside all of them, and /products never takes it. " +
+        "A lock is a software resource: utilization is the share of time it is held, saturation is the threads waiting. " +
+        "Fix: refresh the cache off the request path, or once per interval instead of once per checkout."
+    },
+    steps = listOf(
+      "Problem statement: /checkout p99 is many times higher, CPU is low, downstreams look normal, /products is fine, the rate is flat.",
+      "RED by route: only /checkout moved. Compare its spans: the DB sessions and the pricing call did not grow. Suspect the app itself.",
+      "USE for api at every layer: host and container idle, no throttling, event loop quiet, pool and admission fine. No hardware resource is saturated.",
+      "No resource saturated and no downstream slow means a wait inside the app, such as a lock. The deploy marker names the inventory cache rewrite.",
+      "The lock panels: threads waiting above 0, wait p99 near a second or more, utilization between 75% and 90%. By M/M/1 the mean wait is ρ / (1 − ρ) hold times.",
+      "The cause: one global lock serializes checkouts. They wait for each other, not for a resource. Take the refresh off the request path."
+    ),
+    evidence = listOf(
+      "histogram_quantile(0.99, sum by (le) (rate(app_lock_wait_seconds_bucket{job=\"api\"}[1m])))",
+      "app_lock_waiting{job=\"api\"}",
+      "rate(app_lock_held_seconds_total{job=\"api\"}[1m])",
+      "rate(process_cpu_seconds_total{job=\"api\"}[1m])",
+      "histogram_quantile(0.99, sum by (le, route) (rate(http_server_duration_seconds_bucket{job=\"api\"}[1m])))"
+    ),
+    doc = "USE method in detail > Software resources (mutex, lock); Off-CPU time > Waiting on a lock"
+  )
+
+  private fun forkDecoy() = Scenario(
+    id = "fork_decoy",
+    title = "A fork storm on the host, slower product pages",
+    level = 3,
+    topics = listOf("host", "layers"),
+    params = { random, _ -> mapOf("ttl" to random.nextInt(100, 401), "fork_rps" to random.nextInt(MIN_FORK_RPS, MAX_FORK_RPS + 1)) },
+    faults = { p -> FaultSpec(services = mapOf("api" to mapOf("cache_ttl_ms" to p.int("ttl")), "noisy" to mapOf("fork_rps" to p.int("fork_rps")))) },
+    marker = { "Deploy checkout-api v2.34: configuration moved to the new config service" },
+    decoy = 0.5,
+    ticket = { p ->
+      "At ${p.startedAt}, ops saw the host's fork rate (node_forks_total) jump to more than 100 per second, far above normal. " +
+        "They ask whether that is why /products p99 went up at the same time. top shows nothing unusual."
+    },
+    hints = listOf(
+      "Two things are true at once: the host forks a lot, and api is slower. Does the first explain the second? Check host saturation: load, PSI, api's throttled share.",
+      "/products is the slow route, and it never touches the host's process table. What does a /products request pass through before the DB?",
+      "The cache hit ratio fell at the same minute and product_detail queries at Postgres climbed. The fork storm is a batch job on noisy and hurts nobody."
+    ),
+    answer = Answer(nature = setOf("amplified", "arch"), location = setOf("cache", "api"), signal = setOf("cache_hit_ratio", "query_rate_by_name"), cause = "cache_miss"),
+    explain = { p ->
+      "Two changes happened together. The noisy container starts about ${p.int("fork_rps")} short processes per second, so the host's fork counter climbs by about " +
+        "that much. Each process lives a few milliseconds, so top never catches one. The whole storm costs a fraction of a core: load stays under the CPU count, " +
+        "PSI stays low and api is not throttled. That lead is real but harmless. The slowness has another source: a config change set the cache TTL to " +
+        "${p.int("ttl")} ms, so almost every /products misses and runs the product_detail query, a scan over reviews. The API rate is flat while the query rate at " +
+        "Postgres climbs, and /products pays the query on almost every call. " +
+        "The hit ratio and the query rate by name prove the cache miss. The host's saturation numbers clear the fork storm: busy is not saturated."
+    },
+    steps = listOf(
+      "Problem statement: the host's fork rate jumped to more than 100 per second, and /products got slower at the same time.",
+      "Check whether the host lead explains the slowness: load against the CPU count, PSI and api's throttled share are all flat. Busy is not saturated.",
+      "Ask which container forks: the noisy batch job. Short processes never show in top, only in node_forks_total.",
+      "RED by route: /products is the slow one, and it never depends on the process table. Follow the request path instead: cache, then DB.",
+      "The cache hit ratio fell and the product_detail query rate at Postgres climbed while the API rate stayed flat.",
+      "The cause: a config change made the cache TTL tiny. The fork storm is a second, harmless change. The first thing you find is not always the problem."
+    ),
+    evidence = listOf(
+      "rate(node_forks_total[1m])",
+      "rate(noisy_forks_total[1m])",
+      "node_load1 / scalar(count(node_cpu_seconds_total{mode=\"idle\"}))",
+      "sum(rate(cache_requests_total{result=\"hit\"}[1m])) / sum(rate(cache_requests_total[1m]))",
+      "sum by (query) (rate(pg_query_calls_total[1m]))"
+    ),
+    doc = "RED at many layers > Why Rate differs (cache); CPU busy with no work > Short-lived processes"
+  )
+
+  // The lock's utilization at 15 checkouts/s. Above 0.9 the p99 at the lock passes loadgen's 3 s timeout.
+  private const val MIN_LOCK_UTILIZATION = 0.75
+  private const val MAX_LOCK_UTILIZATION = 0.9
+
+  // ln(100): the p99 of an exponential distribution, in means.
+  private const val P99_OF_EXPONENTIAL = 4.6
+
+  // About 100 times the idle host's fork rate; noisy caps the storm at 200/s.
+  private const val MIN_FORK_RPS = 100
+  private const val MAX_FORK_RPS = 200
 }
