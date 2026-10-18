@@ -148,6 +148,6 @@ A log line looks free in the code. It is not.
 - In a container, stdout is a pipe. Docker reads it and stores the log on disk.
 - Every write happens under the appender's lock. Threads that log at the same time wait in line.
 - The cost grows with lines per request. 500 lines per request at 50 requests/s is 25,000 syscalls per second.
-- On the lab, one line costs api about 5 µs of CPU, and about 2 µs of that is system time for the write. 2,000 lines per request add about 10 ms of CPU to each request.
+- On the lab, one line costs api about 2.6 µs of CPU, and about 1.4 µs of that is system time for the write. 2,000 lines per request add about 5 ms of CPU to each request.
 - Fixes, in order: log less (put the level back, sample), then log in batches. Logback's `AsyncAppender` puts events in a queue (256 by default) and one background thread writes them. With the defaults, it drops TRACE, DEBUG and INFO events when the queue is nearly full. A caller blocks when the queue is full.
 - Log volume is also disk. Rotate the files: the lab caps api's Docker log at 3 files of 20 MB.

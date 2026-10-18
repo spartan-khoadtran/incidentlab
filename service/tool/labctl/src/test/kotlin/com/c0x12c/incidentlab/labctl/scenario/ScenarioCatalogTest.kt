@@ -431,22 +431,22 @@ class ScenarioCatalogTest {
   }
 
   @Test
-  fun `the logging band puts 0_19 to 0_3 cores of system time on api and its texts do the per-line arithmetic`() {
-    assertThat(JvmScenarios.logSystemCores(JvmScenarios.MIN_LOG_LINES)).isBetween(0.19, 0.3)
-    assertThat(JvmScenarios.logSystemCores(JvmScenarios.MAX_LOG_LINES)).isBetween(0.19, 0.3)
+  fun `the logging band puts 0_14 to 0_21 cores of system time on api and its texts do the per-line arithmetic`() {
+    assertThat(JvmScenarios.logSystemCores(JvmScenarios.MIN_LOG_LINES)).isBetween(0.14, 0.21)
+    assertThat(JvmScenarios.logSystemCores(JvmScenarios.MAX_LOG_LINES)).isBetween(0.14, 0.21)
     val scenario = ScenarioCatalog.byId.getValue("sync_logging")
     val random = Random(2)
     repeat(30) {
       val lines = scenario.params(random, ExerciseContext())["lines"] as Int
       assertThat(lines).isBetween(JvmScenarios.MIN_LOG_LINES, JvmScenarios.MAX_LOG_LINES)
     }
-    // 2000 × 50 = 100,000 lines/s; × 1.9 µs = 0.19 cores system, × 3.4 µs = 0.34 cores user; 2000 × 5.3 µs = 10.6 ms per request
+    // 2000 × 50 = 100,000 lines/s; × 1.4 µs = 0.14 cores system, × 1.2 µs = 0.12 cores user; 2000 × 2.6 µs = 5.2 ms per request
     val params = Params(mapOf("lines" to 2000), "14:05")
     val explain = scenario.explain(params)
     assertThat(explain.contains("100000 lines/s")).isTrue()
-    assertThat(explain.contains("0.34 cores of user time and 0.19 cores of system time")).isTrue()
-    assertThat(explain.contains("≈ 11 ms of extra work")).isTrue()
-    assertThat(scenario.ticket(params).contains("about 11 ms")).isTrue()
+    assertThat(explain.contains("0.12 cores of user time and 0.14 cores of system time")).isTrue()
+    assertThat(explain.contains("≈ 5 ms of extra work")).isTrue()
+    assertThat(scenario.ticket(params).contains("about 5 ms")).isTrue()
   }
 
   @Test
