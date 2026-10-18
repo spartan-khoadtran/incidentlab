@@ -34,6 +34,21 @@ describe("api client", () => {
     expect(view.n).toBe(2);
   });
 
+  it("sends the key of the exercise it answers, so an answer for a replaced one is refused", async () => {
+    const first = await api.start({});
+    const second = await api.start({ force: true });
+    await expect(api.answer(first.key, { nature: "mock_arch", location: "mock_lb", signal: "mock_gap", cause: "mock_queue" })).rejects.toMatchObject({
+      status: 409,
+      code: "exercise_changed",
+    });
+    await expect(api.reveal(first.key)).rejects.toMatchObject({ code: "exercise_changed" });
+    await expect(api.clear(first.key)).rejects.toMatchObject({ code: "exercise_changed" });
+    expect(state.lab.active?.key).toBe(second.key);
+    expect(state.lab.history).toEqual([]);
+    await api.clear(second.key);
+    expect(state.lab.active).toBeNull();
+  });
+
   it("reports the lab as offline when the proxy answers with HTML", async () => {
     state.lab.online = false;
     const error = await api.health().catch((e: unknown) => e);
@@ -44,7 +59,7 @@ describe("api client", () => {
   it("keeps the ActiveView free of the scenario until the answer", async () => {
     const view = await api.start({});
     expect(JSON.stringify(view)).not.toContain("mock_fault");
-    const result = await api.answer({ nature: "mock_arch", location: "mock_lb", signal: "mock_gap", cause: "mock_retry" });
+    const result = await api.answer(view.key, { nature: "mock_arch", location: "mock_lb", signal: "mock_gap", cause: "mock_retry" });
     expect(result.verdicts.cause).toBe("partial");
     expect(result.score).toBe(4);
     expect((await api.exercise()).reveal?.id).toBe("mock_fault");
@@ -61,8 +76,8 @@ describe("helpers", () => {
   });
 
   it("rebuilds an answered exercise from GET /api/exercise, with the result next to the reveal", async () => {
-    await api.start({});
-    await api.answer({ nature: "mock_arch", location: "mock_lb", signal: "mock_gap", cause: "mock_queue" });
+    const started = await api.start({});
+    await api.answer(started.key, { nature: "mock_arch", location: "mock_lb", signal: "mock_gap", cause: "mock_queue" });
     const view = await api.exercise();
     expect(view.reveal?.id).toBe("mock_fault");
     expect(view.result && "verdicts" in view.result ? view.result.score : null).toBe(5);

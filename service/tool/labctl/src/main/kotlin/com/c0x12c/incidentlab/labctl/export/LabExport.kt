@@ -11,6 +11,7 @@ import com.c0x12c.incidentlab.labctl.quiz.Drill
 import com.c0x12c.incidentlab.labctl.quiz.Numbers
 import com.c0x12c.incidentlab.labctl.quiz.QuizSessions
 import com.c0x12c.incidentlab.labctl.ramp.RampExercise
+import com.c0x12c.incidentlab.labctl.ramp.RampMath
 import com.c0x12c.incidentlab.labctl.ramp.RampPlan
 import com.c0x12c.incidentlab.labctl.scenario.Answers
 import com.c0x12c.incidentlab.labctl.scenario.Baseline
@@ -46,7 +47,9 @@ object LabExport {
     val causePoints: Double,
     val partialCausePoints: Double,
     val hintPenalty: Double,
-    val maxPoints: Double
+    val maxPoints: Double,
+    /** A ramp scores the knee, the throughput and the resource, out of its own maximum. */
+    val rampMaxPoints: Double
   )
 
   data class Counts(
@@ -119,7 +122,8 @@ object LabExport {
         causePoints = Exercises.CAUSE_POINTS,
         partialCausePoints = Exercises.PARTIAL_POINTS,
         hintPenalty = Exercises.HINT_PENALTY,
-        maxPoints = Exercises.MAX_POINTS
+        maxPoints = Exercises.MAX_POINTS,
+        rampMaxPoints = RampMath.TOTAL_POINTS
       ),
       tickSeconds = ControlDaemon.TICK.seconds,
       recentWindow = Exercises.RECENT_WINDOW,

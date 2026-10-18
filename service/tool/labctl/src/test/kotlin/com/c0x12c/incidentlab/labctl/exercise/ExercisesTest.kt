@@ -10,8 +10,9 @@ import assertk.assertions.isFalse
 import assertk.assertions.isNotNull
 import assertk.assertions.isNull
 import assertk.assertions.isTrue
+import com.c0x12c.incidentlab.labctl.FakeAnnotator
+import com.c0x12c.incidentlab.labctl.ScriptedTerminal as HookedTerminal
 import com.c0x12c.incidentlab.labctl.Terminal
-import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.Capabilities
 import com.c0x12c.incidentlab.labctl.control.CapabilitiesFile
 import com.c0x12c.incidentlab.labctl.control.LabProbe
@@ -48,8 +49,8 @@ class ExercisesTest {
     override fun serviceStatus(): Map<String, String?> = mapOf("api" to null)
   }
 
-  private val annotations = mutableListOf<Pair<String, Double>>()
-  private val annotator = Annotator { text, _, at -> annotations.add(text to at) }
+  private val annotator = FakeAnnotator()
+  private val annotations get() = annotator.written.map { it.text to it.at }
 
   private val index = { options: List<Pair<String, String>>, key: String -> (options.indexOfFirst { it.first == key } + 1).toString() }
 
@@ -105,6 +106,38 @@ class ExercisesTest {
     val state = StateStore(dir.resolve("state.json")).load()
     assertThat(state.history.single().score).isNull()
     assertThat(state.active).isNull()
+  }
+
+  @Test
+  fun `an answer is refused when another exercise opened while the prompts waited`(@TempDir dir: Path) {
+    val terminal = HookedTerminal(*picks("arch", "api_db", "pool", "pool_exhausted").toTypedArray(), "", "y")
+    val exercises = exercises(dir, terminal)
+    exercises.newExercise(NewOptions(id = "pool_hold"))
+    terminal.beforeAnswer = { if (it == LAST_PICK) exercises(dir, HookedTerminal()).newExercise(NewOptions(id = "oom", force = true)) }
+
+    assertThat(exercises.answer()).isEqualTo(1)
+
+    assertThat(terminal.lines.last()).isEqualTo(Exercises.CHANGED)
+    val state = StateStore(dir.resolve("state.json")).load()
+    assertThat(state.active!!.id).isEqualTo("oom")
+    assertThat(state.active!!.answered).isFalse()
+    assertThat(state.history).isEmpty()
+  }
+
+  @Test
+  fun `the clear prompt only clears the exercise just answered, even when the input closes`(@TempDir dir: Path) {
+    val terminal = HookedTerminal(*picks("arch", "api_db", "pool", "pool_exhausted").toTypedArray(), "")
+    val exercises = exercises(dir, terminal)
+    exercises.newExercise(NewOptions(id = "pool_hold"))
+    terminal.beforeAnswer = { if (it == CLEAR_PROMPT) exercises(dir, HookedTerminal()).newExercise(NewOptions(id = "oom", force = true)) }
+
+    assertThat(exercises.answer()).isEqualTo(0)
+
+    assertThat(terminal.lines.last()).isEqualTo(Exercises.NOT_CLEARED)
+    val state = StateStore(dir.resolve("state.json")).load()
+    assertThat(state.active!!.id).isEqualTo("oom")
+    assertThat(state.history.single().id).isEqualTo("pool_hold")
+    assertThat(annotations.none { it.first == "lab: fault cleared" }).isTrue()
   }
 
   @Test
@@ -389,5 +422,7 @@ class ExercisesTest {
     const val NOW = 1_700_000_000.0
     const val MARKER_LEAD_SECONDS = 180
     const val PICKS = 20
+    const val LAST_PICK = 4
+    const val CLEAR_PROMPT = 6
   }
 }

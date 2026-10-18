@@ -139,6 +139,26 @@ describe("Play", () => {
     expect(await screen.findByLabelText("Score 5 out of 5")).toBeTruthy();
   });
 
+  it("refuses an answer for an exercise replaced in the terminal, and shows the new one", async () => {
+    const user = userEvent.setup();
+    state.lab.handle("POST", "/api/exercises", JSON_POST, {});
+    renderPlay();
+    await user.click(await screen.findByLabelText("Mock nature: the system itself"));
+    await user.click(screen.getByLabelText("Mock location: before the app"));
+    await user.click(screen.getByLabelText("Mock signal: the gap between two layers"));
+    await user.click(screen.getByLabelText("Mock cause: a queue in front of the app"));
+    state.lab.handle("POST", "/api/exercises", JSON_POST, { force: true });
+
+    await user.click(screen.getByRole("button", { name: "Submit the answer" }));
+
+    expect(await screen.findByText(/Ticket number 2/)).toBeTruthy();
+    expect(screen.getByText("Mock: the exercise on this page is no longer the open one.")).toBeTruthy();
+    expect(state.lab.history).toEqual([]);
+    expect(state.lab.active?.answered).toBe(false);
+    const answer = state.calls.find((c) => c.path === "/api/exercise/answer");
+    expect(answer).toBeTruthy();
+  });
+
   it("keeps the answer picks through one failed poll and through an outage", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

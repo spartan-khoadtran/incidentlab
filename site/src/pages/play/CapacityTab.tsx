@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Confirm, Countdown, ErrorNote, GuideLinks, useSecondsSince } from "../../components/LabUi";
 import { api, ApiError, parseNumber, type ActiveView, type BenchReport, type BenchRow, type Option, type RampResult } from "../../lib/api";
@@ -26,7 +26,7 @@ function LoadControl() {
         Background load
       </h2>
       <p className="small muted">
-        Same as <code>make load X={shown.toFixed(1)}</code>. The ramp only runs at 1.0.
+        Same as <code>make load X={shown.toFixed(1)}</code>. The ramp only starts at 1.0 and keeps it there until its last step ends.
       </p>
       <div className="load-row">
         <input
@@ -158,7 +158,10 @@ function RampResultView({ result, onDone }: { result: RampResult; onDone: () => 
   );
 }
 
-function RampRunning({ view, onDone }: { view: ActiveView; onDone: () => void }) {
+/** True for the errors that mean the page shows an exercise that is no longer the open one. */
+const isGone = (e: unknown) => e instanceof ApiError && (e.code === "no_exercise" || e.code === "wrong_mode" || e.code === "exercise_changed");
+
+function RampRunning({ view, onDone, onGone }: { view: ActiveView; onDone: () => void; onGone: (e: unknown) => void }) {
   const plan = view.plan ?? null;
   const elapsed = useSecondsSince(view.started_at);
   const [resources, setResources] = useState<Option[]>([]);
@@ -166,7 +169,8 @@ function RampRunning({ view, onDone }: { view: ActiveView; onDone: () => void })
   const [max, setMax] = useState("");
   const [resource, setResource] = useState("");
   const [note, setNote] = useState("");
-  const [result, setResult] = useState<RampResult | null>(isRampResult(view.result) ? view.result : null);
+  const [fetched, setResult] = useState<RampResult | null>(null);
+  const result = fetched ?? (isRampResult(view.result) ? view.result : null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
@@ -188,7 +192,8 @@ function RampRunning({ view, onDone }: { view: ActiveView; onDone: () => void })
     try {
       setResult(await fn());
     } catch (err) {
-      setError(err);
+      if (isGone(err)) onGone(err);
+      else setError(err);
     } finally {
       setBusy(false);
     }
@@ -200,7 +205,7 @@ function RampRunning({ view, onDone }: { view: ActiveView; onDone: () => void })
     return (
       <div>
         <p className="small muted">This ramp already has its answer or its result, maybe from the terminal.</p>
-        <button type="button" className="btn btn-primary" disabled={busy} onClick={() => run(() => api.rampReveal())}>
+        <button type="button" className="btn btn-primary" disabled={busy} onClick={() => run(() => api.rampReveal(view.key))}>
           {busy ? "Reading Prometheus..." : "Show the result"}
         </button>
         <ErrorNote error={error} />
@@ -244,7 +249,7 @@ function RampRunning({ view, onDone }: { view: ActiveView; onDone: () => void })
               setError(new Error("Give two numbers in rps (0 for no knee) and pick a resource."));
               return;
             }
-            void run(() => api.rampAnswer({ knee_rps: k, max_rps: m, resource, ...(note.trim() ? { note: note.trim() } : {}) }));
+            void run(() => api.rampAnswer(view.key, { knee_rps: k, max_rps: m, resource, ...(note.trim() ? { note: note.trim() } : {}) }));
           }}
         >
           <label className="field">
@@ -287,7 +292,7 @@ function RampRunning({ view, onDone }: { view: ActiveView; onDone: () => void })
         onCancel={() => setConfirm(false)}
         onConfirm={() => {
           setConfirm(false);
-          void run(() => api.rampReveal());
+          void run(() => api.rampReveal(view.key));
         }}
       >
         <p>You see the knee, the top throughput and the resource without a score. The ramp keeps running until you clear it.</p>
@@ -340,7 +345,7 @@ function BenchTable({ report }: { report: BenchReport }) {
 
 const RETRY_MAX_MS = 30_000;
 
-function BenchRunning({ view, onClosed }: { view: ActiveView; onClosed: () => void }) {
+function BenchRunning({ view, onClosed }: { view: ActiveView; onClosed: (e?: unknown) => void }) {
   const [report, setReport] = useState<BenchReport | null>(null);
   const [left, setLeft] = useState<number | null>(() => (view.ends_at ? Math.max(0, view.ends_at - Date.now() / 1000) : null));
   const [error, setError] = useState<unknown>(null);
@@ -355,7 +360,7 @@ function BenchRunning({ view, onClosed }: { view: ActiveView; onClosed: () => vo
       if (e instanceof ApiError && e.code === "still_running") {
         setError(null);
         setLeft(Math.max(1, Number(e.body.seconds_left ?? 0)));
-      } else if (e instanceof ApiError && (e.code === "no_exercise" || e.code === "wrong_mode")) {
+      } else if (isGone(e)) {
         onClosed();
       } else {
         setError(e);
@@ -386,10 +391,10 @@ function BenchRunning({ view, onClosed }: { view: ActiveView; onClosed: () => vo
     setBusy(true);
     setError(null);
     try {
-      await api.benchClose();
+      await api.benchClose(view.key);
       onClosed();
     } catch (e) {
-      if (e instanceof ApiError && (e.code === "no_exercise" || e.code === "wrong_mode")) onClosed();
+      if (isGone(e)) onClosed(e);
       else setError(e);
     } finally {
       setBusy(false);
@@ -501,40 +506,64 @@ function StartCapacity({ onStarted }: { onStarted: (v: ActiveView) => void }) {
   );
 }
 
+/**
+ * The ramp and the bench. It follows the terminal: when the open exercise or its answered flag
+ * changes in the status poll, it reads the exercise again.
+ */
 export function CapacityTab() {
-  const { refresh } = useLab();
+  const { status, refresh } = useLab();
   const [view, setView] = useState<ActiveView | null | undefined>(undefined);
   const [error, setError] = useState<unknown>(null);
+  const synced = useRef<string | null>(null);
 
-  useEffect(() => {
-    let live = true;
-    api.exercise().then(
-      (v) => live && setView(v),
-      (e) => {
-        if (!live) return;
-        if (!(e instanceof ApiError && e.code === "no_exercise")) setError(e);
-        setView(null);
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  const done = async () => {
+  const load = useCallback(async () => {
     try {
-      await api.clear();
+      setView(await api.exercise());
+      setError(null);
     } catch (e) {
       if (!(e instanceof ApiError && e.code === "no_exercise")) setError(e);
+      setView(null);
     }
-    setView(null);
-    await refresh();
+  }, []);
+
+  useEffect(() => {
+    const id = window.setTimeout(load, 0);
+    return () => window.clearTimeout(id);
+  }, [load]);
+
+  const active = status?.active;
+  const statusKey = status ? (active ? `${active.key}:${active.answered}` : "none") : null;
+  const viewKey = view === undefined ? null : view ? `${view.key}:${view.answered}` : "none";
+
+  useEffect(() => {
+    if (statusKey === null || viewKey === null || statusKey === synced.current) return;
+    synced.current = statusKey;
+    if (statusKey === viewKey) return;
+    const id = window.setTimeout(load, 0);
+    return () => window.clearTimeout(id);
+  }, [statusKey, viewKey, load]);
+
+  /** Reads the open exercise again after a call found this one gone, and says why. */
+  const gone = useCallback(
+    async (e?: unknown) => {
+      await load();
+      if (e) setError(e);
+      void refresh();
+    },
+    [load, refresh],
+  );
+
+  const done = async () => {
+    if (!view) return;
+    try {
+      await api.clear(view.key);
+    } catch (e) {
+      if (!isGone(e)) setError(e);
+    }
+    await gone();
   };
 
-  const closed = useCallback(() => {
-    setView(null);
-    void refresh();
-  }, [refresh]);
+  const closed = useCallback((e?: unknown) => void gone(e), [gone]);
 
   return (
     <div className="capacity">
@@ -550,14 +579,14 @@ export function CapacityTab() {
           <h2 id="ramp-run-title" className="panel-title">
             Ramp
           </h2>
-          <RampRunning view={view} onDone={done} />
+          <RampRunning key={view.key} view={view} onDone={done} onGone={closed} />
         </section>
       ) : view && view.mode === "bench" ? (
         <section className="panel" aria-labelledby="bench-run-title">
           <h2 id="bench-run-title" className="panel-title">
             Bench
           </h2>
-          <BenchRunning view={view} onClosed={closed} />
+          <BenchRunning key={view.key} view={view} onClosed={closed} />
         </section>
       ) : (
         <StartCapacity

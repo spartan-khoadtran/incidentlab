@@ -29,8 +29,11 @@ interface LabProbe {
   fun instantQuery(expr: String, at: Double? = null): Double? = null
 }
 
-fun interface Annotator {
-  fun annotate(text: String, tags: List<String>, atSeconds: Double)
+interface Annotator {
+  /** Grafana's id for the new annotation, or null when it was not written. */
+  fun annotate(text: String, tags: List<String>, atSeconds: Double): Long?
+
+  fun delete(id: Long)
 }
 
 class HttpLabProbe(private val http: JsonHttp) : LabProbe {
@@ -85,11 +88,20 @@ class HttpLabProbe(private val http: JsonHttp) : LabProbe {
 /** Writes annotations to Grafana. A failure is reported, not thrown: the CLI prints it, the daemon logs it. */
 class GrafanaAnnotator(private val http: JsonHttp, private val report: (String) -> Unit) : Annotator {
 
-  override fun annotate(text: String, tags: List<String>, atSeconds: Double) {
+  override fun annotate(text: String, tags: List<String>, atSeconds: Double): Long? =
     try {
       http.post("$GRAFANA/api/annotations", mapOf("time" to (atSeconds * MILLIS_PER_SECOND).toLong(), "tags" to listOf("lab") + tags, "text" to text))
+        .path("id").takeIf { it.isIntegralNumber }?.asLong()
     } catch (e: Exception) {
       report("(could not write the annotation to Grafana: ${e.message})")
+      null
+    }
+
+  override fun delete(id: Long) {
+    try {
+      http.delete("$GRAFANA/api/annotations/$id")
+    } catch (e: Exception) {
+      report("(could not delete annotation $id from Grafana: ${e.message})")
     }
   }
 

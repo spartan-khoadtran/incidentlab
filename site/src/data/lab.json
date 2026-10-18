@@ -345,7 +345,8 @@
     "cause_points" : 2.0,
     "partial_cause_points" : 1.0,
     "hint_penalty" : 0.5,
-    "max_points" : 5.0
+    "max_points" : 5.0,
+    "ramp_max_points" : 5.0
   },
   "tick_seconds" : 3,
   "recent_window" : 5,

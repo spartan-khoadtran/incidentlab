@@ -78,13 +78,16 @@ class Exercises(
     val state = store.load()
     modeOf(state)?.let { return it.answer(state) }
     val submitted = "This exercise was already submitted. Use `make clear`, then `make new`."
-    (engine.answerable() as? Refused)?.let { return refused(it.refusal, submitted) }
+    val key = when (val outcome = engine.answerable()) {
+      is Done -> outcome.value
+      is Refused -> return refused(outcome.refusal, submitted)
+    }
     terminal.out("Four questions. Type the number of your choice and press Enter. Ctrl-C quits without scoring.")
     val nature = choose("1) What is the nature of the problem?", Answers.NATURES) ?: return inputClosed()
     val location = choose("2) Where is the cause?", Answers.LOCATIONS) ?: return inputClosed()
     val signal = choose("3) Which signal proves it?", Answers.SIGNALS) ?: return inputClosed()
     val cause = choose("4) What is the root cause?", Answers.CAUSES, Answers.CAUSE_GROUPS) ?: return inputClosed()
-    val result = when (val outcome = engine.submit(Choices(nature, location, signal, cause))) {
+    val result = when (val outcome = engine.submit(Choices(nature, location, signal, cause), key = key)) {
       is Done -> outcome.value
       is Refused -> return refused(outcome.refusal, submitted)
     }
@@ -98,20 +101,21 @@ class Exercises(
     explain(result.reveal)
     val note = terminal.ask("\nOne line for your future self: what evidence did you use? (Enter to skip) ")?.trim().orEmpty()
     engine.note(result.n, note)
-    offerClear()
+    offerClear(key)
     return 0
   }
 
   fun reveal(): Int {
     val state = store.load()
     modeOf(state)?.let { return it.reveal(state) }
-    val revealed = when (val outcome = engine.reveal()) {
+    val key = state.active?.key
+    val revealed = when (val outcome = engine.reveal(key)) {
       is Done -> outcome.value
       is Refused -> return refused(outcome.refusal)
     }
     banner("EXERCISE #${revealed.n}: ${revealed.reveal.title} (${if (revealed.wasAnswered) "already scored" else "not scored"})")
     explain(revealed.reveal)
-    offerClear()
+    key?.let(::offerClear)
     return 0
   }
 
@@ -195,7 +199,10 @@ class Exercises(
   }
 
   fun load(multiplier: Double): Int {
-    val load = engine.load(multiplier)
+    val load = when (val outcome = engine.load(multiplier)) {
+      is Done -> outcome.value
+      is Refused -> return refused(outcome.refusal)
+    }
     terminal.out("Background load = ${plain(load.multiplier)} x ${Baseline.BASE_RPS} rps = ${plain(load.rps)} rps (applied within a few seconds).")
     return 0
   }
@@ -213,6 +220,9 @@ class Exercises(
       is Refusal.Unsupported -> unsupported(refusal) to 1
       is Refusal.LoadNotOne -> "Background load is ${plain(refusal.multiplier)} x. This exercise is tuned for the default load, so run `make load X=1` first." to 1
       Refusal.AlreadyAnswered -> alreadyAnswered to 0
+      Refusal.ExerciseChanged -> CHANGED to 1
+      is Refusal.RampRunning ->
+        "A ramp is running. It holds the load at 1 until its last step ends, in ${refusal.secondsLeft} s. Set the load after that, or `make clear` to stop the ramp." to 1
       Refusal.NoHintsLeft -> "No hints left. Use `make answer` to submit or `make reveal` to see the answer." to 0
       else -> error("an incident command cannot be refused with $refusal")
     }
@@ -280,14 +290,18 @@ class Exercises(
     terminal.out("Read again in ${GuideIndex.where(reveal.guide.joinToString("; ") { it.pointer })}")
   }
 
-  private fun offerClear() {
+  /** Offers to end the exercise named [key]. Only that one: another exercise opened meanwhile keeps running. */
+  private fun offerClear(key: String) {
     val reply = terminal.ask("\nClear the fault so the system goes back to normal? [Y/n] ")
     if (reply == null) {
       terminal.out()
     }
     if (reply == null || reply.trim().lowercase() !in setOf("n", "no")) {
-      engine.clear()
-      terminal.out("Fault cleared. The system recovers in about 10-60 seconds. Use `make new` for the next exercise.")
+      if (engine.clearIf(key)) {
+        terminal.out("Fault cleared. The system recovers in about 10-60 seconds. Use `make new` for the next exercise.")
+      } else {
+        terminal.out(NOT_CLEARED)
+      }
     } else {
       terminal.out("The fault keeps running so you can keep looking. Use `make clear` when you are done.")
     }
@@ -327,6 +341,8 @@ class Exercises(
     private const val SECONDS_PER_MINUTE = 60.0
     private val DAY_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM HH:mm")
     private const val TOOLBOX_TAG = "[toolbox]"
+    const val CHANGED = "The exercise changed while you answered: it was cleared, or another one started. Nothing was saved. `make status` shows what is open now."
+    const val NOT_CLEARED = "That exercise was already closed, so nothing was cleared. `make status` shows what is open now."
     const val LINKS = "  Grafana     http://localhost:3000   (dashboards '01 · RED by layer' and '02 · USE by layer')\n" +
       "  Traces      in Grafana: Explore > Tempo (search, service graph), or click an exemplar dot on a latency panel\n" +
       "  Profiles    in Grafana: Explore > Pyroscope (service = api, pricing, worker), or http://localhost:4040\n" +

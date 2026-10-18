@@ -20,6 +20,12 @@ sealed interface Refusal {
 
   data object AlreadyAnswered : Refusal
 
+  /** The caller read one exercise, and by the time it wrote, that exercise was gone or another one was open. */
+  data object ExerciseChanged : Refusal
+
+  /** A ramp step holds the load at 1 until the last step ends. */
+  data class RampRunning(val secondsLeft: Int) : Refusal
+
   data object NoHintsLeft : Refusal
 
   data class UnknownId(val id: String) : Refusal

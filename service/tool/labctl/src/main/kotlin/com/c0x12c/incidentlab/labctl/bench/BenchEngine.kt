@@ -2,6 +2,7 @@ package com.c0x12c.incidentlab.labctl.bench
 
 import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.LabProbe
+import com.c0x12c.incidentlab.labctl.control.ScheduledAnnotations
 import com.c0x12c.incidentlab.labctl.exercise.ActiveView
 import com.c0x12c.incidentlab.labctl.exercise.ExerciseEngine
 import com.c0x12c.incidentlab.labctl.exercise.ExerciseView
@@ -19,6 +20,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Params
 import com.c0x12c.incidentlab.labctl.state.ActiveExercise
 import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.c0x12c.incidentlab.labctl.state.StateStore
+import com.c0x12c.incidentlab.labctl.state.matches
 import com.fasterxml.jackson.annotation.JsonIgnore
 import java.time.ZoneId
 import kotlin.math.ceil
@@ -53,11 +55,17 @@ class BenchEngine(
     val startedAt = now()
     val active = store.withLock { state, write ->
       if (state.active != null) return@withLock null
-      ActiveExercise(id = BenchCatalog.ID, mode = MODE, params = BenchCatalog.params(clients, seconds), started = startedAt, n = state.history.size + 1)
-        .also { write(state.copy(active = it)) }
+      ActiveExercise(
+        id = BenchCatalog.ID,
+        mode = MODE,
+        params = BenchCatalog.params(clients, seconds),
+        started = startedAt,
+        n = state.history.size + 1,
+        key = ActiveExercise.newKey()
+      ).also { write(state.copy(active = it)) }
     } ?: return Refused(Refusal.ExerciseOpen)
-    annotator.annotate("bench: $clients closed-loop clients", listOf(TAG), startedAt)
-    annotator.annotate("bench over: open load again", listOf(TAG), startedAt + seconds)
+    val marks = listOf("bench: $clients closed-loop clients" to startedAt, "bench over: open load again" to startedAt + seconds)
+    ScheduledAnnotations.write(store, annotator, active.key, listOf(TAG), marks, now)
     return Done(view(active))
   }
 
@@ -66,6 +74,7 @@ class BenchEngine(
     val seconds = params.int("seconds")
     val view = ActiveView(
       n = active.n,
+      key = active.key,
       mode = MODE,
       level = null,
       ticket = intro(params.int("clients"), seconds).joinToString("\n"),
@@ -83,10 +92,13 @@ class BenchEngine(
 
   /**
    * The report once the bench is over. With [record] it also closes the bench and keeps a history
-   * entry with no score, like `make answer`; without it, nothing changes.
+   * entry with no score, like `make answer`; without it, nothing changes. With a [key], it is
+   * refused when the open exercise is another one.
    */
-  fun report(record: Boolean): Outcome<BenchReport> {
-    val active = store.load().active ?: return Refused(Refusal.NoExercise)
+  fun report(record: Boolean, key: String? = null): Outcome<BenchReport> {
+    val active = store.load().active
+    if (!active.matches(key)) return Refused(Refusal.ExerciseChanged)
+    if (active == null) return Refused(Refusal.NoExercise)
     if (active.mode != MODE) return Refused(Refusal.WrongMode(active.mode, active.n))
     val params = params(active)
     val seconds = params.int("seconds")
@@ -95,11 +107,10 @@ class BenchEngine(
     val bench = BenchMeasure(probe).read(active.started + seconds, seconds - BenchCatalog.SETTLE_SECONDS)
     if (before.empty && bench.empty) return Refused(Refusal.PrometheusDown)
     if (record) {
-      store.withLock { state, write ->
-        if (state.active?.n == active.n && state.active.mode == MODE) {
-          write(state.copy(active = null, history = state.history + entry(active, params)))
-        }
+      val closed = store.withLock { state, write ->
+        (state.active?.key == active.key).also { if (it) write(state.copy(active = null, history = state.history + entry(active, params))) }
       }
+      if (!closed) return Refused(Refusal.ExerciseChanged)
     }
     val clients = params.int("clients")
     return Done(BenchReport(active.n, clients, seconds, before, bench, notes(clients, before, bench), GuideIndex.pointers(DOC)))

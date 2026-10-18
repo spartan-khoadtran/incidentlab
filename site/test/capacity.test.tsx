@@ -3,7 +3,7 @@ import "./setup-dom.ts";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { LabProvider } from "../src/lib/lab.tsx";
 import { Play } from "../src/pages/Play.tsx";
 import { MockLab } from "./mock-lab.ts";
@@ -12,6 +12,7 @@ import { mockServer } from "./msw.ts";
 const { server, state } = mockServer();
 const JSON_POST = { "content-type": "application/json", "x-lab-client": "web" };
 const AFTER_THE_LAST_STEP = 600;
+const STATUS_POLL_MS = 15_000;
 
 beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
 beforeEach(() => {
@@ -19,7 +20,10 @@ beforeEach(() => {
   state.calls.length = 0;
   sessionStorage.clear();
 });
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  server.resetHandlers();
+  vi.useRealTimers();
+});
 afterAll(() => server.close());
 
 function renderCapacity() {
@@ -44,6 +48,56 @@ describe("Load and capacity", () => {
     await user.click(screen.getByRole("button", { name: "Apply" }));
     expect(await screen.findByText(/Now 1.5×, about 75 rps/)).toBeTruthy();
     expect(state.lab.load).toBe(1.5);
+  });
+
+  it("refuses a load change while a ramp step runs, and says why", async () => {
+    const user = userEvent.setup();
+    renderCapacity();
+    await user.click(await screen.findByRole("button", { name: "Start the ramp" }));
+    await screen.findByRole("listitem", { current: "step" });
+    fireEvent.change(screen.getByRole("slider", { name: "Load multiplier" }), { target: { value: "1.5" } });
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(await screen.findByText(/Mock: a ramp is running for \d+ s more./)).toBeTruthy();
+    expect(state.lab.load).toBe(1);
+  });
+
+  it("follows a ramp started, answered and cleared in the terminal", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    state.lab.rampStartedAgo = AFTER_THE_LAST_STEP;
+    renderCapacity();
+    expect(await screen.findByRole("button", { name: "Start the ramp" })).toBeTruthy();
+
+    state.lab.handle("POST", "/api/ramp", JSON_POST, {});
+    await vi.advanceTimersByTimeAsync(STATUS_POLL_MS);
+    expect(await screen.findByText("The ramp is over. Read the charts, then answer.")).toBeTruthy();
+
+    state.lab.handle("POST", "/api/ramp/answer", JSON_POST, { knee_rps: 75, max_rps: 75, resource: "mock_pool" });
+    await vi.advanceTimersByTimeAsync(STATUS_POLL_MS);
+    expect(await screen.findByText("Mock ramp explanation.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Submit" })).toBeNull();
+
+    state.lab.handle("POST", "/api/exercise/clear", JSON_POST, {});
+    state.lab.handle("POST", "/api/bench", JSON_POST, {});
+    await vi.advanceTimersByTimeAsync(STATUS_POLL_MS);
+    expect(await screen.findByText("Mock bench explanation.")).toBeTruthy();
+  });
+
+  it("sends the ramp's key, so an answer after the ramp was replaced is refused", async () => {
+    const user = userEvent.setup();
+    state.lab.rampStartedAgo = AFTER_THE_LAST_STEP;
+    renderCapacity();
+    await user.click(await screen.findByRole("button", { name: "Start the ramp" }));
+    await user.type(await screen.findByRole("textbox", { name: /^Knee/ }), "75");
+    await user.type(screen.getByRole("textbox", { name: "Highest throughput (rps)" }), "75");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Resource that filled first" }), "mock_pool");
+    state.lab.handle("POST", "/api/exercise/clear", JSON_POST, {});
+    state.lab.handle("POST", "/api/ramp", JSON_POST, {});
+
+    await user.click(screen.getByRole("button", { name: "Submit" }));
+
+    expect(await screen.findByText("Mock: the exercise on this page is no longer the open one.")).toBeTruthy();
+    expect(state.lab.history).toEqual([]);
+    expect(state.lab.active?.answered).toBe(false);
   });
 
   it("runs a ramp: the current step, and no answer form before the last step", async () => {

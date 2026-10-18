@@ -41,6 +41,7 @@ const MOCK_HINTS = ["Mock hint one, broad.", "Mock hint two.", "Mock hint three,
 
 interface MockActive {
   n: number;
+  key: string;
   mode: string;
   level: number | null;
   started_at: number;
@@ -69,6 +70,7 @@ export class MockLab {
     const a = this.active!;
     return {
       n: a.n,
+      key: a.key,
       mode: a.mode,
       level: a.level,
       ticket: `At 14:05, a mock teammate reports that the mock checkout is slow. Ticket number ${a.n}.`,
@@ -96,12 +98,28 @@ export class MockLab {
       this.failNext.delete(route);
       return err(failure.status, failure.error, failure.message);
     }
+    const changed = () =>
+      typeof body.key === "string" && body.key !== this.active?.key
+        ? err(409, "exercise_changed", "Mock: the exercise on this page is no longer the open one.")
+        : null;
     const incident = () => {
+      const other = changed();
+      if (other) return other;
       if (!this.active) return err(404, "no_exercise", "No exercise is open.");
       if (this.active.mode !== "incident" && this.active.mode !== "toolbox") return err(409, "wrong_mode", `The open exercise is a ${this.active.mode}.`);
       return null;
     };
-    const fresh = (mode: string, started_at: number, level: number | null = null): MockActive => ({ n: this.n, mode, level, started_at, hints_used: 0, answered: false, revealed: false, result: null });
+    const fresh = (mode: string, started_at: number, level: number | null = null): MockActive => ({
+      n: this.n,
+      key: `mock-key-${this.n}`,
+      mode,
+      level,
+      started_at,
+      hints_used: 0,
+      answered: false,
+      revealed: false,
+      result: null,
+    });
     switch (true) {
       case route === "GET /health":
         return { status: 200, body: { ok: true } };
@@ -169,9 +187,11 @@ export class MockLab {
         active.revealed = true;
         return { status: 200, body: MOCK_REVEAL };
       }
-      case route === "POST /exercise/clear":
+      case route === "POST /exercise/clear": {
+        if (this.active && changed()) return changed()!;
         this.active = null;
         return { status: 200, body: { cleared: true } };
+      }
       case route === "GET /history": {
         const scored = this.history.filter((e) => e.score !== null && (e.mode === "incident" || e.mode === "toolbox"));
         const ramps = this.history.filter((e) => e.score !== null && e.mode === "ramp");
@@ -192,6 +212,8 @@ export class MockLab {
       case route === "POST /load": {
         const m = Number(body.multiplier);
         if (!(m >= 0.1 && m <= 6)) return err(400, "bad_load", "X must be between 0.1 and 6.");
+        const rampLeft = this.active?.mode === "ramp" ? Math.ceil(this.active.started_at + this.plan.total_seconds - Date.now() / 1000) : 0;
+        if (rampLeft > 0) return err(409, "ramp_running", `Mock: a ramp is running for ${rampLeft} s more.`, { seconds_left: rampLeft });
         this.load = m;
         return { status: 200, body: { multiplier: m, rps: Math.round(m * 50) } };
       }
@@ -214,6 +236,7 @@ export class MockLab {
           const missing = ["knee_rps", "max_rps", "resource"].find((k) => body[k] === undefined || body[k] === null);
           if (missing) return err(400, "missing_field", `The field '${missing}' is needed.`);
         }
+        if (changed()) return changed()!;
         if (!this.active) return err(404, "no_exercise", "No exercise is open.");
         const active = this.active;
         if (active.mode !== "ramp") return err(409, "wrong_mode", `The open exercise is a ${active.mode}.`);
@@ -258,6 +281,7 @@ export class MockLab {
       case route === "GET /bench/report":
       case route === "POST /bench/report": {
         const row = (rate: number, p50: number, p99: number) => ({ rate_rps: rate, p50, p99, error_share: 0 });
+        if (changed()) return changed()!;
         if (!this.active) return err(404, "no_exercise", "No exercise is open.");
         if (this.active.mode !== "bench") return err(409, "wrong_mode", `The open exercise is a ${this.active.mode}.`);
         if (route.startsWith("POST")) {

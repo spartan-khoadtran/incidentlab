@@ -11,6 +11,8 @@ import com.fasterxml.jackson.annotation.JsonUnwrapped
  */
 data class ActiveView(
   val n: Int,
+  /** Names this exercise. A write that sends it is refused when another exercise is open by then. */
+  val key: String,
   val mode: String,
   /** Null for the ramp and the bench, which have no level. */
   val level: Int?,

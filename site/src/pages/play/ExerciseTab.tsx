@@ -26,17 +26,17 @@ export function ExerciseTab() {
   const [hintError, setHintError] = useState<unknown>(null);
   const [confirmReveal, setConfirmReveal] = useState(false);
   const [starting, setStarting] = useState(false);
-  const shown = useRef<number | null>(null);
+  const shown = useRef<string | null>(null);
   const synced = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       const v = await api.exercise();
-      if (shown.current !== v.n) {
+      if (shown.current !== v.key) {
         setChoices(null);
         setStarting(false);
       }
-      shown.current = v.n;
+      shown.current = v.key;
       setView(v);
       setReveal(v.reveal ?? null);
       setResult(v.result && "verdicts" in v.result && v.result.verdicts && "nature" in v.result.verdicts ? (v.result as Result) : null);
@@ -68,8 +68,8 @@ export function ExerciseTab() {
   }, [load]);
 
   const active = status?.active;
-  const statusKey = status ? (active ? `${active.n}:${active.answered}` : "none") : null;
-  const viewKey = view ? `${view.n}:${view.answered}` : "none";
+  const statusKey = status ? (active ? `${active.key}:${active.answered}` : "none") : null;
+  const viewKey = view ? `${view.key}:${view.answered}` : "none";
 
   useEffect(() => {
     if (statusKey === null || !loaded || busy !== null || statusKey === synced.current) return;
@@ -86,7 +86,7 @@ export function ExerciseTab() {
     try {
       await fn();
     } catch (e) {
-      if (e instanceof ApiError && (e.code === "no_exercise" || e.code === "already_answered")) await load();
+      if (e instanceof ApiError && (e.code === "no_exercise" || e.code === "already_answered" || e.code === "exercise_changed")) await load();
       onError(e);
     } finally {
       setBusy(null);
@@ -144,7 +144,7 @@ export function ExerciseTab() {
           onStarted={(v) => {
             reset();
             setStarting(false);
-            shown.current = v.n;
+            shown.current = v.key;
             setView(v);
             void refresh();
           }}
@@ -173,7 +173,7 @@ export function ExerciseTab() {
             disabled={busy !== null}
             onClick={() =>
               act("clear", async () => {
-                await api.clear();
+                await api.clear(view.key);
                 reset();
                 await refresh();
               })
@@ -202,7 +202,7 @@ export function ExerciseTab() {
             error={busy === null ? error : null}
             onSubmit={(c, note) =>
               act("answer", async () => {
-                const r = await api.answer({ ...c, ...(note ? { note } : {}) });
+                const r = await api.answer(view.key, { ...c, ...(note ? { note } : {}) });
                 setChoices(c);
                 setResult(r);
                 setReveal(r.reveal);
@@ -233,7 +233,7 @@ export function ExerciseTab() {
         onConfirm={() => {
           setConfirmReveal(false);
           void act("reveal", async () => {
-            setReveal(await api.reveal());
+            setReveal(await api.reveal(view.key));
             setView({ ...view, answered: true });
             await refresh();
           });

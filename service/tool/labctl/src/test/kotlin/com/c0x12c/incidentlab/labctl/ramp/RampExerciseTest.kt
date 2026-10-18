@@ -8,10 +8,11 @@ import assertk.assertions.isEqualTo
 import assertk.assertions.isNotNull
 import assertk.assertions.isNull
 import assertk.assertions.isTrue
+import com.c0x12c.incidentlab.labctl.FakeAnnotator
 import com.c0x12c.incidentlab.labctl.FakePrometheus
 import com.c0x12c.incidentlab.labctl.ScriptedTerminal
-import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
+import com.c0x12c.incidentlab.labctl.exercise.NewOptions
 import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import java.nio.file.Path
@@ -23,8 +24,8 @@ import org.junit.jupiter.api.io.TempDir
 class RampExerciseTest {
 
   private var clock = START
-  private val annotations = mutableListOf<String>()
-  private val annotator = Annotator { text, _, _ -> annotations += text }
+  private val annotator = FakeAnnotator()
+  private val annotations get() = annotator.texts
 
   /** A pool of 3 as Prometheus would record it: p99 bends at step 6 (200 rps), throughput tops out near 203 rps. */
   private val prometheus = FakePrometheus { expr, at ->
@@ -87,6 +88,87 @@ class RampExerciseTest {
     terminal.lines.clear()
     exercises(dir, terminal, ramp(dir, terminal)).status()
     assertThat(terminal.lines.first()).isEqualTo("Capacity ramp #1: step 3 of 8 at 100 rps, 30 s into the step, 5.5 min to the end.")
+  }
+
+  @Test
+  fun `a load change is refused while a ramp step runs, and taken once the last step is over`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal()
+    val ramp = ramp(dir, terminal)
+    ramp.start(RampOptions(every = EVERY))
+    clock = START + 2 * EVERY
+
+    assertThat(exercises(dir, terminal, ramp).load(1.5)).isEqualTo(1)
+    assertThat(terminal.lines.last()).contains("A ramp is running")
+    assertThat(terminal.lines.last()).contains("in ${RampPlan.totalSeconds(EVERY) - 2 * EVERY} s")
+    assertThat(store(dir).load().base).isEqualTo(emptyMap())
+
+    clock = START + RampPlan.totalSeconds(EVERY)
+    assertThat(exercises(dir, terminal, ramp).load(1.5)).isEqualTo(0)
+    assertThat(store(dir).load().base.getValue("loadgen")["rate_multiplier"]).isEqualTo(1.5)
+  }
+
+  @Test
+  fun `a ramp cleared early takes back the marks of the steps it never ran`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal()
+    val ramp = ramp(dir, terminal)
+    ramp.start(RampOptions(every = EVERY))
+    assertThat(store(dir).load().active!!.annotations.map { it.id }).isEqualTo(annotator.written.map { it.id })
+    clock = START + 2.5 * EVERY
+
+    exercises(dir, terminal, ramp).clear()
+
+    assertThat(annotator.live.map { it.text }).containsExactly("ramp step 1: 50 rps", "ramp step 2: 75 rps", "ramp step 3: 100 rps", "lab: fault cleared")
+    assertThat(store(dir).load().active).isNull()
+  }
+
+  @Test
+  fun `a new exercise forced over a ramp takes back the ramp's future marks too`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal()
+    val ramp = ramp(dir, terminal)
+    ramp.start(RampOptions(every = EVERY))
+    clock = START + EVERY + 1
+
+    assertThat(exercises(dir, terminal, ramp).newExercise(NewOptions(id = "oom", force = true))).isEqualTo(0)
+
+    assertThat(annotator.live.filter { "ramp" in it.tags }.map { it.text }).containsExactly("ramp step 1: 50 rps", "ramp step 2: 75 rps")
+    assertThat(store(dir).load().active!!.id).isEqualTo("oom")
+  }
+
+  @Test
+  fun `a ramp answer is refused when the ramp changed while the questions waited`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal("200", "205", "1", "", "y")
+    val ramp = ramp(dir, terminal)
+    ramp.start(RampOptions(every = EVERY))
+    pinPoolOfThree(dir)
+    clock = START + RampPlan.totalSeconds(EVERY) + 30
+    terminal.beforeAnswer = {
+      if (it == RESOURCE_QUESTION) {
+        exercises(dir, ScriptedTerminal(), ramp).clear()
+        RampExercise(store(dir), prometheus, annotator, ScriptedTerminal(), now = { clock }).start(RampOptions(every = EVERY))
+      }
+    }
+
+    assertThat(exercises(dir, terminal, ramp).answer()).isEqualTo(1)
+
+    assertThat(terminal.lines.last()).isEqualTo(Exercises.CHANGED)
+    assertThat(store(dir).load().history).hasSize(0)
+    assertThat(store(dir).load().active!!.answered).isEqualTo(false)
+  }
+
+  @Test
+  fun `the stop prompt after a ramp answer only stops that ramp`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal("200", "205", "1", "", "y")
+    val ramp = ramp(dir, terminal)
+    ramp.start(RampOptions(every = EVERY))
+    pinPoolOfThree(dir)
+    clock = START + RampPlan.totalSeconds(EVERY) + 30
+    terminal.beforeAnswer = { if (it == STOP_PROMPT) exercises(dir, ScriptedTerminal(), ramp).newExercise(NewOptions(id = "oom", force = true)) }
+
+    assertThat(exercises(dir, terminal, ramp).answer()).isEqualTo(0)
+
+    assertThat(terminal.lines.last()).isEqualTo(Exercises.NOT_CLEARED)
+    assertThat(store(dir).load().active!!.id).isEqualTo("oom")
+    assertThat(annotations.none { it == "lab: ramp cleared" }).isTrue()
   }
 
   @Test
@@ -172,5 +254,7 @@ class RampExerciseTest {
   private companion object {
     const val START = 1_700_000_000.0
     const val EVERY = 60
+    const val RESOURCE_QUESTION = 3
+    const val STOP_PROMPT = 5
   }
 }

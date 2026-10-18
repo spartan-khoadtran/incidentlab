@@ -8,11 +8,11 @@ import assertk.assertions.isEqualTo
 import assertk.assertions.isFalse
 import assertk.assertions.isNull
 import assertk.assertions.isTrue
+import com.c0x12c.incidentlab.labctl.FakeAnnotator
 import com.c0x12c.incidentlab.labctl.FakePrometheus
 import com.c0x12c.incidentlab.labctl.LabJson
 import com.c0x12c.incidentlab.labctl.ScriptedTerminal
 import com.c0x12c.incidentlab.labctl.bench.BenchEngine
-import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.Capabilities
 import com.c0x12c.incidentlab.labctl.exercise.ExerciseEngine
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
@@ -44,8 +44,8 @@ class LabApiTest {
   lateinit var dir: Path
 
   private var clock = START
-  private val annotations = mutableListOf<String>()
-  private val annotator = Annotator { text, _, _ -> annotations += text }
+  private val annotator = FakeAnnotator()
+  private val annotations get() = annotator.texts
   private val servers = mutableListOf<ApiServer>()
   private val client: HttpClient = HttpClient.newHttpClient()
 
@@ -275,6 +275,64 @@ class LabApiTest {
     assertThat(post(base, "/api/exercise/clear").json["cleared"].asBoolean()).isTrue()
     assertThat(annotations.last()).isEqualTo("lab: fault cleared")
     assertThat(store().load().active).isNull()
+  }
+
+  @Test
+  fun `a write that names an exercise which is no longer open is a 409 and changes nothing`() {
+    val base = server()
+    val first = post(base, "/api/exercises", mapOf("id" to "pool_hold")).json["key"].asText()
+    val second = post(base, "/api/exercises", mapOf("id" to "oom", "force" to true)).json["key"].asText()
+    assertThat(second == first).isFalse()
+    assertThat(get(base, "/api/status").json["active"]["key"].asText()).isEqualTo(second)
+
+    for ((path, body) in listOf("answer" to choices("arch", "api_db", "pool", "pool_exhausted"), "reveal" to emptyMap(), "clear" to emptyMap())) {
+      val stale = post(base, "/api/exercise/$path", body + ("key" to first))
+      assertThat(stale.status).isEqualTo(409)
+      assertThat(stale.json["error"].asText()).isEqualTo("exercise_changed")
+    }
+    val state = store().load()
+    assertThat(state.active!!.id).isEqualTo("oom")
+    assertThat(state.active!!.answered).isFalse()
+    assertThat(state.history).isEmpty()
+
+    assertThat(post(base, "/api/exercise/answer", choices("arch", "api_db", "pool", "pool_exhausted") + ("key" to second)).status).isEqualTo(200)
+    assertThat(post(base, "/api/exercise/clear", mapOf("key" to second)).status).isEqualTo(200)
+    assertThat(store().load().active).isNull()
+    assertThat(post(base, "/api/exercise/answer", choices("arch", "api_db", "pool", "pool_exhausted") + ("key" to second)).json["error"].asText()).isEqualTo("exercise_changed")
+  }
+
+  @Test
+  fun `a ramp answer, reveal or bench report for another exercise is a 409`() {
+    val base = server()
+    val ramp = post(base, "/api/ramp", mapOf("every" to EVERY)).json["key"].asText()
+    clock = START + RampPlan.totalSeconds(EVERY) + 30
+    post(base, "/api/exercise/clear", mapOf("key" to ramp))
+    clock = BENCH_START
+    val bench = post(base, "/api/bench", mapOf("clients" to 20, "seconds" to 120)).json["key"].asText()
+    clock = BENCH_START + 200
+
+    assertThat(post(base, "/api/ramp/answer", rampAnswer(200, 205, "pool") + ("key" to ramp)).json["error"].asText()).isEqualTo("exercise_changed")
+    assertThat(post(base, "/api/ramp/reveal", mapOf("key" to ramp)).json["error"].asText()).isEqualTo("exercise_changed")
+    assertThat(post(base, "/api/bench/report", mapOf("key" to ramp)).json["error"].asText()).isEqualTo("exercise_changed")
+    assertThat(store().load().active!!.key).isEqualTo(bench)
+    assertThat(post(base, "/api/bench/report", mapOf("key" to bench)).status).isEqualTo(200)
+    assertThat(store().load().active).isNull()
+  }
+
+  @Test
+  fun `a load change during a ramp step is a 409 with the seconds to its end`() {
+    val base = server()
+    post(base, "/api/ramp", mapOf("every" to EVERY))
+    clock = START + 100
+
+    val refused = post(base, "/api/load", mapOf("multiplier" to 2))
+    assertThat(refused.status).isEqualTo(409)
+    assertThat(refused.json["error"].asText()).isEqualTo("ramp_running")
+    assertThat(refused.json["seconds_left"].asInt()).isEqualTo(RampPlan.totalSeconds(EVERY) - 100)
+    assertThat(get(base, "/api/status").json["load_multiplier"].asDouble()).isEqualTo(1.0)
+
+    clock = START + RampPlan.totalSeconds(EVERY)
+    assertThat(post(base, "/api/load", mapOf("multiplier" to 2)).status).isEqualTo(200)
   }
 
   @Test
@@ -523,7 +581,7 @@ class LabApiTest {
     val WEB = mapOf("Content-Type" to "application/json", "X-Lab-Client" to "web")
     val WEB_HEADERS = arrayOf("Content-Type", "application/json", "X-Lab-Client", "web")
     val ACTIVE_VIEW_KEYS = arrayOf(
-      "n", "mode", "level", "ticket", "started_at", "elapsed_seconds", "hints_used", "hints_total", "hint_penalty", "hints", "answered", "rules"
+      "n", "key", "mode", "level", "ticket", "started_at", "elapsed_seconds", "hints_used", "hints_total", "hint_penalty", "hints", "answered", "rules"
     )
   }
 }

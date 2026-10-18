@@ -74,13 +74,17 @@ class BenchExercise(
   }
 
   override fun answer(state: LabState): Int {
-    val report = when (val outcome = engine.report(record = true)) {
+    val report = when (val outcome = engine.report(record = true, key = state.active?.key)) {
       is Done -> outcome.value
       is Refused ->
         return when (outcome.refusal) {
           is Refusal.StillRunning -> report(state)
           Refusal.PrometheusDown -> {
             terminal.out("Prometheus did not answer, or has no data for these windows. Check `make ps`, then run `make answer` again.")
+            1
+          }
+          Refusal.ExerciseChanged -> {
+            terminal.out(Exercises.CHANGED)
             1
           }
           else -> 1

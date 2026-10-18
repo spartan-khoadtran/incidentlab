@@ -15,6 +15,8 @@ export interface RampPlan {
 
 export interface ActiveView {
   n: number;
+  /** Random per exercise. Every answer, reveal and clear sends it, so a call never hits an exercise started since the page read this one. */
+  key: string;
   mode: Mode;
   level: number | null;
   ticket: string;
@@ -239,18 +241,19 @@ export const api = {
   start: (body: NewExercise) => call<ActiveView>("POST", "/exercises", body),
   exercise: () => call<ActiveView>("GET", "/exercise"),
   hint: () => call<ActiveView>("POST", "/exercise/hint"),
-  answer: (body: Answer) => call<Result>("POST", "/exercise/answer", body),
-  reveal: () => call<Reveal>("POST", "/exercise/reveal"),
-  clear: () => call<{ cleared: boolean }>("POST", "/exercise/clear"),
+  answer: (key: string, body: Answer) => call<Result>("POST", "/exercise/answer", { ...body, key }),
+  reveal: (key: string) => call<Reveal>("POST", "/exercise/reveal", { key }),
+  /** Without a key it ends whatever is open: only for an exercise the page cannot read, such as a stale one. */
+  clear: (key?: string) => call<{ cleared: boolean }>("POST", "/exercise/clear", key ? { key } : {}),
   history: () => call<History>("GET", "/history"),
   load: (multiplier: number) => call<{ multiplier: number; rps: number }>("POST", "/load", { multiplier }),
   ramp: (every?: number) => call<ActiveView>("POST", "/ramp", every ? { every } : {}),
   rampOptions: () => call<{ resources: Option[] }>("GET", "/ramp/options"),
-  rampAnswer: (body: { knee_rps: number; max_rps: number; resource: string; note?: string }) => call<RampResult>("POST", "/ramp/answer", body),
-  rampReveal: () => call<RampResult>("POST", "/ramp/reveal"),
+  rampAnswer: (key: string, body: { knee_rps: number; max_rps: number; resource: string; note?: string }) => call<RampResult>("POST", "/ramp/answer", { ...body, key }),
+  rampReveal: (key: string) => call<RampResult>("POST", "/ramp/reveal", { key }),
   bench: (body: { clients?: number; seconds?: number }) => call<ActiveView>("POST", "/bench", body),
   benchReport: () => call<BenchReport>("GET", "/bench/report"),
-  benchClose: () => call<BenchReport>("POST", "/bench/report"),
+  benchClose: (key: string) => call<BenchReport>("POST", "/bench/report", { key }),
   quiz: (body: { count?: number; kind?: "numbers" | "concepts" | "all" }) => call<{ session: string; questions: QuizQuestion[] }>("POST", "/quiz", body),
   /** A number question also takes the text as typed (`"12,5"`); the daemon reads it like the CLI. */
   quizAnswer: (session: string, index: number, answer: number | string) =>

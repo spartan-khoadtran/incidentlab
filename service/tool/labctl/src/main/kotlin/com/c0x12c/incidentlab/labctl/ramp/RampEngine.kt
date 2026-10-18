@@ -2,6 +2,7 @@ package com.c0x12c.incidentlab.labctl.ramp
 
 import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.LabProbe
+import com.c0x12c.incidentlab.labctl.control.ScheduledAnnotations
 import com.c0x12c.incidentlab.labctl.exercise.ActiveView
 import com.c0x12c.incidentlab.labctl.exercise.ExerciseEngine
 import com.c0x12c.incidentlab.labctl.exercise.ExerciseView
@@ -22,6 +23,7 @@ import com.c0x12c.incidentlab.labctl.state.ActiveExercise
 import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.c0x12c.incidentlab.labctl.state.RampSubmission
 import com.c0x12c.incidentlab.labctl.state.StateStore
+import com.c0x12c.incidentlab.labctl.state.matches
 import com.c0x12c.incidentlab.labctl.state.withNote
 import com.fasterxml.jackson.annotation.JsonIgnore
 import java.time.ZoneId
@@ -87,6 +89,7 @@ data class RampRevealed(
 /** The steps that ran, read once from Prometheus, ready to score. */
 class RampSteps(
   val n: Int,
+  val key: String,
   val params: Params,
   val stepsRun: Int,
   val readings: List<StepReading>
@@ -112,7 +115,14 @@ class RampEngine(
         state.active != null -> Refused(Refusal.ExerciseOpen)
         multiplier != 1.0 -> Refused(Refusal.LoadNotOne(multiplier))
         else -> {
-          val active = ActiveExercise(id = RampCatalog.ID, mode = MODE, params = RampCatalog.params(random, every), started = startedAt, n = state.history.size + 1)
+          val active = ActiveExercise(
+            id = RampCatalog.ID,
+            mode = MODE,
+            params = RampCatalog.params(random, every),
+            started = startedAt,
+            n = state.history.size + 1,
+            key = ActiveExercise.newKey()
+          )
           write(state.copy(active = active))
           Done(active)
         }
@@ -122,8 +132,9 @@ class RampEngine(
       is Done -> opened.value
       is Refused -> return opened
     }
-    RampPlan.MULTIPLIERS.indices.forEach { index -> annotator.annotate("ramp step ${index + 1}: ${RampPlan.rps(index)} rps", listOf(TAG), startedAt + index * every) }
-    annotator.annotate("ramp over: back to $BASE_RPS rps", listOf(TAG), startedAt + RampPlan.totalSeconds(every))
+    val marks = RampPlan.MULTIPLIERS.indices.map { index -> "ramp step ${index + 1}: ${RampPlan.rps(index)} rps" to startedAt + index * every } +
+      ("ramp over: back to $BASE_RPS rps" to startedAt + RampPlan.totalSeconds(every))
+    ScheduledAnnotations.write(store, annotator, active.key, listOf(TAG), marks, now)
     return Done(view(active))
   }
 
@@ -131,6 +142,7 @@ class RampEngine(
     val every = params(active).int("every")
     val view = ActiveView(
       n = active.n,
+      key = active.key,
       mode = MODE,
       level = null,
       ticket = intro(every).joinToString("\n"),
@@ -156,8 +168,10 @@ class RampEngine(
   }
 
   /** Every step, read from Prometheus, once the last one is over. The knee and the limit only exist over the whole range, so an early "none" cannot score. */
-  fun steps(): Outcome<RampSteps> {
-    val active = store.load().active ?: return Refused(Refusal.NoExercise)
+  fun steps(key: String? = null): Outcome<RampSteps> {
+    val active = store.load().active
+    if (!active.matches(key)) return Refused(Refusal.ExerciseChanged)
+    if (active == null) return Refused(Refusal.NoExercise)
     if (active.mode != MODE) return Refused(Refusal.WrongMode(active.mode, active.n))
     if (active.answered) return Refused(Refusal.AlreadyAnswered)
     val params = params(active)
@@ -165,16 +179,19 @@ class RampEngine(
     val stepsRun = RampPlan.stepsRun(params.elapsedSeconds, every)
     if (stepsRun < RampPlan.size) return Refused(Refusal.TooEarly(ceil(RampPlan.totalSeconds(every) - params.elapsedSeconds).toInt()))
     val readings = RampMeasure(probe).read(active.started, every, stepsRun) ?: return Refused(Refusal.PrometheusDown)
-    return Done(RampSteps(active.n, params, stepsRun, readings))
+    return Done(RampSteps(active.n, active.key, params, stepsRun, readings))
   }
 
-  /** Scores an answer against steps read by [steps] and keeps the history entry. The ramp keeps running until it is cleared. */
+  /**
+   * Scores an answer against steps read by [steps] and keeps the history entry. Refused when another
+   * exercise is open by the time it is written. The ramp keeps running until it is cleared.
+   */
   fun submit(steps: RampSteps, answer: RampAnswer, note: String = ""): Outcome<RampResult> {
     if (RampCatalog.RESOURCES.none { it.first == answer.resource }) return Refused(Refusal.UnknownKey("resource", answer.resource))
     return store.withLock { state, write ->
       val active = state.active
       when {
-        active == null || active.n != steps.n -> Refused(Refusal.NoExercise)
+        active == null || active.key != steps.key -> Refused(Refusal.ExerciseChanged)
         active.mode != MODE -> Refused(Refusal.WrongMode(active.mode, active.n))
         active.answered -> Refused(Refusal.AlreadyAnswered)
         else -> {
@@ -187,8 +204,8 @@ class RampEngine(
     }
   }
 
-  fun answer(answer: RampAnswer, note: String = ""): Outcome<RampResult> =
-    when (val steps = steps()) {
+  fun answer(answer: RampAnswer, note: String = "", key: String? = null): Outcome<RampResult> =
+    when (val steps = steps(key)) {
       is Done -> submit(steps.value, answer, note)
       is Refused -> steps
     }
@@ -198,8 +215,10 @@ class RampEngine(
   }
 
   /** The step table and the hidden limit without a score. The first reveal adds a history entry with no score. */
-  fun reveal(): Outcome<RampRevealed> {
-    val active = store.load().active ?: return Refused(Refusal.NoExercise)
+  fun reveal(key: String? = null): Outcome<RampRevealed> {
+    val active = store.load().active
+    if (!active.matches(key)) return Refused(Refusal.ExerciseChanged)
+    if (active == null) return Refused(Refusal.NoExercise)
     if (active.mode != MODE) return Refused(Refusal.WrongMode(active.mode, active.n))
     val params = params(active)
     val every = params.int("every")
@@ -207,17 +226,22 @@ class RampEngine(
     val readings = RampMeasure(probe).read(active.started, every, stepsRun)
     store.withLock { state, write ->
       val current = state.active
-      if (current != null && current.n == active.n && current.mode == MODE && !current.answered) {
+      if (current != null && current.key == active.key && !current.answered) {
         write(state.copy(active = current.copy(answered = true), history = state.history + entry(current, params, score = null)))
       }
     }
     return Done(RampRevealed(active.answered, result(active.n, params, stepsRun, readings.orEmpty(), null, null, prometheusDown = readings == null)))
   }
 
-  /** Ends the ramp with its own annotation. */
-  fun clear() {
-    store.update { it.copy(active = null) }
-    annotator.annotate("lab: ramp cleared", listOf("clear"), now())
+  /** Ends the ramp named [key] with its own annotation, and only that one. True when it was open. */
+  fun clearIf(key: String): Boolean {
+    val ended = store.withLock { state, write ->
+      state.active?.takeIf { it.key == key }?.also { write(state.copy(active = null)) }
+    } ?: return false
+    val at = now()
+    ScheduledAnnotations.dropFuture(annotator, ended, at)
+    annotator.annotate("lab: ramp cleared", listOf("clear"), at)
+    return true
   }
 
   private fun result(

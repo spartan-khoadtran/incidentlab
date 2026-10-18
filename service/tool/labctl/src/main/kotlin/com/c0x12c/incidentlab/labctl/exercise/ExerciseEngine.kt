@@ -3,9 +3,11 @@ package com.c0x12c.incidentlab.labctl.exercise
 import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.Capabilities
 import com.c0x12c.incidentlab.labctl.control.LabProbe
+import com.c0x12c.incidentlab.labctl.control.ScheduledAnnotations
 import com.c0x12c.incidentlab.labctl.exercise.Outcome.Done
 import com.c0x12c.incidentlab.labctl.exercise.Outcome.Refused
 import com.c0x12c.incidentlab.labctl.guide.GuideIndex
+import com.c0x12c.incidentlab.labctl.ramp.RampPlan
 import com.c0x12c.incidentlab.labctl.scenario.Answers
 import com.c0x12c.incidentlab.labctl.scenario.Baseline
 import com.c0x12c.incidentlab.labctl.scenario.ExerciseContext
@@ -17,9 +19,11 @@ import com.c0x12c.incidentlab.labctl.state.Choices
 import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.c0x12c.incidentlab.labctl.state.LabState
 import com.c0x12c.incidentlab.labctl.state.StateStore
+import com.c0x12c.incidentlab.labctl.state.matches
 import com.c0x12c.incidentlab.labctl.state.withNote
 import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
@@ -82,11 +86,13 @@ class ExerciseEngine(
     val context = ExerciseContext(cpuCount = probe.cpuCount(), productDetailSeconds = probe.productDetailSeconds(), tenants = probe.tenants())
     val params = scenario.params(random, context)
     val startedAt = now()
-    val active = store.withLock { current, write ->
+    val (active, replaced) = store.withLock { current, write ->
       if (current.active != null && !options.force) return@withLock null
-      ActiveExercise(id = scenario.id, mode = options.mode, params = params, started = startedAt, n = current.history.size + 1)
-        .also { write(current.copy(active = it)) }
+      val opened = ActiveExercise(id = scenario.id, mode = options.mode, params = params, started = startedAt, n = current.history.size + 1, key = ActiveExercise.newKey())
+      write(current.copy(active = opened))
+      opened to current.active
     } ?: return Refused(Refusal.ExerciseOpen)
+    ScheduledAnnotations.dropFuture(annotator, replaced, startedAt)
     if (random.nextDouble() < scenario.decoy) {
       annotator.annotate(Answers.DECOYS.random(random), listOf("change"), startedAt + random.nextInt(-DECOY_MAX_LEAD_SECONDS, DECOY_MAX_LAG_SECONDS + 1))
     }
@@ -136,17 +142,24 @@ class ExerciseEngine(
       }
     }
 
-  /** Whether [submit] would take an answer now. The CLI asks before it prompts for the four picks. */
-  fun answerable(): Outcome<Unit> =
+  /**
+   * Whether [submit] would take an answer now, and the key of the exercise it would score. The CLI
+   * asks before it prompts for the four picks, then submits with that key.
+   */
+  fun answerable(): Outcome<String> =
     when (val found = incident(store.load())) {
       is Refused -> found
-      is Done -> if (found.value.active.answered) Refused(Refusal.AlreadyAnswered) else Done(Unit)
+      is Done -> if (found.value.active.answered) Refused(Refusal.AlreadyAnswered) else Done(found.value.active.key)
     }
 
-  /** Scores the four picks and keeps the history entry. The fault keeps running until [clear]. */
-  fun submit(choices: Choices, note: String = ""): Outcome<Result> {
+  /**
+   * Scores the four picks and keeps the history entry. The fault keeps running until [clear]. With a
+   * [key], the answer is refused when another exercise is open by the time it is written.
+   */
+  fun submit(choices: Choices, note: String = "", key: String? = null): Outcome<Result> {
     unknownKey(choices)?.let { return Refused(it) }
     return store.withLock { state, write ->
+      if (!state.active.matches(key)) return@withLock Refused(Refusal.ExerciseChanged)
       when (val found = incident(state)) {
         is Refused -> found
         is Done -> {
@@ -170,8 +183,9 @@ class ExerciseEngine(
   }
 
   /** The answer without a score. The first reveal of an exercise adds a history entry with no score. */
-  fun reveal(): Outcome<Revealed> =
+  fun reveal(key: String? = null): Outcome<Revealed> =
     store.withLock { state, write ->
+      if (!state.active.matches(key)) return@withLock Refused(Refusal.ExerciseChanged)
       when (val found = incident(state)) {
         is Refused -> found
         is Done -> {
@@ -185,16 +199,32 @@ class ExerciseEngine(
       }
     }
 
-  /** Ends the open exercise of any mode. False when none was open. */
-  fun clear(annotation: String = CLEARED): Boolean {
-    val wasOpen = store.withLock { state, write ->
+  /**
+   * Ends the open exercise of any mode. True when one was open. With a [key], it is refused when
+   * the open exercise is another one.
+   */
+  fun clear(key: String? = null): Outcome<Boolean> {
+    val ended = store.withLock<Outcome<ActiveExercise?>> { state, write ->
+      if (state.active != null && !state.active.matches(key)) return@withLock Refused(Refusal.ExerciseChanged)
       write(state.copy(active = null))
-      state.active != null
+      Done(state.active)
     }
-    if (wasOpen) {
-      annotator.annotate(annotation, listOf("clear"), now())
+    if (ended is Done) markEnd(ended.value)
+    return when (ended) {
+      is Done -> Done(ended.value != null)
+      is Refused -> ended
     }
-    return wasOpen
+  }
+
+  /** Ends the exercise named [key] only, so a late reply cannot end a newer one. True when it was open. */
+  fun clearIf(key: String): Boolean = (clear(key) as? Done)?.value == true
+
+  /** An exercise that ends takes back its own future marks, and one more mark shows the end. */
+  private fun markEnd(active: ActiveExercise?) {
+    if (active == null) return
+    val at = now()
+    ScheduledAnnotations.dropFuture(annotator, active, at)
+    annotator.annotate(CLEARED, listOf("clear"), at)
   }
 
   fun status(): LabStatus {
@@ -212,13 +242,22 @@ class ExerciseEngine(
     return HistoryView(history, average(scored), scored.size, byTopic(scored), missed, average(ramps), ramps.size)
   }
 
-  fun load(multiplier: Double): LoadView {
+  /** Sets the background load. Refused while a ramp step runs, because the ramp holds the load at 1 until its last step ends. */
+  fun load(multiplier: Double): Outcome<LoadView> {
     val x = multiplier.coerceIn(MIN_LOAD, MAX_LOAD)
-    store.update { state ->
+    return store.withLock { state, write ->
+      rampSecondsLeft(state.active)?.let { return@withLock Refused(Refusal.RampRunning(it)) }
       val loadgen = state.base["loadgen"].orEmpty() + ("rate_multiplier" to x)
-      state.copy(base = state.base + ("loadgen" to loadgen))
+      write(state.copy(base = state.base + ("loadgen" to loadgen)))
+      Done(LoadView(x, Baseline.BASE_RPS * x))
     }
-    return LoadView(x, Baseline.BASE_RPS * x)
+  }
+
+  private fun rampSecondsLeft(active: ActiveExercise?): Int? {
+    if (active?.mode != RAMP) return null
+    val every = (active.params["every"] as? Number)?.toInt() ?: return null
+    val left = active.started + RampPlan.totalSeconds(every) - now()
+    return if (left > 0) ceil(left).toInt() else null
   }
 
   fun options(): OptionsView =
@@ -325,6 +364,7 @@ class ExerciseEngine(
   private fun view(active: ActiveExercise, scenario: Scenario): ActiveView =
     ActiveView(
       n = active.n,
+      key = active.key,
       mode = active.mode,
       level = scenario.level,
       ticket = scenario.ticket(rendered(active)),

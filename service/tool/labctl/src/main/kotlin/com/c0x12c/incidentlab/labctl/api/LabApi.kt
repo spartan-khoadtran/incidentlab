@@ -31,8 +31,12 @@ data class AnswerRequest(
   val location: String? = null,
   val signal: String? = null,
   val cause: String? = null,
-  val note: String? = null
+  val note: String? = null,
+  val key: String? = null
 )
+
+/** The key of the exercise the caller shows. With it, a call for an exercise that is gone or replaced is refused. */
+data class KeyRequest(val key: String? = null)
 
 data class LoadRequest(val multiplier: Double? = null)
 
@@ -42,7 +46,8 @@ data class RampAnswerRequest(
   val kneeRps: Double? = null,
   val maxRps: Double? = null,
   val resource: String? = null,
-  val note: String? = null
+  val note: String? = null,
+  val key: String? = null
 )
 
 data class BenchRequest(
@@ -83,18 +88,18 @@ class LabApi(
         signal = required(request.signal, "signal"),
         cause = required(request.cause, "cause")
       )
-      ok(exercises.submit(choices, note(request.note)).orFail())
+      ok(exercises.submit(choices, note(request.note), request.key).orFail())
     },
-    post("/api/exercise/reveal") { ok(exercises.reveal().orFail().reveal) },
+    post("/api/exercise/reveal") { ok(exercises.reveal(key(it)).orFail().reveal) },
     post("/api/exercise/clear") {
-      exercises.clear()
+      exercises.clear(key(it)).orFail()
       ok(mapOf("cleared" to true))
     },
     get("/api/history") { ok(exercises.history()) },
     post("/api/load") { call ->
       val multiplier = call.body(LoadRequest::class).multiplier?.takeIf { it in ExerciseEngine.MIN_LOAD..ExerciseEngine.MAX_LOAD }
         ?: throw badRequest("bad_multiplier", "multiplier must be a number from ${Format.plain(ExerciseEngine.MIN_LOAD)} to ${Format.plain(ExerciseEngine.MAX_LOAD)}. 1 is the normal load.")
-      ok(exercises.load(multiplier))
+      ok(exercises.load(multiplier).orFail())
     },
     get("/api/ramp/options") { ok(mapOf("resources" to RampEngine.RESOURCE_OPTIONS)) },
     post("/api/ramp") { call ->
@@ -108,9 +113,9 @@ class LabApi(
         maxRps = rate(request.maxRps, "max_rps"),
         resource = required(request.resource, "resource")
       )
-      ok(ramp.answer(answer, note(request.note)).orFail())
+      ok(ramp.answer(answer, note(request.note), request.key).orFail())
     },
-    post("/api/ramp/reveal") { ok(ramp.reveal().orFail().result) },
+    post("/api/ramp/reveal") { ok(ramp.reveal(key(it)).orFail().result) },
     post("/api/bench") { call ->
       val request = call.body(BenchRequest::class)
       val clients = within(request.clients ?: BenchCatalog.DEFAULT_CLIENTS, "clients", BenchCatalog.MIN_CLIENTS, BenchCatalog.MAX_CLIENTS)
@@ -118,7 +123,7 @@ class LabApi(
       created(bench.start(clients, seconds).orFail())
     },
     get("/api/bench/report") { ok(bench.report(record = false).orFail()) },
-    post("/api/bench/report") { ok(bench.report(record = true).orFail()) },
+    post("/api/bench/report") { ok(bench.report(record = true, key = key(it)).orFail()) },
     post("/api/quiz") { call ->
       val request = call.body(QuizRequest::class)
       val count = within(request.count ?: QuizSessions.DEFAULT_COUNT, "count", 1, QuizSessions.MAX_COUNT)
@@ -162,6 +167,12 @@ class LabApi(
       is Refusal.Stale -> conflict("stale_exercise", "Exercise #${refusal.n} was started by an older version of the lab. Clear it, then start a new one.")
       is Refusal.WrongMode -> conflict("wrong_mode", "The open exercise is a ${refusal.mode}. Use the ${refusal.mode} page, or clear it.")
       Refusal.AlreadyAnswered -> conflict("already_answered", "This exercise was already submitted. Clear it to start the next one.")
+      Refusal.ExerciseChanged -> conflict("exercise_changed", "The exercise on this page is no longer the open one: it was cleared, or another one started. Reload to see what is open now.")
+      is Refusal.RampRunning -> conflict(
+        "ramp_running",
+        "A ramp is running and holds the load at 1 until its last step ends, in ${refusal.secondsLeft} s. Set the load after that, or clear the ramp.",
+        mapOf("seconds_left" to refusal.secondsLeft)
+      )
       Refusal.NoHintsLeft -> conflict("no_hints_left", "No hints left. Submit an answer, or reveal it.")
       is Refusal.UnknownId -> badRequest("unknown_id", "No exercise '${refusal.id}'. The catalog lists the ids.")
       is Refusal.NoCli -> badRequest("no_cli", "'${refusal.id}' has no CLI proof yet, so it cannot run in toolbox mode.")
@@ -182,6 +193,8 @@ class LabApi(
     }
 
   private fun noHints(mode: String) = conflict("no_hints_left", "A $mode has no hints.")
+
+  private fun key(call: ApiCall): String? = call.body(KeyRequest::class).key
 
   private fun required(value: String?, field: String): String = value ?: throw badRequest("missing_field", "The field '$field' is needed.")
 

@@ -8,9 +8,9 @@ import assertk.assertions.isEqualTo
 import assertk.assertions.isNotNull
 import assertk.assertions.isNull
 import assertk.assertions.isTrue
+import com.c0x12c.incidentlab.labctl.FakeAnnotator
 import com.c0x12c.incidentlab.labctl.FakePrometheus
 import com.c0x12c.incidentlab.labctl.ScriptedTerminal
-import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.DesiredState
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
@@ -24,8 +24,8 @@ import org.junit.jupiter.api.io.TempDir
 class BenchExerciseTest {
 
   private var clock = START
-  private val annotations = mutableListOf<Pair<String, Double>>()
-  private val annotator = Annotator { text, _, at -> annotations += text to at }
+  private val annotator = FakeAnnotator()
+  private val annotations get() = annotator.written.map { it.text to it.at }
 
   /** The open load before the bench, then 20 clients held at 267 rps by a full pool. */
   private val prometheus = FakePrometheus { expr, at ->
@@ -86,6 +86,19 @@ class BenchExerciseTest {
     store(dir).save(store(dir).load().copy(active = active.copy(id = "oom", mode = "incident")))
     assertThat(bench.start(BenchOptions())).isEqualTo(1)
     assertThat(terminal.lines.last()).contains("still open")
+  }
+
+  @Test
+  fun `a bench cleared early takes back its end mark`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal()
+    val bench = bench(dir, terminal)
+    bench.start(BenchOptions())
+    clock = START + 30
+
+    exercises(dir, terminal, bench).clear()
+
+    assertThat(annotator.live.map { it.text }).containsExactly("bench: 20 closed-loop clients", "lab: fault cleared")
+    assertThat(store(dir).load().active).isNull()
   }
 
   @Test

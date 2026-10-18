@@ -39,6 +39,7 @@ export interface Lab {
     partial_cause_points: number;
     hint_penalty: number;
     max_points: number;
+    ramp_max_points: number;
   };
   tick_seconds: number;
   recent_window: number;

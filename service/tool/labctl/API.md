@@ -16,14 +16,18 @@ An error is an HTTP status plus `{"error": "<code>", "message": "<one plain sent
 | 403 | `forbidden`, `forbidden_host` |
 | 404 | `not_found` (no such path), `no_exercise`, `no_session`, `no_question` |
 | 405 | `method_not_allowed` |
-| 409 | `exercise_open`, `already_answered`, `no_hints_left`, `wrong_mode`, `stale_exercise`, `load_not_one`, `unsupported` (with `missing`), `too_early` (with `seconds_left`) |
+| 409 | `exercise_open`, `already_answered`, `no_hints_left`, `wrong_mode`, `stale_exercise`, `exercise_changed`, `load_not_one`, `ramp_running` (with `seconds_left`), `unsupported` (with `missing`), `too_early` (with `seconds_left`) |
 | 413 | `too_large` (the body limit is 64 KB) |
 | 425 | `still_running` (with `seconds_left`) |
 | 500 | `internal` |
 | 502 | `lab_down`: nginx sends it when the controller does not answer |
 | 503 | `prometheus_down` |
 
-`wrong_mode` means the open exercise is a ramp or a bench and the call is for an incident, or the other way round. `stale_exercise` means the exercise was started by an older catalog: clear it, then start a new one.
+`wrong_mode` means the open exercise is a ramp or a bench and the call is for an incident, or the other way round. `stale_exercise` means the exercise was started by an older catalog: clear it, then start a new one. `exercise_changed` means the call sent a `key`, and the open exercise has another key, or none is open: it was cleared, or another one started since the page read it. Nothing changed; read `GET /api/exercise` again. `ramp_running` means a ramp step is running: the ramp holds the load at 1 until its last step ends, `seconds_left` from now.
+
+## The exercise key
+
+Every exercise gets a random `key` when it starts. `n` is not enough: it repeats after a clear. The answer, reveal and clear calls of every mode take an optional `key` in the body. Without it, the call acts on whatever exercise is open. With it, the call acts only when that exercise is still the open one, else 409 `exercise_changed`. The site always sends the key of the exercise it shows. The key is not a spoiler: it is random and says nothing about the scenario.
 
 ## Write calls
 
@@ -37,7 +41,7 @@ Before an exercise is answered or revealed, no response holds its scenario id, t
 
 ```
 ActiveView = {
-  n: int, mode: "incident"|"toolbox"|"ramp"|"bench", level: int|null,
+  n: int, key: string, mode: "incident"|"toolbox"|"ramp"|"bench", level: int|null,
   ticket: string,                  // the text the CLI prints at the start, with the ticket time
   started_at: number, elapsed_seconds: number,
   hints_used: int, hints_total: int, hint_penalty: number,   // 0.5
@@ -68,7 +72,7 @@ HistoryEntry = { n, id, mode, title, level, score: number|null, hints, minutes, 
 - `GET /api/health` -> `{ ok: true }`
 - `GET /api/status` -> `{ services: { api: null|"<error>", pricing, worker, loadgen, noisy, pgobserver }, active: ActiveView|null, load_multiplier: number, base_rps: number, links: { grafana, prometheus, pyroscope } }`. A service is `null` when it answers. `active` is null for a stale exercise too.
 - `GET /api/options` -> `{ natures: [Option], locations: [Option], signals: [Option], causes: [Option with group], levels: [int], topics: [string], modes: ["incident", "toolbox"] }`
-- `POST /api/load` body `{ multiplier: number }` (0.1 to 6) -> `{ multiplier, rps }`. 400 `bad_multiplier` outside the range.
+- `POST /api/load` body `{ multiplier: number }` (0.1 to 6) -> `{ multiplier, rps }`. 400 `bad_multiplier` outside the range. 409 `ramp_running` (with `seconds_left`) while a ramp step runs, because the ramp holds the load at 1 until its last step ends.
 - `GET /api/history` -> `{ entries: [HistoryEntry], average: number|null, scored_count: int, by_topic: [{ topic, average, count }], most_missed_cause: { key, label, group, count }|null, ramp_average: number|null, ramp_count: int }`. `average`, `scored_count`, `by_topic` and `most_missed_cause` count scored incident and toolbox entries only. A ramp is scored on other questions, so `ramp_average` and `ramp_count` count scored ramps on their own. `by_topic` lists the weakest topic first.
 
 ### Incident and toolbox
@@ -81,16 +85,16 @@ HistoryEntry = { n, id, mode, title, level, score: number|null, hints, minutes, 
 
   404 `no_exercise`.
 - `POST /api/exercise/hint` -> `ActiveView` with the new hint at the end of `hints`. 409 `no_hints_left` (also for a ramp or a bench), or `already_answered`.
-- `POST /api/exercise/answer` body `{ nature, location, signal, cause, note?: string }` -> `Result`. Keys come from `/api/options`. 400 `unknown_key` or `missing_field`. 409 `already_answered`. Keeps the history entry like `make answer`, note included (one line, at most 500 characters). Does not clear the fault.
-- `POST /api/exercise/reveal` -> `Reveal`. Not scored. The first reveal adds a history entry with `score: null`, like `make reveal`. Does not clear the fault.
-- `POST /api/exercise/clear` -> `{ cleared: true }`. Ends the open exercise of any mode, with the annotation "lab: fault cleared".
+- `POST /api/exercise/answer` body `{ nature, location, signal, cause, note?: string, key?: string }` -> `Result`. Keys come from `/api/options`. 400 `unknown_key` or `missing_field`. 409 `already_answered`, or `exercise_changed`. Keeps the history entry like `make answer`, note included (one line, at most 500 characters). Does not clear the fault.
+- `POST /api/exercise/reveal` body `{ key?: string }` -> `Reveal`. Not scored. 409 `exercise_changed`. The first reveal adds a history entry with `score: null`, like `make reveal`. Does not clear the fault.
+- `POST /api/exercise/clear` body `{ key?: string }` -> `{ cleared: true }`. Ends the open exercise of any mode, with the annotation "lab: fault cleared". A ramp or a bench that ends before its time also loses its annotations that are still in the future. 409 `exercise_changed` when `key` names another exercise than the open one; with no exercise open, it still answers `{ cleared: true }`.
 
 ### Capacity ramp
 
 - `GET /api/ramp/options` -> `{ resources: [Option] }`: the resources the third question offers.
 - `POST /api/ramp` body `{ every?: int }` (30 to 300 s, default 60) -> 201 `ActiveView` (mode ramp) plus `plan: { steps: [rps], every, total_seconds }`. 409 `exercise_open`, or `load_not_one` when the load multiplier is not 1.
-- `POST /api/ramp/answer` body `{ knee_rps: number, max_rps: number, resource: string, note?: string }` -> `RampResult`. `knee_rps` is 0 when there was no knee. 409 `too_early` (with `seconds_left`) before the last step ends, `already_answered`. 400 `unknown_key` for a resource. 503 `prometheus_down`. Keeps the history entry. Does not stop the ramp.
-- `POST /api/ramp/reveal` -> `RampResult` with `score`, `given` and `verdicts` null. The table is empty and `prometheus_down` is true when Prometheus does not answer.
+- `POST /api/ramp/answer` body `{ knee_rps: number, max_rps: number, resource: string, note?: string, key?: string }` -> `RampResult`. `knee_rps` is 0 when there was no knee. 409 `too_early` (with `seconds_left`) before the last step ends, `already_answered`, `exercise_changed`. 400 `unknown_key` for a resource. 503 `prometheus_down`. Keeps the history entry. Does not stop the ramp.
+- `POST /api/ramp/reveal` body `{ key?: string }` -> `RampResult` with `score`, `given` and `verdicts` null. 409 `exercise_changed`. The table is empty and `prometheus_down` is true when Prometheus does not answer.
 
 ```
 RampResult = {
@@ -106,7 +110,7 @@ RampResult = {
 
 - `POST /api/bench` body `{ clients?: int, seconds?: int }` (1 to 200 clients, 30 to 600 s) -> 201 `ActiveView` (mode bench) plus `ends_at`. 409 `exercise_open`.
 - `GET /api/bench/report` -> `BenchReport` once the bench is over. It changes nothing. 425 `still_running` with `seconds_left`. 503 `prometheus_down`.
-- `POST /api/bench/report` -> the same `BenchReport`, and it closes the bench with a history entry, like `make answer`.
+- `POST /api/bench/report` body `{ key?: string }` -> the same `BenchReport`, and it closes the bench with a history entry, like `make answer`. 409 `exercise_changed`.
 
 ```
 Row = { rate_rps: number|null, p50: number|null, p99: number|null, error_share: number|null }   // p50 and p99 in seconds

@@ -24,6 +24,8 @@ class JsonHttp(timeout: Duration = Duration.ofSeconds(2)) {
 
   fun post(url: String, body: Any): JsonNode = exchange(Request.Builder().url(url).post(encode(body)).build())
 
+  fun delete(url: String): JsonNode = exchange(Request.Builder().url(url).delete().build())
+
   private fun encode(body: Any) = LabJson.mapper.writeValueAsString(body).toRequestBody(JSON)
 
   private fun exchange(request: Request): JsonNode =

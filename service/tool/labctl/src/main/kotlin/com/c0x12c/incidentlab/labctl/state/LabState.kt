@@ -1,5 +1,7 @@
 package com.c0x12c.incidentlab.labctl.state
 
+import java.util.UUID
+
 data class ActiveExercise(
   val id: String,
   /** The kind of exercise; "incident" is the dashboard investigation. */
@@ -13,7 +15,24 @@ data class ActiveExercise(
   /** The four picks of an answered incident, so its result can be shown again. */
   val choices: Choices? = null,
   /** What the learner said about a ramp, and how many steps had run. */
-  val rampAnswer: RampSubmission? = null
+  val rampAnswer: RampSubmission? = null,
+  /** Names this exercise for a command that reads it first and writes later. A file written before the field existed gets one from its id and start. */
+  val key: String = "$id@$started",
+  /** Annotations written ahead of time, so an early end can delete the ones still in the future. */
+  val annotations: List<PlannedAnnotation> = emptyList()
+) {
+  companion object {
+    fun newKey(): String = UUID.randomUUID().toString()
+  }
+}
+
+/** False when [key] names another exercise than this one, or this one is gone. A null key matches any exercise. */
+fun ActiveExercise?.matches(key: String?): Boolean = key == null || this?.key == key
+
+/** A Grafana annotation by its id, and its time in epoch seconds. */
+data class PlannedAnnotation(
+  val id: Long,
+  val at: Double
 )
 
 data class Choices(

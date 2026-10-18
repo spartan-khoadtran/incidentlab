@@ -3,10 +3,10 @@ package com.c0x12c.incidentlab.labctl.api
 import assertk.assertThat
 import assertk.assertions.isEmpty
 import assertk.assertions.isEqualTo
+import com.c0x12c.incidentlab.labctl.FakeAnnotator
 import com.c0x12c.incidentlab.labctl.FakePrometheus
 import com.c0x12c.incidentlab.labctl.LabJson
 import com.c0x12c.incidentlab.labctl.bench.BenchEngine
-import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.exercise.ExerciseEngine
 import com.c0x12c.incidentlab.labctl.exercise.Format
 import com.c0x12c.incidentlab.labctl.quiz.QuizSessions
@@ -35,7 +35,7 @@ class NoSpoilerTest {
   fun `an open exercise shows no id, title, answer, explanation, step, evidence, command or guide pointer`(@TempDir dir: Path) {
     val store = StateStore(dir.resolve("state.json"))
     val probe = FakePrometheus { _, _ -> null }
-    val annotator = Annotator { _, _, _ -> }
+    val annotator = FakeAnnotator()
     val zone = ZoneId.of("UTC")
     val ramp = RampEngine(store, probe, annotator, now = { NOW }, zone = zone)
     val bench = BenchEngine(store, probe, annotator, now = { NOW }, zone = zone)

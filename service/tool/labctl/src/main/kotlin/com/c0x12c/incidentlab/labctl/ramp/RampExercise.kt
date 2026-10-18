@@ -79,7 +79,7 @@ class RampExercise(
   }
 
   override fun answer(state: LabState): Int {
-    val steps = when (val outcome = engine.steps()) {
+    val steps = when (val outcome = engine.steps(state.active?.key)) {
       is Done -> outcome.value
       is Refused -> return refused(outcome.refusal)
     }
@@ -100,14 +100,15 @@ class RampExercise(
     explain(result)
     val note = terminal.ask("\nOne line for your future self: how did you read the knee? (Enter to skip) ")?.trim().orEmpty()
     engine.note(result.n, note)
-    offerClear()
+    offerClear(steps.key)
     return 0
   }
 
   override fun reveal(state: LabState): Int {
-    val revealed = when (val outcome = engine.reveal()) {
+    val key = state.active?.key ?: return 1
+    val revealed = when (val outcome = engine.reveal(key)) {
       is Done -> outcome.value
-      is Refused -> return 1
+      is Refused -> return refused(outcome.refusal)
     }
     val result = revealed.result
     Format.banner(terminal, "CAPACITY RAMP #${result.n}: ${result.title} (${if (revealed.wasAnswered) "already scored" else "not scored"})")
@@ -115,7 +116,7 @@ class RampExercise(
       terminal.out("(Prometheus did not answer, so there is no step table.)")
     }
     explain(result)
-    offerClear()
+    offerClear(key)
     return 0
   }
 
@@ -152,6 +153,10 @@ class RampExercise(
         terminal.out("Prometheus did not answer, so nothing can be scored. Check `make ps`, then run `make answer` again.")
         1
       }
+      Refusal.ExerciseChanged -> {
+        terminal.out(Exercises.CHANGED)
+        1
+      }
       else -> 1
     }
 
@@ -176,14 +181,18 @@ class RampExercise(
     terminal.out("Read again in ${GuideIndex.where(DOC)}")
   }
 
-  private fun offerClear() {
+  /** Offers to stop the ramp named [key]. Only that one: an exercise opened meanwhile keeps running. */
+  private fun offerClear(key: String) {
     val reply = terminal.ask("\nStop the ramp so the lab goes back to normal? [Y/n] ")
     if (reply == null) {
       terminal.out()
     }
     if (reply == null || reply.trim().lowercase() !in setOf("n", "no")) {
-      engine.clear()
-      terminal.out("Ramp stopped. The lab recovers in about 10-60 seconds.")
+      if (engine.clearIf(key)) {
+        terminal.out("Ramp stopped. The lab recovers in about 10-60 seconds.")
+      } else {
+        terminal.out(Exercises.NOT_CLEARED)
+      }
     } else {
       terminal.out("The ramp keeps running. Use `make clear` when you are done.")
     }
