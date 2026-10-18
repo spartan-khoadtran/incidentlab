@@ -1,7 +1,10 @@
 package com.c0x12c.incidentlab.labctl.control
 
+import com.c0x12c.incidentlab.labctl.scenario.FaultSource
+import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Params
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
+import com.c0x12c.incidentlab.labctl.state.ActiveExercise
 import com.c0x12c.incidentlab.labctl.state.LabState
 
 /** Every service's overrides and every container's settings, computed from the state file alone. */
@@ -12,15 +15,16 @@ data class Desired(
 
 object DesiredState {
 
-  fun of(state: LabState, catalog: ScenarioCatalog = ScenarioCatalog, now: Double = System.currentTimeMillis() / MILLIS_PER_SECOND): Desired {
+  /** The first source that owns the active id wins, so an id must be unique across them. */
+  val SOURCES: List<FaultSource> = listOf(ScenarioCatalog)
+
+  fun of(state: LabState, sources: List<FaultSource> = SOURCES, now: Double = System.currentTimeMillis() / MILLIS_PER_SECOND): Desired {
     val faults = Services.ENDPOINTS.keys.associateWith { mutableMapOf<String, Any?>() }.toMutableMap()
     for ((service, overrides) in state.base) {
       faults.getOrPut(service) { mutableMapOf() }.putAll(overrides)
     }
     val docker = Services.BASE_DOCKER.mapValues { it.value.toMutableMap() }.toMutableMap()
-    val active = state.active
-    val scenario = active?.let { catalog.byId[it.id] }
-    val spec = if (active != null && scenario != null) runCatching { scenario.faults(Params(active.params, startedAt = "", elapsedSeconds = now - active.started)) }.getOrNull() else null
+    val spec = state.active?.let { lookup(it, sources, now) }
     if (spec != null) {
       for ((service, overrides) in spec.services) {
         faults.getOrPut(service) { mutableMapOf() }.putAll(overrides)
@@ -30,6 +34,12 @@ object DesiredState {
       }
     }
     return Desired(faults = faults, docker = docker)
+  }
+
+  /** An id nobody owns, or params an older catalog wrote that no longer render, mean no fault rather than a crash. */
+  private fun lookup(active: ActiveExercise, sources: List<FaultSource>, now: Double): FaultSpec? {
+    val params = Params(active.params, startedAt = "", elapsedSeconds = now - active.started)
+    return sources.firstNotNullOfOrNull { source -> runCatching { source.faults(active.id, params) }.getOrNull() }
   }
 
   private const val MILLIS_PER_SECOND = 1_000.0
