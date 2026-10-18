@@ -42,4 +42,12 @@ sealed interface Refusal {
 
   /** The bench has not ended. */
   data class StillRunning(val secondsLeft: Int) : Refusal
+
+  /** The quiz session expired or never existed. */
+  data object UnknownSession : Refusal
+
+  data class UnknownQuestion(val index: Int) : Refusal
+
+  /** An answer of the wrong kind: text for a number question, or an option the question does not have. */
+  data class BadAnswer(val reason: String) : Refusal
 }
