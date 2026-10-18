@@ -7,12 +7,15 @@ import jakarta.inject.Singleton
 object OrdersFaults {
   const val PROCESS_MS = "process_ms"
   const val FAIL_NONCE = "fail_nonce"
+  const val POLL_MS = "poll_ms"
 
   val DEFAULTS: Map<String, Any?> = mapOf(
     // work per message (sequential per partition)
     PROCESS_MS to 25,
     // messages carrying this poison nonce fail (a bug) and are retried for ever
-    FAIL_NONCE to null
+    FAIL_NONCE to null,
+    // how long one consumer.poll blocks when the topic is empty; 0 returns at once and spins
+    POLL_MS to 500
   )
 }
 
