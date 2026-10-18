@@ -14,7 +14,7 @@ function ServiceCard({ s, anchor = true }: { s: ComposeService; anchor?: boolean
   if (s.image) rows.push(["image", s.image]);
   if (s.build) rows.push(["build", s.build]);
   if (s.port) rows.push(["port", s.port]);
-  if (s.ports.length) rows.push(["host ports", s.ports.map((p) => (p.host === p.container ? p.host : `${p.host}:${p.container}`)).join(", ")]);
+  if (s.ports.length) rows.push(["host ports", s.ports.map((p) => `${p.ip ? `${p.ip}:` : ""}${p.host}${p.host === p.container ? "" : ` → ${p.container}`}`).join(", ")]);
   if (s.cpus) rows.push(["cpus", s.cpus]);
   if (s.memLimit) rows.push(["mem_limit", s.memLimit]);
   if (s.cpuShares) rows.push(["cpu_shares", String(s.cpuShares)]);

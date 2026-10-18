@@ -102,7 +102,7 @@ export interface ComposeService {
   launcher: string | null;
   command: string | null;
   port: string | null;
-  ports: { host: string; container: string }[];
+  ports: { host: string; container: string; ip: string | null }[];
   cpus: string | null;
   memLimit: string | null;
   cpuShares: number | null;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCompose } from "../scripts/lib/compose.ts";
+import { parseCompose, portOf } from "../scripts/lib/compose.ts";
 import { EDGES, NODES } from "../src/lib/topology.ts";
 import { repoFile } from "./paths.ts";
 
@@ -54,7 +54,24 @@ describe("parseCompose", () => {
     expect(byName.api.memLimit).toBe("512m");
     expect(byName.api.configMounts).toEqual([{ source: "config/api.yaml", target: "/etc/api.yaml" }]);
     expect(byName.noisy.cpuShares).toBe(65536);
-    expect(byName.grafana.ports).toEqual([{ host: "3000", container: "3000" }]);
+    expect(byName.grafana.ports).toEqual([{ host: "3000", container: "3000", ip: null }]);
+  });
+
+  it("reads every port form compose takes", () => {
+    expect(portOf("3000")).toEqual({ host: "3000", container: "3000", ip: null });
+    expect(portOf("4000:80")).toEqual({ host: "4000", container: "80", ip: null });
+    expect(portOf("127.0.0.1:4000:80")).toEqual({ host: "4000", container: "80", ip: "127.0.0.1" });
+    expect(portOf("[::1]:9090:9090/tcp")).toEqual({ host: "9090", container: "9090", ip: "[::1]" });
+    expect(portOf({ target: 80, published: "4000", host_ip: "127.0.0.1" })).toEqual({ host: "4000", container: "80", ip: "127.0.0.1" });
+  });
+
+  it("reads the real host ports, bound to 127.0.0.1", () => {
+    const real = parseCompose(repoFile("docker-compose.yml"));
+    const site = real.services.find((s) => s.name === "site");
+    expect(site?.ports).toEqual([{ host: "4000", container: "80", ip: "127.0.0.1" }]);
+    const published = real.services.flatMap((s) => s.ports);
+    expect(published.length).toBeGreaterThan(0);
+    expect(published.filter((p) => p.ip !== "127.0.0.1")).toEqual([]);
   });
 
   it("keeps the group comments and the comment above a service", () => {

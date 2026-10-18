@@ -555,12 +555,13 @@ export function CapacityTab() {
 
   const done = async () => {
     if (!view) return;
+    let failure: unknown;
     try {
       await api.clear(view.key);
     } catch (e) {
-      if (!isGone(e)) setError(e);
+      if (!isGone(e)) failure = e;
     }
-    await gone();
+    await gone(failure);
   };
 
   const closed = useCallback((e?: unknown) => void gone(e), [gone]);

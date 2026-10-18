@@ -130,6 +130,22 @@ describe("Load and capacity", () => {
     expect(screen.getByText(/Mock resource: the pool \(missed\)/)).toBeTruthy();
   });
 
+  it("keeps a clear error on screen after it reads the ramp again", async () => {
+    const user = userEvent.setup();
+    state.lab.rampStartedAgo = AFTER_THE_LAST_STEP;
+    renderCapacity();
+    await user.click(await screen.findByRole("button", { name: "Start the ramp" }));
+    await screen.findByText("The ramp is over. Read the charts, then answer.");
+    await user.type(screen.getByRole("textbox", { name: /^Knee/ }), "75");
+    await user.type(screen.getByRole("textbox", { name: "Highest throughput (rps)" }), "75");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Resource that filled first" }), "mock_pool");
+    await user.click(screen.getByRole("button", { name: "Submit" }));
+    await screen.findByText("Mock ramp explanation.");
+    state.lab.failNext.set("POST /exercise/clear", { status: 500, error: "internal", message: "Mock clear failure." });
+    await user.click(screen.getByRole("button", { name: "Clear and go back" }));
+    expect(await screen.findByText(/Mock clear failure/)).toBeTruthy();
+  });
+
   it("offers only the result for a ramp revealed in the terminal", async () => {
     const user = userEvent.setup();
     state.lab.rampStartedAgo = AFTER_THE_LAST_STEP;

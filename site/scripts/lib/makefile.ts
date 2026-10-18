@@ -28,7 +28,7 @@ export interface MakefileData {
 
 const TARGET = /^([a-zA-Z_-]+):.*?## (.*)$/;
 const SECTION = /^# -{5,}\s*(.+)$/;
-const RECIPE_VAR = /\$\((?:if|or) \$\(([A-Z_]+)\)/g;
+const RECIPE_VAR = /\$\((?:if|or) (?:\$\(filter [^,]*,)?\$\(([A-Z_]+)\)/g;
 const PLAIN_VAR = /\$\(([A-Z_]+)\)/g;
 const HELP_OPTION = /\b([A-Z][A-Z_]*)=([^\s,)]+)/g;
 const INTERNAL = new Set(["COMPOSE", "LABCTL", "CTL", "GRADLE", "MAKE", "MAKEFILE_LIST", "CURDIR"]);

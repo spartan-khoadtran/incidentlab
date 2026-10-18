@@ -3,6 +3,8 @@ import { parse } from "yaml";
 export interface ComposePort {
   host: string;
   container: string;
+  /** The host address the port binds to, when compose names one. */
+  ip: string | null;
 }
 
 export interface ComposeService {
@@ -95,12 +97,25 @@ function envOf(value: unknown): Record<string, string> {
   return out;
 }
 
+const SHORT_PORT = /^(?:(\[[^\]]+\]|[^:]+):)??(?:(\d+):)?(\d+)(?:\/\w+)?$/;
+
+/** Short form `[ip:][host:]container[/proto]`, or the long form with `published`, `target` and `host_ip`. */
+export function portOf(value: unknown): ComposePort | null {
+  if (value && typeof value === "object") {
+    const p = value as Raw;
+    if (p.target === undefined) return null;
+    const container = String(p.target);
+    return { host: p.published === undefined ? container : String(p.published), container, ip: p.host_ip === undefined ? null : String(p.host_ip) };
+  }
+  const m = String(value).match(SHORT_PORT);
+  if (!m) return null;
+  const [, ip, host, container] = m;
+  return { host: host ?? container, container, ip: ip ?? null };
+}
+
 function portsOf(value: unknown): ComposePort[] {
   if (!Array.isArray(value)) return [];
-  return value.map((p) => {
-    const [host, container] = String(p).split(":");
-    return { host, container: container ?? host };
-  });
+  return value.map(portOf).filter((p): p is ComposePort => p !== null);
 }
 
 function dependsOf(value: unknown): string[] {

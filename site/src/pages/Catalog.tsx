@@ -112,7 +112,7 @@ export function Catalog() {
           </label>
         </div>
         <div className="filters-play">
-          <span>A random one from this filter:</span>
+          <span>{q ? "A random one from this level and topic:" : "A random one from this filter:"}</span>
           <Cmd text={randomCmd} />
         </div>
       </div>

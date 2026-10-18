@@ -15,10 +15,10 @@ const SAMPLE = [
   '\t@echo ""',
   "",
   "# ----------------------------------------------------------------------------- exercises",
-  "new: ## New exercise. Options: LEVEL=1|2|3 TOPIC=async",
-  "\t@$(CTL) new $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC))",
-  "toolbox: ## CLI only. Options: LEVEL TOPIC",
-  "\t@$(CTL) new --mode toolbox $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC))",
+  "new: ## New exercise. Options: LEVEL=1|2|3 TOPIC=async FORCE=1",
+  "\t@$(CTL) new $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(filter 1 yes true,$(FORCE)),--force)",
+  "toolbox: ## CLI only. Options: LEVEL TOPIC FORCE",
+  "\t@$(CTL) new --mode toolbox $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(filter 1 yes true,$(FORCE)),--force)",
   "logs: ## Tail logs: S=worker",
   "\t$(COMPOSE) logs -f --tail=100 $(S)",
   "",
@@ -49,6 +49,7 @@ describe("parseMakefile", () => {
     expect(targets.new.options).toEqual([
       { name: "LEVEL", example: "1|2|3" },
       { name: "TOPIC", example: "async" },
+      { name: "FORCE", example: "1" },
     ]);
     expect(targets.toolbox.options).toEqual(targets.new.options);
     expect(targets.logs.options).toEqual([{ name: "S", example: "worker" }]);
