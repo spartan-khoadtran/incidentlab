@@ -108,7 +108,7 @@ make down      # stop and remove everything
 ## Layout
 
 - `service/`: the Kotlin services, one Gradle build. `tool/labctl` is the controller and the CLI;
-  `tool/labctl/.../scenario/ScenarioCatalog.kt` holds the answers, do not read it before you play.
+  `tool/labctl/.../scenario/catalog/` holds the answers, do not read it before you play.
 - `config/`: Envoy, Prometheus, Grafana (pre-built dashboards), Postgres.
 - `service/tool/dashboards`: regenerates the Grafana dashboards (`make dashboards`).
 

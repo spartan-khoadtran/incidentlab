@@ -6,9 +6,9 @@ How the lab is built, how to run it, and the design choices the exercises depend
 
 incidentlab is a local training lab for incident investigation: comparing layers, Little's Law and queueing, tail latency, retry loops, Kafka lag, trend prediction, traces and false leads. Docker Compose runs a small checkout system (Envoy, api, pricing, Postgres, Redis, Kafka, worker) plus Prometheus, Grafana and Tempo. A controller injects a random fault. The learner investigates with the dashboards, submits an answer and gets a score.
 
-Everything in the repo is English: code, comments, log lines, learner-facing text, Makefile help. The study guide the learners read is `docs/investigation-guide.md`. Scenario and quiz `doc` fields point at its headings as `Section > Subsection (note)`; `GuidePointersTest` checks that every pointer resolves, so a heading rename must update the pointers too.
+Everything in the repo is English: code, comments, log lines, learner-facing text, Makefile help. The study guide the learners read lives under `docs/`, today one file, `docs/investigation-guide.md`. Scenario and quiz `doc` fields point at its headings as `Section > Subsection (note)`. `GuideIndex` (`labctl/guide`) maps every `## ` section title to its file, so a section title must be unique across the docs files, and `GuideIndex.where(doc)` is what the "Read again in" line prints. `GuidePointersTest` reads every `docs/*.md`, checks the uniqueness, checks that the index matches the files, and checks that every pointer resolves, so a heading rename or a new section must update the pointers and the index too.
 
-`service/tool/labctl/src/main/kotlin/com/c0x12c/incidentlab/labctl/scenario/ScenarioCatalog.kt` holds the answers. The README tells learners not to read it.
+`service/tool/labctl/src/main/kotlin/com/c0x12c/incidentlab/labctl/scenario/catalog/` holds the answers, one file per layer. The README tells learners not to read it.
 
 ## Commands
 
@@ -76,13 +76,19 @@ loadgen is an open-model Poisson generator per tenant. It makes the root samplin
 3. PUTs that dict to each service's `/admin/faults`. A service not named by the scenario gets `{}`, which resets it.
 4. Sets the api container's CPU limit through the Docker socket (`DockerControl`, raw engine API over `docker-java-transport-zerodep`). Base is 2.0 cores; a scenario's `docker` map overrides it.
 
+Steps 3 and 4 are `Applier`s (`ServiceFaultApplier` and `ContainerCpuApplier` in `control/Applier.kt`). `ControlDaemon` runs the list that `Main` wires; the CPU applier is only wired when the docker socket exists.
+
 The daemon owns fault state. A manual PUT to `/admin/faults` is reverted within 3 seconds. To change behavior, change `state.json` through the `make` commands, or change the scenario.
 
-### Scenario contract (`ScenarioCatalog.kt`)
+### Scenario contract (`scenario/catalog/`)
 
-Each `Scenario` has: `id`, `title`, `level` (1 to 3), `topics`; `params(random, context)` (context carries `cpuCount`, `productDetailSeconds`, the measured cost of one uncached product query, used to calibrate load, and `tenants`, loadgen's default rate per tenant); `faults(params) -> FaultSpec(services, docker)` runs every daemon tick and `Params.elapsedSeconds` is the time since the start, so a fault can change mid-exercise (`lag_after_fix` rolls the worker back after `fix_after`); `ticket(params)`, `hints` (3), `explain(params)`; `steps` (the investigation trace printed after the explanation); `answer` (`nature`, `location` and `signal` are sets of accepted keys from `Answers`, `cause` one key, `partial` the causes worth 1 point: a visible consequence one step before the root cause); `evidence` (PromQL), `doc`; optional `marker(params)` (real Grafana annotation 0 to 3 minutes before start) and `decoy` (probability of a fake annotation between 10 minutes before and 1 minute after start). `Answers.CAUSES` also holds `DISTRACTORS`, causes no scenario has, and some causes belong to two scenarios (`pool_exhausted`, `single_thread_cpu`, `client_timeout`), so the cause list is not a copy of the catalog.
+`ScenarioCatalog.all` joins one list per layer: `LoadScenarios`, `EdgeScenarios`, `AppScenarios`, `DatabaseScenarios`, `DownstreamScenarios`, `AsyncScenarios` and `ContainerHostScenarios`, each an `internal object` with `val all`. A new scenario goes into the file of its `answer.location`. `scenario/Baseline.kt` holds the numbers more than one scenario reads (the tenant mix, `BASE_RPS`, the checkout hold time, the worker capacity, the unit constants); a number only one scenario uses stays private in that file.
+
+Each `Scenario` has: `id`, `title`, `level` (1 to 3), `topics`; `params(random, context)` (context carries `cpuCount`, `productDetailSeconds`, the measured cost of one uncached product query, used to calibrate load, and `tenants`, loadgen's default rate per tenant); `faults(params) -> FaultSpec(services, docker)` runs every daemon tick and `Params.elapsedSeconds` is the time since the start, so a fault can change mid-exercise (`lag_after_fix` rolls the worker back after `fix_after`); `ticket(params)`, `hints` (3), `explain(params)`; `steps` (the investigation trace printed after the explanation); `answer` (`nature`, `location` and `signal` are sets of accepted keys from `Answers`, `cause` one key, `partial` the causes worth 1 point: a visible consequence one step before the root cause); `evidence` (PromQL), `cli` (shell commands that prove the cause without Grafana; no scenario fills it yet), `doc`; optional `marker(params)` (real Grafana annotation 0 to 3 minutes before start) and `decoy` (probability of a fake annotation between 10 minutes before and 1 minute after start). `Answers.CAUSES` also holds `DISTRACTORS`, causes no scenario has, and some causes belong to two scenarios (`pool_exhausted`, `single_thread_cpu`, `client_timeout`), so the cause list is not a copy of the catalog.
 
 Scoring: nature 1, location 1, signal 1, cause 2 (partial 1), minus 0.5 per hint; 5 points max. After scoring, `make answer` asks for a one-line note, kept in history with the missed questions. `make new` skips the last 5 played ids. `ScenarioCatalogTest` renders every scenario with a seeded random and checks the fault targets, so run it after any catalog change.
+
+The quiz data sits next to the docs file it drills: `quiz/numbers/InvestigationNumbers.kt` (the generators) and `quiz/concepts/InvestigationConcepts.kt` (the questions) for `docs/investigation-guide.md`. `Numbers.generators` and `Concepts.all` join the per-file lists with `+`, and `GuidePointersTest` checks that the drills cover every subsection.
 
 ### Metric conventions
 
@@ -110,5 +116,5 @@ Changing one of these breaks the scenario named in brackets:
 ### Data and state
 
 - `config/postgres/init.sql` runs only when the `pgdata` volume is created. Schema changes need `make down` first.
-- Exercise state and history live in `state.json` on the `labstate` volume. `make down` deletes it.
+- Exercise state and history live in `state.json` on the `labstate` volume. `make down` deletes it. `ActiveExercise` and `HistoryEntry` carry `mode` (`incident` today, the default); a file written before the field existed still loads.
 - Grafana runs as anonymous Admin. Datasources are provisioned (Prometheus uid `prometheus`, Tempo uid `tempo`). Prometheus exemplars link to Tempo by `trace_id`. Dashboards come from `config/grafana/dashboards/`, generated by `tool/dashboards`.
