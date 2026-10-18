@@ -217,4 +217,14 @@ class ScenarioCatalogTest {
     assertThat(explain.contains("3.1 MB/s")).isTrue()
     assertThat(explain.contains("26 s")).isTrue()
   }
+
+  @Test
+  fun `cli lines run in the toolbox shell and say what to read`() {
+    for (scenario in ScenarioCatalog.all) {
+      for (line in scenario.cli) {
+        assertThat(line.contains("   # ") && line.substringAfter("   # ").isNotBlank()).isTrue()
+        assertThat(line.contains("docker") || line.contains("\${'$'}{")).isFalse()
+      }
+    }
+  }
 }

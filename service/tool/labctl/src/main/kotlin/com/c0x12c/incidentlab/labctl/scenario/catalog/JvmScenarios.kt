@@ -85,6 +85,10 @@ internal object JvmScenarios {
       "rate(jvm_gc_pause_seconds_sum{job=\"api\"}[5m])",
       "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\"}[1m])))"
     ),
+    cli = listOf(
+      "curl -s http://api:8000/metrics | grep ^jvm_gc_pause_seconds_count   # the MarkSweepCompact count climbs every few dozen seconds",
+      "curl -s http://api:8000/metrics | grep -E '^jvm_gc_(live|max)_data_size_bytes'   # live data after GC close to the old gen max"
+    ),
     doc = "Garbage collection > GC pauses and tail latency"
   )
 
@@ -136,6 +140,10 @@ internal object JvmScenarios {
       "rate(process_cpu_seconds_total{job=\"api\"}[1m])",
       "sum(rate(http_server_requests_total{job=\"api\",route=\"/checkout\"}[1m]))"
     ),
+    cli = listOf(
+      "curl -s http://api:8000/metrics | grep ^jvm_virtual_thread_pinned_seconds_total; sleep 10; curl -s http://api:8000/metrics | grep ^jvm_virtual_thread_pinned_seconds_total   # grows about 20 s in 10 s: both carriers pinned",
+      "top -H -b -n 1 -p $(pgrep -f checkout-api) | head -15   # CPU low on every thread: the carriers sleep, they do not compute"
+    ),
     doc = "Virtual threads > Pinning"
   )
 
@@ -184,7 +192,8 @@ internal object JvmScenarios {
       "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\"}[1m])))"
     ),
     cli = listOf(
-      "docker compose logs --since 10s api | wc -l"
+      "grep -E '^(user|system)_usec' $(cg $(pgrep -f checkout-api))/cpu.stat   # run it twice: system_usec grows about as fast as user_usec",
+      "grep ^syscw /proc/$(pgrep -f checkout-api)/io; sleep 10; grep ^syscw /proc/$(pgrep -f checkout-api)/io   # write syscalls: the rise / 10 / 50 is about the lines per request"
     ),
     doc = "System time > Logging costs"
   )
