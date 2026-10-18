@@ -1,20 +1,24 @@
 package com.c0x12c.incidentlab.labctl
 
+import com.c0x12c.incidentlab.labctl.control.ContainerCpuApplier
 import com.c0x12c.incidentlab.labctl.control.ControlDaemon
 import com.c0x12c.incidentlab.labctl.control.DockerControl
 import com.c0x12c.incidentlab.labctl.control.GrafanaAnnotator
 import com.c0x12c.incidentlab.labctl.control.HttpLabProbe
 import com.c0x12c.incidentlab.labctl.control.JsonHttp
+import com.c0x12c.incidentlab.labctl.control.ServiceFaultApplier
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
 import com.c0x12c.incidentlab.labctl.quiz.Quiz
 import com.c0x12c.incidentlab.labctl.state.StateStore
+import com.c0x12c.logging.Logging
+import com.c0x12c.logging.info
 import java.nio.file.Path
 import kotlin.system.exitProcess
 
 // Lab controller.
 //   labctl daemon            keeps every service in the desired fault state (runs in the control container)
 //   labctl new|hint|answer|reveal|clear|status|list|history|load|quiz
-object Main {
+object Main : Logging {
 
   @JvmStatic
   fun main(args: Array<String>) {
@@ -31,7 +35,11 @@ object Main {
       when (command) {
         "daemon" -> {
           val docker = DockerControl.ifAvailable(System.getenv("COMPOSE_PROJECT") ?: "incidentlab", Path.of(System.getenv("DOCKER_SOCK") ?: "/var/run/docker.sock"))
-          ControlDaemon(store, http, docker).run()
+          if (docker == null) {
+            info { "docker socket not found: CPU-limit exercises are disabled" }
+          }
+          val appliers = listOfNotNull(ServiceFaultApplier(http), docker?.let { ContainerCpuApplier(it) })
+          ControlDaemon(store, appliers).run()
           0
         }
         "new" -> exercises.newExercise(CommandLine.newOptions(args.drop(1)))
