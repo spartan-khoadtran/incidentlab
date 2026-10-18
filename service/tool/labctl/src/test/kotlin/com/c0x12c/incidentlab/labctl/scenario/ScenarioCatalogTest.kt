@@ -413,10 +413,10 @@ class ScenarioCatalogTest {
   fun `the pinning hold keeps the two carriers 70 to 85 percent busy and the explanation does the M_M_2 arithmetic`() {
     assertThat(JvmScenarios.carrierDemand(JvmScenarios.PIN_HOLD_MIN_MS)).isBetween(0.70, 0.85)
     assertThat(JvmScenarios.carrierDemand(JvmScenarios.PIN_HOLD_MAX_MS)).isBetween(0.70, 0.85)
-    // 15 checkouts/s × (50 + 50) ms / 2 carriers = 0.75; 2 × 0.75² / 1.75 = 0.643; 0.643 / (2 / 0.1 − 15) = 0.129 s
+    // 15 checkouts/s × (50 + 50) ms / 2 carriers = 0.75; 2 × 0.75² / 1.75 = 0.643; 30 blocks/s of 50 ms: 0.643 / (2 / 0.05 − 30) = 0.064 s
     assertThat(JvmScenarios.carrierDemand(50)).isEqualTo(0.75)
     assertThat(Baseline.round2(JvmScenarios.carrierBusyChance(50))).isEqualTo(0.64)
-    assertThat(Baseline.round2(JvmScenarios.carrierWaitSeconds(50))).isEqualTo(0.13)
+    assertThat(Baseline.round2(JvmScenarios.carrierWaitSeconds(50))).isEqualTo(0.06)
     val scenario = ScenarioCatalog.byId.getValue("vthread_pinning")
     val random = Random(4)
     repeat(50) {
@@ -427,7 +427,7 @@ class ScenarioCatalogTest {
     assertThat(explain.contains("= 1.50 carrier-seconds per second")).isTrue()
     assertThat(explain.contains("75% busy")).isTrue()
     assertThat(explain.contains("= 64% of the time")).isTrue()
-    assertThat(explain.contains("= 129 ms")).isTrue()
+    assertThat(explain.contains("(2 / 0.0500 s − 30) = 64 ms")).isTrue()
     assertThat(scenario.ticket(Params(mapOf("hold" to 50), "14:05")).contains("fell")).isFalse()
   }
 

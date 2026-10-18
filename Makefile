@@ -50,7 +50,7 @@ nuke: ## Like `down`, and also remove the built image
 
 # ----------------------------------------------------------------------------- exercises
 new: ## New incident exercise on the live lab. Options: LEVEL=1|2|3 TOPIC=async ID=pool_hold FORCE=1
-	@$(CTL) new $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(ID),--id $(ID)) $(if $(FORCE),--force)
+	@$(CTL) new $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(ID),--id $(ID)) $(if $(filter 1 yes true,$(FORCE)),--force)
 
 hint: ## Next hint (costs 0.5 point each)
 	@$(CTL) hint
@@ -81,7 +81,7 @@ load: ## Change the background load: X=1.5 (times the default 50 rps)
 	@$(CTL) load $(or $(X),1)
 
 toolbox: ## New CLI-only exercise: prove the cause from `make shell`, no Grafana. Options: LEVEL TOPIC ID FORCE
-	@$(CTL) new --mode toolbox $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(ID),--id $(ID)) $(if $(FORCE),--force)
+	@$(CTL) new --mode toolbox $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(ID),--id $(ID)) $(if $(filter 1 yes true,$(FORCE)),--force)
 
 shell: ## Root shell on the Docker VM with the Linux tools (vmstat, pidstat, psql, bpftrace...)
 	@$(COMPOSE) up -d --no-deps toolbox

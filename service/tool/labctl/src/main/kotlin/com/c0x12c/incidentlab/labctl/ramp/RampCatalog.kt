@@ -18,7 +18,7 @@ import kotlin.random.Random
  * every override is gone so the lab recovers.
  *
  * Each limit is drawn so it fills inside the ramp's range (50 to 300 rps). A pool of 6 would fill at
- * 400 rps and api at 0.5 cores at about 420 rps, both past the last step, so neither is drawn.
+ * 400 rps and api at 0.5 cores at about 340 rps, both past the last step, so neither is drawn.
  * The setups that do not limit the pool open it to the real Hikari size, because the default pool
  * of 4 fills at about 267 rps and would be a second, hidden answer.
  */

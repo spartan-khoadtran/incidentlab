@@ -107,7 +107,7 @@ internal object NetworkScenarios {
       "How many queries does one checkout send now? How much longer does each one take at api than inside Postgres?",
       "Multiply the round trips per checkout by the extra time per round trip. Then use Little's Law on the pool."
     ),
-    answer = Answer(nature = setOf("arch"), location = setOf("network"), signal = setOf("pool"), cause = "rtt_amplified", partial = setOf("n_plus_one")),
+    answer = Answer(nature = setOf("arch", "amplified"), location = setOf("network", "api_db", "api"), signal = setOf("pool"), cause = "rtt_amplified", partial = setOf("n_plus_one")),
     explain = { p ->
       val delay = p.int("delay")
       val k = p.int("k")
@@ -174,7 +174,7 @@ internal object NetworkScenarios {
       "A call over a reused connection costs one round trip. What else costs a round trip before the request can go?",
       "Compare new TCP connections per second at api with its calls to pricing per second, and look at TIME_WAIT."
     ),
-    answer = Answer(nature = setOf("arch"), location = setOf("api"), signal = setOf("tcp_connections"), cause = "no_keepalive", partial = setOf("downstream_slow")),
+    answer = Answer(nature = setOf("arch"), location = setOf("api", "network"), signal = setOf("tcp_connections"), cause = "no_keepalive", partial = setOf("downstream_slow")),
     explain = { p ->
       val delay = p.int("delay")
       val ports = EPHEMERAL_PORTS / TIME_WAIT_SECONDS.toDouble()
@@ -190,7 +190,7 @@ internal object NetworkScenarios {
       "Problem statement: pricing moved to a zone a few ms away, calls cost more than that, pricing's p99 is flat, and api holds many TIME_WAIT sockets.",
       "Compare api's view of pricing with pricing's own p50 and p99: api's p50 rose by about two round trips, pricing did not move. The time is outside pricing.",
       "A reused connection costs one round trip per call. The second round trip is a TCP handshake.",
-      "Network row: api opens about $CHECKOUTS_PER_SECOND TCP connections per second. On row 4, connections opened per second equal calls per second: no reuse.",
+      "Network row (dashboard 02): api opens about $CHECKOUTS_PER_SECOND TCP connections per second. On dashboard 01, row 4, connections opened per second equal calls per second: no reuse.",
       "TIME_WAIT at api is about $CHECKOUTS_PER_SECOND x $TIME_WAIT_SECONDS = ${CHECKOUTS_PER_SECOND * TIME_WAIT_SECONDS}, because api closes each connection first and keeps the socket for $TIME_WAIT_SECONDS s.",
       "The cause: the new client settings turned off connection reuse. Turn it back on. The zone move is fine."
     ),

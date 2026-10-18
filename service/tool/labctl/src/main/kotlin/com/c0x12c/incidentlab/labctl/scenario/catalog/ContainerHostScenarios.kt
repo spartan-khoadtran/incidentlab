@@ -105,7 +105,7 @@ internal object ContainerHostScenarios {
     ),
     cli = listOf(
       "dmesg -T | grep -i 'killed process' | tail -5   # Memory cgroup out of memory: Killed process ... (java), about once a minute",
-      "curl -s --unix-socket /var/run/docker.sock http://localhost/containers/incidentlab-api-1/json | jq '{RestartCount, StartedAt: .State.StartedAt}'   # RestartCount climbs, StartedAt is less than a minute ago",
+      "curl -s --unix-socket /var/run/docker.sock http://localhost/containers/$(cid api)/json | jq '{RestartCount, StartedAt: .State.StartedAt}'   # RestartCount climbs, StartedAt is less than a minute ago",
       "cat $(cg $(pid api))/memory.max; for i in 1 2 3 4 5 6; do cat $(cg $(pid api))/memory.current; sleep 5; done   # climbs to the limit, then starts low again"
     ),
     doc = "USE at many layers > Layers and their metrics (container, cgroup)"
@@ -157,7 +157,7 @@ internal object ContainerHostScenarios {
     cli = listOf(
       "pidstat -r -p $(pid api) 60 3   # RSS grows by about the same amount every minute and never drops",
       "cat $(cg $(pid api))/memory.current; sleep 60; cat $(cg $(pid api))/memory.current $(cg $(pid api))/memory.max   # minutes left = (max - now) / growth per minute",
-      "curl -s --unix-socket /var/run/docker.sock http://localhost/containers/incidentlab-api-1/json | jq .RestartCount   # no OOM kill yet"
+      "curl -s --unix-socket /var/run/docker.sock http://localhost/containers/$(cid api)/json | jq .RestartCount   # no OOM kill yet"
     ),
     doc = "Applying on Datadog > Monitors (saturation that predicts an incident); USE at many layers > Layers and their metrics (container, cgroup)"
   )

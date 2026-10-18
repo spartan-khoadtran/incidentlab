@@ -43,10 +43,13 @@ internal object JvmScenarios {
     return 2 * rho * rho / (1 + rho)
   }
 
-  /** Mean wait for a carrier in seconds, as M/M/2: the busy chance over (2 / S − λ). */
+  /** A checkout pins its carrier twice (load prices, then write the order), and the pricing call between them unmounts. */
+  const val PINNED_BLOCKS = 2
+
+  /** Mean wait for one carrier visit in seconds, as M/M/2 over the pinned blocks: the busy chance over (2 / S − λ). */
   fun carrierWaitSeconds(holdMs: Int): Double {
-    val service = (BASE_CHECKOUT_HOLD_MS + holdMs) / MILLIS_PER_SECOND
-    return carrierBusyChance(holdMs) / (CARRIERS / service - CHECKOUTS_PER_SECOND)
+    val block = (BASE_CHECKOUT_HOLD_MS + holdMs).toDouble() / PINNED_BLOCKS / MILLIS_PER_SECOND
+    return carrierBusyChance(holdMs) / (CARRIERS / block - PINNED_BLOCKS * CHECKOUTS_PER_SECOND)
   }
 
   /** CPU one request spends on its own log lines, from the per-line cost measured on the lab. */
@@ -77,7 +80,7 @@ internal object JvmScenarios {
     explain = { p ->
       val retain = p.int("retain")
       val churn = p.int("churn")
-      val objects = retain * BYTES_PER_MB / BYTES_PER_OBJECT / MILLION
+      val objects = retain * BYTES_PER_MIB / BYTES_PER_OBJECT / MILLION
       val writeMbPerSecond = BASE_RPS * churn / KB_PER_MB
       val lifetime = retain / writeMbPerSecond
       "A store in api keeps about $retain MB of tiny objects alive, about ${p.fixed(objects, 1)} million of them. " +
@@ -149,11 +152,12 @@ internal object JvmScenarios {
         "$CHECKOUTS_PER_SECOND × $perCheckout / 1000 = ${p.fixed(pinnedPerSecond, 2)} carrier-seconds per second, so the $CARRIERS carriers are " +
         "${(rho * PERCENT).roundToInt()}% busy with pinned work alone. That is a queue with $CARRIERS servers. " +
         "A request finds both carriers busy about 2ρ² / (1 + ρ) = ${(carrierBusyChance(hold) * PERCENT).roundToInt()}% of the time, and then it waits for one to free up. " +
-        "The mean wait is about that share / ($CARRIERS / ${p.fixed(perCheckout / MILLIS_PER_SECOND, 3)} s − $CHECKOUTS_PER_SECOND) = " +
-        "${(carrierWaitSeconds(hold) * MILLIS_PER_SECOND).roundToInt()} ms, and the slow tail is several times longer. " +
+        "Each checkout pins a carrier in $PINNED_BLOCKS blocks (load prices, then write the order) of about ${p.fixed(perCheckout.toDouble() / PINNED_BLOCKS, 1)} ms on average, " +
+        "so the carriers serve ${PINNED_BLOCKS * CHECKOUTS_PER_SECOND} blocks/s. The mean wait for one visit is about that share / " +
+        "($CARRIERS / ${p.fixed(perCheckout.toDouble() / PINNED_BLOCKS / MILLIS_PER_SECOND, 4)} s − ${PINNED_BLOCKS * CHECKOUTS_PER_SECOND}) = " +
+        "${(carrierWaitSeconds(hold) * MILLIS_PER_SECOND).roundToInt()} ms. /products waits once, /checkout about twice, and the slow tail is several times longer. " +
         "That formula assumes random service times. Here they vary less, so the real wait is somewhat shorter. " +
-        "Every request runs on a virtual thread, so /products and /health wait in the same queue: p99 rises on every route, and /checkout most, " +
-        "because it queues for a carrier twice. CPU stays low because the pinned carriers sleep, and time pinned per second sits near " +
+        "Every request runs on a virtual thread, so /products and /health wait in the same queue: p99 rises on every route, and /checkout most. CPU stays low because the pinned carriers sleep, and time pinned per second sits near " +
         "${p.fixed(pinnedPerSecond, 1)}. The busy share is under 100%, so throughput holds and nothing fails. Above 100% the queue would grow " +
         "without end, and api would stop answering, health checks included. " +
         "The lock itself is never contended (each request locks its own object), so a lock profile shows nothing. The limit is the carrier count. " +
@@ -206,7 +210,7 @@ internal object JvmScenarios {
     explain = { p ->
       val lines = p.int("lines")
       val perSecond = lines * BASE_RPS
-      val megabytes = perSecond * LINE_BYTES / BYTES_PER_MB.toDouble()
+      val megabytes = perSecond * LINE_BYTES / MILLION
       val system = perSecond * SYSTEM_US_PER_LINE / MICROS_PER_SECOND
       val user = perSecond * USER_US_PER_LINE / MICROS_PER_SECOND
       val perRequestMs = logMsPerRequest(lines)
@@ -247,7 +251,7 @@ internal object JvmScenarios {
     baseLoad = true
   )
 
-  private const val BYTES_PER_MB = 1_048_576
+  private const val BYTES_PER_MIB = 1_048_576
   private const val KB_PER_MB = 1_024.0
   private const val MILLION = 1_000_000.0
   private const val LINE_BYTES = 100

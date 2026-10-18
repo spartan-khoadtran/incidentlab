@@ -237,7 +237,7 @@ internal object AsyncScenarios {
     ),
     cli = listOf(
       "top -H -b -n 1 -p $(pid worker) | head -12   # one thread near 100% CPU: the Kafka poll loop spins",
-      "cat $(cg $(pid worker))/cpu.stat   # nr_throttled climbs: the worker uses its whole 1-core limit",
+      "grep nr_throttled $(cg $(pid worker))/cpu.stat; sleep 10; grep nr_throttled $(cg $(pid worker))/cpu.stat   # nr_throttled grows: the worker uses its whole 1-core limit",
       "curl -s http://worker:8002/metrics | grep ^kafka_consumer_lag_messages   # lag near 0: there is no work waiting"
     ),
     doc = "CPU busy with no work > Busy polling"
