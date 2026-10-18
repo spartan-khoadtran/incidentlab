@@ -3,8 +3,14 @@ import { Pointer, Rich, Stat } from "../components/Bits";
 import { Cmd } from "../components/Copy";
 import { ArrowIcon } from "../components/Icons";
 import { RequestPath } from "../components/RequestPath";
-import { compose, guide, lab, make, readme, target } from "../lib/data";
+import readmeJson from "../generated/readme.json";
+import { compose } from "../lib/compose";
+import { lab } from "../lib/data";
+import { guide } from "../lib/guide";
+import { make, target } from "../lib/make";
 import { MODES } from "../lib/modes";
+
+const readme = readmeJson as unknown as { lede: string; trains: string[] };
 
 function splitLede(lede: string): { head: string; rest: string } {
   const i = lede.indexOf(": ");

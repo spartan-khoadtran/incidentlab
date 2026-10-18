@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { lab, service } from "../lib/data";
+import { service } from "../lib/compose";
+import { lab } from "../lib/data";
 import { facts } from "../lib/facts";
 import { useReducedMotion } from "../lib/motion";
 import { EDGES, edgePath, labelPoint, NODE_H, NODE_PAD, NODE_W, NODES, STAGES, VIEW_H, VIEW_W } from "../lib/topology";

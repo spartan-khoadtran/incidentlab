@@ -1,12 +1,14 @@
+import { lazy } from "react";
 import { Link, Route, Routes } from "react-router";
 import { Layout } from "./components/Layout";
-import { Catalog } from "./pages/Catalog";
-import { Commands } from "./pages/Commands";
-import { Guide } from "./pages/Guide";
 import { Home } from "./pages/Home";
-import { HowItWorks } from "./pages/HowItWorks";
-import { Play } from "./pages/Play";
-import { Quiz } from "./pages/Quiz";
+
+const Play = lazy(() => import("./pages/Play").then((m) => ({ default: m.Play })));
+const HowItWorks = lazy(() => import("./pages/HowItWorks").then((m) => ({ default: m.HowItWorks })));
+const Guide = lazy(() => import("./pages/Guide").then((m) => ({ default: m.Guide })));
+const Catalog = lazy(() => import("./pages/Catalog").then((m) => ({ default: m.Catalog })));
+const Quiz = lazy(() => import("./pages/Quiz").then((m) => ({ default: m.Quiz })));
+const Commands = lazy(() => import("./pages/Commands").then((m) => ({ default: m.Commands })));
 
 function NotFound() {
   return (

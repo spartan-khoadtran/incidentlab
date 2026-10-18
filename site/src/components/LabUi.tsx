@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { ApiError } from "../lib/api";
-import { guide } from "../lib/data";
+import { guide } from "../lib/guide";
 import { useLab } from "../lib/lab";
 import { resolvePointer } from "../lib/pointers";
 import { Cmd } from "./Copy";

@@ -3,9 +3,14 @@ import { Link } from "react-router";
 import { PageHead, Rich } from "../components/Bits";
 import { FaultLoop } from "../components/FaultLoop";
 import { RequestPath } from "../components/RequestPath";
+import highlightsJson from "../generated/highlights.json";
 import { facts } from "../lib/facts";
-import { compose, highlights, lab, service, target, type ComposeService } from "../lib/data";
+import { compose, service, type ComposeService } from "../lib/compose";
+import { lab } from "../lib/data";
+import { target } from "../lib/make";
 import { NODES } from "../lib/topology";
+
+const highlights = highlightsJson as unknown as { inThisLab: string | null };
 
 function ServiceCard({ s, anchor = true }: { s: ComposeService; anchor?: boolean }) {
   const rows: [string, string][] = [];

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, useLocation, useParams } from "react-router";
-import { docBySlug, guide, type GuideDoc } from "../lib/data";
+import { docBySlug, guide, type GuideDoc } from "../lib/guide";
 
 const loaders = import.meta.glob<{ default: { slug: string; html: string } }>("../generated/docs/*.json");
 

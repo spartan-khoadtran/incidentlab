@@ -3,7 +3,9 @@ import { PageHead, Stat } from "../components/Bits";
 import { Cmd } from "../components/Copy";
 import { LabGate } from "../components/LabUi";
 import { QuizRunner } from "./quiz/QuizRunner";
-import { docByFile, lab, target } from "../lib/data";
+import { lab } from "../lib/data";
+import { docByFile } from "../lib/guide";
+import { target } from "../lib/make";
 
 export function Quiz() {
   const quiz = target("quiz");

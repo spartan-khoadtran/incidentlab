@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { copyText, onCopied } from "../lib/copy";
 import { lab } from "../lib/data";
@@ -83,6 +83,14 @@ function useDocumentHandlers() {
   }, [navigate]);
 }
 
+function PageLoading() {
+  return (
+    <div className="page" role="status" aria-live="polite">
+      <p className="kicker">Loading the page...</p>
+    </div>
+  );
+}
+
 function useScrollOnNavigate() {
   const { pathname, hash } = useLocation();
   useEffect(() => {
@@ -155,7 +163,9 @@ export function Layout() {
         </div>
       </header>
       <main id="main" tabIndex={-1}>
-        <Outlet />
+        <Suspense fallback={<PageLoading />}>
+          <Outlet />
+        </Suspense>
       </main>
       <footer className="footer">
         <div className="footer-inner">

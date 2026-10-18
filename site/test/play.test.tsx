@@ -84,6 +84,20 @@ describe("Play", () => {
     expect(await screen.findByRole("button", { name: "Start the exercise" })).toBeTruthy();
   });
 
+  it("goes back to the start when the fault was already cleared in the terminal", async () => {
+    const user = userEvent.setup();
+    state.lab.handle("POST", "/api/exercises", JSON_POST, {});
+    state.lab.handle("POST", "/api/exercise/reveal", JSON_POST, {});
+    renderPlay();
+    const clearButton = await screen.findByRole("button", { name: "Clear the fault" });
+    state.lab.handle("POST", "/api/exercise/clear", JSON_POST, {});
+
+    await user.click(clearButton);
+
+    expect(await screen.findByRole("button", { name: "Start the exercise" })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("asks before dropping an open exercise", async () => {
     const user = userEvent.setup();
     state.lab.handle("POST", "/api/exercises", JSON_POST, {});

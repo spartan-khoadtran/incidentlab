@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { guide } from "../lib/data";
+import { guide } from "../lib/guide";
 import { resolvePointer } from "../lib/pointers";
 
 export function PageHead({ kicker, title, children }: { kicker: string; title: ReactNode; children?: ReactNode }) {

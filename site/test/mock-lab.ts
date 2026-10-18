@@ -55,7 +55,7 @@ export class MockLab {
   online = true;
   active: MockActive | null = null;
   n = 0;
-  history: { n: number; id: string; title: string; level: number | null; mode: string; score: number | null; hints: number; minutes: number; at: number; missed: string[]; note: string }[] = [];
+  history: { n: number; id: string; title: string; level: number; mode: string; score: number | null; hints: number; minutes: number; at: number; missed: string[]; note: string }[] = [];
   load = 1;
   quiz = new Map<string, { kind: string; answer: string }[]>();
   plan = { steps: [50, 75, 100, 125, 150, 200, 250, 300], every: 60, total_seconds: 480 };
@@ -190,8 +190,9 @@ export class MockLab {
       }
       case route === "POST /exercise/clear": {
         if (this.active && changed()) return changed()!;
+        const cleared = this.active !== null;
         this.active = null;
-        return { status: 200, body: { cleared: true } };
+        return { status: 200, body: { cleared } };
       }
       case route === "GET /history": {
         const scored = this.history.filter((e) => e.score !== null && (e.mode === "incident" || e.mode === "toolbox"));
@@ -204,7 +205,7 @@ export class MockLab {
             average: mean(scored),
             scored_count: scored.length,
             by_topic: scored.length ? [{ topic: "red", average: 3.5, count: scored.length }] : [],
-            most_missed_cause: scored.length ? { ...OPTIONS.causes[2], count: 1 } : null,
+            most_missed_cause: scored.length ? { group: null, ...OPTIONS.causes[2], count: 1 } : null,
             ramp_average: mean(ramps),
             ramp_count: ramps.length,
           },
@@ -212,7 +213,7 @@ export class MockLab {
       }
       case route === "POST /load": {
         const m = Number(body.multiplier);
-        if (!(m >= 0.1 && m <= 6)) return err(400, "bad_load", "X must be between 0.1 and 6.");
+        if (!(m >= 0.1 && m <= 6)) return err(400, "bad_multiplier", "Mock: multiplier must be a number from 0.1 to 6.");
         const rampLeft = this.active?.mode === "ramp" ? Math.ceil(this.active.started_at + this.plan.total_seconds - Date.now() / 1000) : 0;
         if (rampLeft > 0) return err(409, "ramp_running", `Mock: a ramp is running for ${rampLeft} s more.`, { seconds_left: rampLeft });
         this.load = m;
@@ -267,7 +268,7 @@ export class MockLab {
           explanation: "Mock ramp explanation.",
           guide: [{ pointer: "Capacity from a ramp test > Finding the knee", file: "capacity.md" }],
         };
-        if (!active.answered) this.history.push({ n: active.n, id: "ramp", title: result.title, level: null, mode: "ramp", score: result.score, hints: 0, minutes: 8, at: Date.now() / 1000, missed: result.missed, note: this.rampNote ?? "" });
+        if (!active.answered) this.history.push({ n: active.n, id: "ramp", title: result.title, level: 0, mode: "ramp", score: result.score, hints: 0, minutes: 8, at: Date.now() / 1000, missed: result.missed, note: this.rampNote ?? "" });
         active.answered = true;
         if (answered) active.result = result;
         return { status: 200, body: result };
@@ -286,7 +287,7 @@ export class MockLab {
         if (!this.active) return err(404, "no_exercise", "No exercise is open.");
         if (this.active.mode !== "bench") return err(409, "wrong_mode", `The open exercise is a ${this.active.mode}.`);
         if (route.startsWith("POST")) {
-          this.history.push({ n: this.active.n, id: "bench", title: "Closed-loop bench", level: null, mode: "bench", score: null, hints: 0, minutes: 2, at: Date.now() / 1000, missed: [], note: "" });
+          this.history.push({ n: this.active.n, id: "bench", title: "Closed-loop bench", level: 0, mode: "bench", score: null, hints: 0, minutes: 2, at: Date.now() / 1000, missed: [], note: "" });
           this.active = null;
         }
         return {
@@ -317,8 +318,10 @@ export class MockLab {
       default: {
         const quiz = route.match(/^POST \/quiz\/([^/]+)\/(\d+)$/);
         if (quiz) {
-          const q = this.quiz.get(quiz[1])?.[Number(quiz[2])];
-          if (!q) return err(404, "no_question", "No such question.");
+          const session = this.quiz.get(quiz[1]);
+          if (!session) return err(404, "no_session", "Mock: this quiz is over or has expired.");
+          const q = session[Number(quiz[2])];
+          if (!q) return err(404, "no_question", `Mock: this quiz has no question ${quiz[2]}.`);
           const given = typeof body.answer === "string" && q.kind === "number" ? Number(body.answer.replace(",", ".")) : body.answer;
           const correct = q.kind === "number" ? Math.abs(Number(given) - Number(q.answer)) < 0.5 : given === q.answer;
           return { status: 200, body: { correct, answer: q.answer, explanation: "Mock explanation: L = λ × W.", guide: [{ pointer: "Linking RED and USE > Little's Law", file: "investigation-guide.md" }] } };

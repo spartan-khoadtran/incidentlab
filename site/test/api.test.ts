@@ -21,7 +21,7 @@ describe("api client", () => {
     const view = await api.start({ mode: "incident" });
     await api.hint(view.key);
     const get = state.calls.find((c) => c.method === "GET")!;
-    expect(get.headers["x-lab-client"]).toBeNull();
+    expect(get.headers).toEqual({ "content-type": null, "x-lab-client": null });
     for (const c of state.calls.filter((c) => c.method === "POST")) {
       expect(c.headers).toEqual({ "content-type": "application/json", "x-lab-client": "web" });
     }
@@ -45,8 +45,15 @@ describe("api client", () => {
     await expect(api.clear(first.key)).rejects.toMatchObject({ code: "exercise_changed" });
     expect(state.lab.active?.key).toBe(second.key);
     expect(state.lab.history).toEqual([]);
-    await api.clear(second.key);
+    await expect(api.clear(second.key)).resolves.toEqual({ cleared: true });
     expect(state.lab.active).toBeNull();
+  });
+
+  it("answers cleared: false, not an error, when nothing is open", async () => {
+    await expect(api.clear()).resolves.toEqual({ cleared: false });
+    const view = await api.start({});
+    state.lab.handle("POST", "/api/exercise/clear", { "content-type": "application/json", "x-lab-client": "web" }, {});
+    await expect(api.clear(view.key)).resolves.toEqual({ cleared: false });
   });
 
   it("reports the lab as offline when the proxy answers with HTML", async () => {

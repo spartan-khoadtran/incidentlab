@@ -1,6 +1,6 @@
 import { PageHead, Rich } from "../components/Bits";
 import { Cmd } from "../components/Copy";
-import { make } from "../lib/data";
+import { make } from "../lib/make";
 
 function title(text: string): string {
   return text[0].toUpperCase() + text.slice(1);

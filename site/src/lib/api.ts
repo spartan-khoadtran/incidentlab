@@ -89,7 +89,7 @@ export interface HistoryEntry {
   n: number;
   id: string;
   title: string;
-  level: number | null;
+  level: number;
   mode: Mode;
   score: number | null;
   hints: number;
@@ -105,7 +105,7 @@ export interface History {
   average: number | null;
   scored_count: number;
   by_topic: { topic: string; average: number; count: number }[];
-  most_missed_cause: (Option & { count: number }) | null;
+  most_missed_cause: { key: string; label: string; group: string | null; count: number } | null;
   ramp_average: number | null;
   ramp_count: number;
 }
