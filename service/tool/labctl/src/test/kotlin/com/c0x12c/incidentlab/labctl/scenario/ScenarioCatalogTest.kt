@@ -182,6 +182,12 @@ class ScenarioCatalogTest {
   }
 
   @Test
+  fun `cli entries are toolbox commands that say what to read`() {
+    val entries = ScenarioCatalog.all.flatMap { it.cli }
+    assertThat(entries.all { it.contains("   # ") && !it.contains("docker") && !it.contains("\${") }).isTrue()
+  }
+
+  @Test
   fun `the checkpoint explanation works out the dirty pages and the burst window`() {
     val explain = ScenarioCatalog.byId.getValue("checkpoint_bursts").explain(Params(mapOf("rows" to 300), "14:05"))
 

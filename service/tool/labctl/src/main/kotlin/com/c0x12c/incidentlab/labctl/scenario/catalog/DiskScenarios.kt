@@ -66,11 +66,10 @@ internal object DiskScenarios {
       "rate(noisy_fsync_total[1m])"
     ),
     cli = listOf(
-      "docker run --rm alpine:3.20 sh -c 'apk add -q sysstat && iostat -xz 1 5'",
-      "docker stats --no-stream --format 'table {{.Name}}\\t{{.BlockIO}}'",
-      "docker compose exec postgres psql -U lab -d lab -c \"SELECT wait_event_type, wait_event, count(*) FROM pg_stat_activity " +
-        "WHERE wait_event IS NOT NULL GROUP BY 1, 2 ORDER BY 3 DESC\"",
-      "docker compose exec postgres psql -U lab -d lab -c \"SELECT wal_sync, wal_sync_time FROM pg_stat_wal\""
+      "iostat -xz 1 5   # %util and w_await of the disk under the volumes climb while the export runs",
+      "pidstat -d -l 1 5   # the noisy java process writes tens of MB/s (kB_wr/s), postgres writes little",
+      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"SELECT wait_event_type, wait_event, count(*) FROM pg_stat_activity WHERE wait_event IS NOT NULL GROUP BY 1, 2 ORDER BY 3 DESC\"   # IO WALSync shows up again and again, no Lock rows",
+      "PGPASSWORD=lab psql -h postgres -U lab lab -c 'SELECT wal_sync, wal_sync_time FROM pg_stat_wal'   # run it twice a minute apart: sync time grows much faster than the sync count"
     ),
     doc = "Postgres and the disk > WAL and fsync at commit; Disk math > Await and the queue"
   )
@@ -141,10 +140,9 @@ internal object DiskScenarios {
       "100 * rate(node_disk_io_time_seconds_total[1m])"
     ),
     cli = listOf(
-      "docker compose exec postgres psql -U lab -d lab -c \"SELECT name, setting, sourcefile FROM pg_settings " +
-        "WHERE name IN ('checkpoint_timeout', 'checkpoint_completion_target', 'max_wal_size')\"",
-      "docker compose exec postgres psql -U lab -d lab -c \"SELECT checkpoints_timed, checkpoints_req, checkpoint_write_time, checkpoint_sync_time, buffers_checkpoint FROM pg_stat_bgwriter\"",
-      "docker compose logs --since 5m postgres | grep 'checkpoint complete'"
+      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"SELECT name, setting, sourcefile FROM pg_settings WHERE name IN ('checkpoint_timeout', 'checkpoint_completion_target', 'max_wal_size')\"   # 30, 0.1 and 64, set in postgresql.auto.conf",
+      "for i in 1 2; do PGPASSWORD=lab psql -h postgres -U lab lab -c 'SELECT checkpoints_timed, checkpoints_req, checkpoint_write_time, checkpoint_sync_time, buffers_checkpoint FROM pg_stat_bgwriter'; sleep 60; done   # about two more checkpoints a minute later, a few thousand buffers each",
+      "iostat -xz 1 60   # writes to the disk come in bursts every 30 s, quiet in between"
     ),
     doc = "Postgres and the disk > Checkpoints; Disk panels in this lab > The Postgres row"
   )
@@ -196,10 +194,9 @@ internal object DiskScenarios {
       "pg_wait_events{type=\"IO\"}"
     ),
     cli = listOf(
-      "docker compose exec control cat /host/cgroup/docker/$(docker compose ps -q postgres)/io.max",
-      "docker run --rm alpine:3.20 sh -c 'apk add -q sysstat && iostat -xz 1 5'",
-      "docker compose exec postgres psql -U lab -d lab -c \"SELECT wait_event_type, wait_event, count(*) FROM pg_stat_activity " +
-        "WHERE wait_event IS NOT NULL GROUP BY 1, 2 ORDER BY 3 DESC\""
+      "cat $(cg $(pgrep -o -x postgres))/io.max   # a line <maj:min> ... wiops=N: the write quota on the postgres cgroup",
+      "iostat -xz 1 5   # w_await and %util of that disk stay low: the device is idle",
+      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"SELECT wait_event_type, wait_event, count(*) FROM pg_stat_activity WHERE wait_event IS NOT NULL GROUP BY 1, 2 ORDER BY 3 DESC\"   # IO WALSync shows up again and again although the disk is idle"
     ),
     doc = "Postgres and the disk > IOPS limits in the cloud; Disk panels in this lab > The Postgres row"
   )
