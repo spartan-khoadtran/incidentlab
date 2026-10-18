@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { PageHead, Rich } from "../components/Bits";
 import { FaultLoop } from "../components/FaultLoop";
-import { facts, RequestPath } from "../components/RequestPath";
+import { RequestPath } from "../components/RequestPath";
+import { facts } from "../lib/facts";
 import { compose, highlights, lab, service, target, type ComposeService } from "../lib/data";
 import { NODES } from "../lib/topology";
 

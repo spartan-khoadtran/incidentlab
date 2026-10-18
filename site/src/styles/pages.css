@@ -814,6 +814,11 @@
   font-size: 0.9rem;
 }
 
+.filters-note {
+  font-size: 0.84rem;
+  color: var(--ink-3);
+}
+
 .filters-play {
   display: flex;
   align-items: center;
