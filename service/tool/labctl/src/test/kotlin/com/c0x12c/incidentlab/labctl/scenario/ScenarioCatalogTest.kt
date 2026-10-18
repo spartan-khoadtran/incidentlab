@@ -83,13 +83,12 @@ class ScenarioCatalogTest {
   fun `a cause is no longer a one-to-one key for a scenario`() {
     val scenariosPerCause = ScenarioCatalog.all.groupingBy { it.answer.cause }.eachCount()
     assertThat(scenariosPerCause.getValue("pool_exhausted")).isEqualTo(2)
-    assertThat(scenariosPerCause.getValue("downstream_slow")).isEqualTo(3)
+    assertThat(scenariosPerCause.getValue("downstream_slow")).isEqualTo(4)
     assertThat(scenariosPerCause.getValue("lb_no_healthy")).isEqualTo(2)
     assertThat(scenariosPerCause.getValue("global_load")).isEqualTo(2)
     assertThat(scenariosPerCause.getValue("single_thread_cpu")).isEqualTo(2)
     assertThat(scenariosPerCause.getValue("client_timeout")).isEqualTo(2)
     assertThat(scenariosPerCause.getValue("cache_miss")).isEqualTo(2)
-    assertThat(scenariosPerCause.getValue("downstream_errors")).isEqualTo(2)
   }
 
   @Test
@@ -318,12 +317,28 @@ class ScenarioCatalogTest {
   }
 
   @Test
-  fun `the unexplained win hides pricing errors behind api's fallback`() {
+  fun `the unexplained win slows pricing first and hides it behind a short timeout and a fallback after the deploy`() {
     val scenario = ScenarioCatalog.byId.getValue("unexplained_win")
-    val spec = scenario.faults(Params(scenario.params(Random(1), ExerciseContext()), "14:05"))
-    assertThat(spec.services.getValue("api")).isEqualTo(mapOf<String, Any?>("price_fallback" to true))
-    assertThat(spec.services.getValue("pricing")["error_rate"]).isEqualTo(1.0)
-    assertThat(scenario.answer).isEqualTo(ScenarioCatalog.byId.getValue("downstream_errors").answer)
+    val random = Random(1)
+    repeat(20) {
+      val values = scenario.params(random, ExerciseContext())
+      val base = values["base"] as Int
+      assertThat(base).isBetween(250, 400)
+      // the fastest call after the 25% jitter still passes the timeout, so every call falls back
+      assertThat(base * 0.75 > DownstreamScenarios.FALLBACK_TIMEOUT_MS).isTrue()
+      val before = scenario.faults(Params(values, "14:05", elapsedSeconds = DownstreamScenarios.DEPLOY_AFTER_SECONDS - 1.0))
+      val after = scenario.faults(Params(values, "14:05", elapsedSeconds = DownstreamScenarios.DEPLOY_AFTER_SECONDS.toDouble()))
+      assertThat(before.services).isEqualTo(mapOf("pricing" to mapOf<String, Any?>("price_base_ms" to base)))
+      assertThat(after.services.getValue("pricing")).isEqualTo(mapOf<String, Any?>("price_base_ms" to base))
+      assertThat(after.services.getValue("api")).isEqualTo(mapOf<String, Any?>("price_fallback" to true, "pricing_timeout_s" to 0.15))
+    }
+    assertThat(scenario.answer.cause).isEqualTo("downstream_slow")
+    assertThat(scenario.answer.partial).containsOnly("downstream_errors")
+    assertThat(scenario.marker == null).isTrue()
+    // 50 + 300 = 350 ms before, 50 + 150 = 200 ms after: 150 ms faster
+    val explain = scenario.explain(Params(mapOf("base" to 300), "14:05"))
+    assertThat(explain.contains("about 350 ms")).isTrue()
+    assertThat(explain.contains("= 200 ms: about 150 ms faster")).isTrue()
   }
 
   @Test

@@ -1,11 +1,13 @@
 package com.c0x12c.incidentlab.labctl.scenario.catalog
 
 import com.c0x12c.incidentlab.labctl.scenario.Answer
+import com.c0x12c.incidentlab.labctl.scenario.Baseline.BASE_CHECKOUT_HOLD_MS
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.CHECKOUTS_PER_SECOND
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.DEFAULT_CPU_COUNT
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.MILLIS_PER_SECOND
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.PERCENT
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.PRICE_BASE_MS
+import com.c0x12c.incidentlab.labctl.scenario.Baseline.SECONDS_PER_MINUTE
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.THOUSANDTHS
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.round2
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
@@ -292,54 +294,73 @@ internal object DownstreamScenarios {
     title = "Good news that is not",
     level = 3,
     topics = listOf("layers", "red"),
-    params = { _, _ -> mapOf("error_rate" to 1.0) },
+    params = { random, _ -> mapOf("base" to random.nextInt(MIN_SLOW_PRICE_MS / STEP_MS, MAX_SLOW_PRICE_MS / STEP_MS + 1) * STEP_MS) },
     faults = { p ->
-      FaultSpec(
-        services = mapOf(
-          "api" to mapOf("price_fallback" to true),
-          "pricing" to mapOf("error_rate" to p.double("error_rate"), "price_base_ms" to 0)
-        )
-      )
+      val pricing = mapOf("pricing" to mapOf<String, Any?>("price_base_ms" to p.int("base")))
+      if (p.elapsedSeconds < DEPLOY_AFTER_SECONDS) {
+        FaultSpec(services = pricing)
+      } else {
+        FaultSpec(services = pricing + ("api" to mapOf("price_fallback" to true, "pricing_timeout_s" to FALLBACK_TIMEOUT_MS / MILLIS_PER_SECOND)))
+      }
     },
-    marker = { "Deploy api v2.41: resilience improvements" },
     decoy = 0.3,
     ticket = { p ->
-      "Good news for once: at ${p.startedAt}, /checkout p99 stepped down and the error rate is zero. The PM wants to know what went right so we can do more of it. " +
-        "Explain the win."
+      "Since ${p.startedAt}, /checkout is slow. Our fix, api v2.41 with resilience improvements, goes out in about ${DEPLOY_AFTER_SECONDS / SECONDS_PER_MINUTE} minutes. " +
+        "Write down the /checkout numbers now. After the deploy the PM expects good news: explain what changed, and whether it is a real win."
     },
     hints = listOf(
-      "Latency falls when work is skipped. Which part of a /checkout got shorter? Compare the spans before and after.",
-      "api's client view of pricing: http_client_requests_total by outcome. Is pricing still answering 200?",
-      "pricing's own RED shows 5xx on every /price. api hides them with a fallback: check app_price_fallback_total and the mean order value."
+      "Latency falls when work is skipped or cut short. Which part of a /checkout got shorter at the deploy? Compare the spans before and after.",
+      "api's client view of pricing: http_client_requests_total by outcome and http_client_duration_seconds. Does pricing still answer in time?",
+      "pricing's own p99 did not change at the deploy. api gives up on it now and charges list prices: check app_price_fallback_total and the mean order value."
     ),
-    answer = Answer(nature = setOf("arch"), location = setOf("pricing"), signal = setOf("api_vs_downstream"), cause = "downstream_errors"),
+    answer = Answer(
+      nature = setOf("arch"),
+      location = setOf("pricing"),
+      signal = setOf("api_vs_downstream"),
+      cause = "downstream_slow",
+      partial = setOf("downstream_errors")
+    ),
     explain = { p ->
-      "pricing's rules engine is down: ${p.percent("error_rate")} of /price calls fail right away with a 503. api v2.41 catches the failure and charges the list " +
-        "prices instead, so the checkout still answers 200. /checkout got faster by the whole pricing call, about $PRICE_BASE_MS ms, because a fast failure plus " +
-        "a fallback is quicker than a real quote. Errors are zero at the client, at the LB and at api. Two layers down the truth is visible: api's client view of " +
-        "pricing shows outcome=http_5xx on every call, and pricing's own RED shows 503s. The business sees it too: every order since the deploy lost its " +
-        "$PRICING_DISCOUNT_PERCENT% discount, so the mean order value went up by about that much. A fallback that hides a failure is worse than an error: nobody is " +
-        "paged, the wrong numbers look like a win, and customers pay the bill. Alert on the client outcome, on the downstream's own errors, and on a business " +
-        "metric such as the mean order value or the fallback count."
+      val base = p.int("base")
+      val before = BASE_CHECKOUT_HOLD_MS + base
+      val after = BASE_CHECKOUT_HOLD_MS + FALLBACK_TIMEOUT_MS
+      "pricing got slow at the start: its rules engine takes about $base ms per /price instead of $PRICE_BASE_MS. api waited for it, so a /checkout " +
+        "cost about $BASE_CHECKOUT_HOLD_MS ms of DB work plus $base ms of pricing, about $before ms. Errors were zero, because the default pricing timeout is 2 s. " +
+        "api v2.41 cut the pricing timeout to $FALLBACK_TIMEOUT_MS ms and, when the call fails, charges the list prices. Every call to pricing takes longer than " +
+        "$FALLBACK_TIMEOUT_MS ms, so every call times out and every checkout falls back. A /checkout now costs about $BASE_CHECKOUT_HOLD_MS + $FALLBACK_TIMEOUT_MS = " +
+        "$after ms: about ${before - after} ms faster, still with zero errors. Nothing got better below api. pricing's own p99 is still about $base ms or more, " +
+        "and api's client view of pricing shows outcome=timeout on every call. The business sees it too: the list price has no $PRICING_DISCOUNT_PERCENT% discount, " +
+        "so the mean order value went up by about that much. A fallback that hides a failing downstream is worse than an error: nobody is paged, the wrong " +
+        "numbers look like a win, and customers pay the bill. The root cause is the slow downstream. Alert on the client outcome, on the downstream's own " +
+        "latency, and on a business metric such as the mean order value or the fallback count."
     },
     steps = listOf(
-      "Problem statement: p99 down, errors zero, a deploy of api minutes before. Treat a sudden win like an incident: something changed.",
-      "RED at api: /checkout p99 stepped down by about the length of one pricing call. Faster means work was skipped.",
-      "Compare adjacent layers: api's client view of pricing shows outcome=http_5xx on every call, yet api's own error rate is 0.",
-      "pricing's own RED: 503 on every /price since the same minute. The downstream is down.",
-      "Read the deploy note: resilience improvements means a fallback. app_price_fallback_total counts every checkout priced without pricing.",
-      "Check the business metric: the mean order value rose by the discount pricing used to apply. Customers are overcharged.",
-      "The cause: a downstream returns errors and a fallback hides them. Fix pricing, and alert on the outcome of the call, not only on api's status codes."
+      "Problem statement: /checkout slow, then a deploy, then p99 down with zero errors. Treat a sudden win like an incident: something changed.",
+      "Before the deploy: /checkout p99 follows the pricing call. api's client view and pricing's own p99 are both slow. The downstream is slow.",
+      "RED at api after the deploy: /checkout p99 stepped down. Faster means work was skipped or cut short.",
+      "Compare adjacent layers: api's client view of pricing shows outcome=timeout on every call, yet api's own error rate is 0.",
+      "pricing's own p99 did not change at the deploy. The downstream is as slow as before. api just stopped waiting for it.",
+      "app_price_fallback_total counts every checkout priced without pricing, and the mean order value rose by the discount pricing used to apply.",
+      "The cause: a slow downstream, now hidden by a short timeout and a fallback. Fix pricing, and alert on the outcome of the call, not only on api's status codes."
     ),
     evidence = listOf(
       "sum by (outcome) (rate(http_client_requests_total{job=\"api\",target=\"pricing\"}[1m]))",
-      "sum by (status) (rate(http_server_requests_total{job=\"pricing\"}[1m]))",
+      "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"pricing\",route=\"/price\"}[1m])))",
       "rate(app_price_fallback_total{job=\"api\"}[1m])",
       "sum(rate(orders_value_total[5m])) / sum(rate(orders_total[5m]))",
       "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\",route=\"/checkout\"}[1m])))"
     ),
     doc = "RED at many layers > Why Errors differ (a fallback hides errors); RED at many layers > Compare two adjacent layers"
   )
+
+  // pricing gets slow at the start, and api's resilience deploy lands this long after it.
+  internal const val DEPLOY_AFTER_SECONDS = 120
+  internal const val FALLBACK_TIMEOUT_MS = 150
+
+  // With the default jitter of 25%, the fastest slow call is 0.75 × 250 ms, above the 150 ms timeout.
+  private const val MIN_SLOW_PRICE_MS = 250
+  private const val MAX_SLOW_PRICE_MS = 400
+  private const val STEP_MS = 10
 
   // pricing's quote is the list prices minus this discount; the fallback charges the list prices.
   private const val PRICING_DISCOUNT_PERCENT = 5
