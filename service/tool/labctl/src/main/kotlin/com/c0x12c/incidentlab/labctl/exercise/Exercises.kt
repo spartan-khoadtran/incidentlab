@@ -428,7 +428,7 @@ class Exercises(
     const val MIN_LOAD = 0.1
     const val MAX_LOAD = 6.0
     private const val MAX_LEVEL = 3
-    private const val RECENT_WINDOW = 5
+    const val RECENT_WINDOW = 5
     private const val DECOY_MAX_LEAD_SECONDS = 600
     private const val DECOY_MAX_LAG_SECONDS = 60
     private const val MARKER_MAX_LEAD_SECONDS = 180

@@ -11,6 +11,7 @@ import com.c0x12c.incidentlab.labctl.control.JsonHttp
 import com.c0x12c.incidentlab.labctl.control.NetemApplier
 import com.c0x12c.incidentlab.labctl.control.ServiceFaultApplier
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
+import com.c0x12c.incidentlab.labctl.export.LabExport
 import com.c0x12c.incidentlab.labctl.quiz.Quiz
 import com.c0x12c.incidentlab.labctl.ramp.RampExercise
 import com.c0x12c.incidentlab.labctl.state.StateStore
@@ -24,6 +25,7 @@ import kotlin.system.exitProcess
 //   labctl new|hint|answer|reveal|clear|status|list|history|load|quiz
 //   labctl ramp              a capacity ramp on the live lab (its own mode of make answer)
 //   labctl bench             closed-loop clients for a while, then a before/after report
+//   labctl export OUT.json   the catalog and quiz counts the handbook site shows, with no answer in it
 object Main : Logging {
 
   @JvmStatic
@@ -64,6 +66,10 @@ object Main : Logging {
         "load" -> exercises.load(CommandLine.loadMultiplier(args.getOrNull(1)))
         "ramp" -> ramp.start(CommandLine.rampOptions(args.drop(1)))
         "bench" -> bench.start(CommandLine.benchOptions(args.drop(1)))
+        "export" -> {
+          LabExport.write(Path.of(args.getOrNull(1) ?: return usage()))
+          0
+        }
         "quiz" -> {
           val options = CommandLine.quizOptions(args.drop(1), DEFAULT_QUIZ_QUESTIONS)
           terminal.out("Drills from the guide. A number question takes a number (a comma or a dot both work as the decimal separator). A concept question takes the number of one option.")
@@ -83,7 +89,7 @@ object Main : Logging {
   private fun usage(): Int {
     println(
       "usage: labctl daemon | new [--level N] [--topic T] [--id ID] [--force] [--mode incident|toolbox] | hint | answer | reveal | clear | status | list | history | load X | " +
-        "quiz [-n N] [--kind numbers|concepts|all] | ramp [--every S] | bench [--clients N] [--seconds S]"
+        "quiz [-n N] [--kind numbers|concepts|all] | ramp [--every S] | bench [--clients N] [--seconds S] | export OUT.json"
     )
     return USAGE_EXIT
   }
