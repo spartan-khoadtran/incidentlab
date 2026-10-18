@@ -3,12 +3,14 @@ package com.c0x12c.incidentlab.labctl.quiz
 import assertk.assertThat
 import assertk.assertions.hasSize
 import assertk.assertions.isBetween
+import assertk.assertions.isCloseTo
 import assertk.assertions.isEmpty
 import assertk.assertions.isEqualTo
 import assertk.assertions.isFalse
 import assertk.assertions.isNull
 import assertk.assertions.isTrue
 import com.c0x12c.incidentlab.labctl.Terminal
+import com.c0x12c.incidentlab.labctl.quiz.numbers.MethodsNumbers
 import kotlin.random.Random
 import org.junit.jupiter.api.Test
 
@@ -141,6 +143,13 @@ class QuizTest {
 
     assertThat(score).isEqualTo(0)
     assertThat(terminal.lines.any { it.startsWith("  NOT QUITE. Answer: ") && it.endsWith(drill.answer) }).isTrue()
+  }
+
+  @Test
+  fun `the methods formulas give the answer worked out by hand on fixed values`() {
+    assertThat(MethodsNumbers.methodRSplit(taskMs = 400, stepMs = 80, factor = 4).answer).isCloseTo(340.0, 0.001)
+    assertThat(MethodsNumbers.methodRShare(taskMs = 400, stepMs = 250).answer).isCloseTo(62.5, 0.001)
+    assertThat(MethodsNumbers.baselineDrift(startMs = 200, growthPercent = 2, weeks = 4).answer).isCloseTo(216.486, 0.001)
   }
 
   private companion object {
