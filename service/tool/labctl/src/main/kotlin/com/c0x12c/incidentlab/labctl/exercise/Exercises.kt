@@ -3,15 +3,13 @@ package com.c0x12c.incidentlab.labctl.exercise
 import com.c0x12c.incidentlab.labctl.Terminal
 import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.LabProbe
+import com.c0x12c.incidentlab.labctl.exercise.Outcome.Done
+import com.c0x12c.incidentlab.labctl.exercise.Outcome.Refused
 import com.c0x12c.incidentlab.labctl.guide.GuideIndex
 import com.c0x12c.incidentlab.labctl.scenario.Answers
 import com.c0x12c.incidentlab.labctl.scenario.Baseline
-import com.c0x12c.incidentlab.labctl.scenario.ExerciseContext
-import com.c0x12c.incidentlab.labctl.scenario.Params
-import com.c0x12c.incidentlab.labctl.scenario.Scenario
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
-import com.c0x12c.incidentlab.labctl.state.ActiveExercise
-import com.c0x12c.incidentlab.labctl.state.HistoryEntry
+import com.c0x12c.incidentlab.labctl.state.Choices
 import com.c0x12c.incidentlab.labctl.state.LabState
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import java.time.Instant
@@ -21,52 +19,34 @@ import java.util.Locale
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
-data class NewOptions(
-  val level: Int = 0,
-  val topic: String = "",
-  val id: String = "",
-  val force: Boolean = false,
-  val mode: String = Exercises.INCIDENT
-)
-
-/** The learner-facing commands. Each one returns the process exit code. */
+/** The learner-facing commands: prompts and printing over [ExerciseEngine]. Each one returns the process exit code. */
 class Exercises(
   private val store: StateStore,
   private val probe: LabProbe,
-  private val annotator: Annotator,
+  annotator: Annotator,
   private val terminal: Terminal,
   private val catalog: ScenarioCatalog = ScenarioCatalog,
-  private val random: Random = Random.Default,
-  private val now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
+  random: Random = Random.Default,
+  now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
   private val zone: ZoneId = ZoneId.systemDefault(),
   /** The other exercise kinds; each owns the commands while its mode is active. */
   private val modes: List<ExerciseMode> = emptyList()
 ) {
 
+  private val engine = ExerciseEngine(store, probe, annotator, catalog, random, now, zone)
+
   private fun modeOf(state: LabState): ExerciseMode? = state.active?.let { active -> modes.firstOrNull { it.mode == active.mode } }
 
   fun newExercise(options: NewOptions): Int {
-    val state = store.load()
-    if (state.active != null && !options.force) {
-      terminal.out("An exercise is still open. Use `make answer`, `make reveal` or `make clear`, or `make new FORCE=1` to drop it.")
-      return 1
+    val view = when (val outcome = engine.start(options)) {
+      is Done -> outcome.value.active
+      is Refused -> return refused(outcome.refusal)
     }
-    val scenario = pick(state, options) ?: return 1
-    val context = ExerciseContext(cpuCount = probe.cpuCount(), productDetailSeconds = probe.productDetailSeconds(), tenants = probe.tenants())
-    val params = scenario.params(random, context)
-    val startedAt = now()
-    val number = state.history.size + 1
-    store.save(state.copy(active = ActiveExercise(id = scenario.id, mode = options.mode, params = params, started = startedAt, n = number)))
-    val rendered = Params(params, hhmm(startedAt))
-    if (random.nextDouble() < scenario.decoy) {
-      annotator.annotate(Answers.DECOYS.random(random), listOf("change"), startedAt + random.nextInt(-DECOY_MAX_LEAD_SECONDS, DECOY_MAX_LAG_SECONDS + 1))
-    }
-    scenario.marker?.let { annotator.annotate(it(rendered), listOf("change"), startedAt - random.nextInt(0, MARKER_MAX_LEAD_SECONDS + 1)) }
-    banner("EXERCISE #$number  ·  level ${scenario.level}  ·  ticket opened at ${hhmm(startedAt)}")
-    terminal.out(scenario.ticket(rendered))
+    banner("EXERCISE #${view.n}  ·  level ${view.level}  ·  ticket opened at ${hhmm(view.startedAt)}")
+    terminal.out(view.ticket)
     terminal.out()
     terminal.out("The fault is now being applied to the system. Wait 1-2 minutes for the numbers to show, then start investigating.")
-    if (options.mode == TOOLBOX) {
+    if (view.mode == TOOLBOX) {
       terminal.out(TOOLBOX_RULES)
       terminal.out("Suggested approach: problem statement -> the 60-second checklist -> the suspect's process, cgroup and /metrics -> the command that proves the cause.")
     } else {
@@ -82,114 +62,79 @@ class Exercises(
   fun hint(): Int {
     val state = store.load()
     modeOf(state)?.let { return it.hint(state) }
-    val active = requireActive(state) ?: return 1
-    val scenario = catalog.byId.getValue(active.id)
-    if (active.answered) {
-      terminal.out("This exercise was already submitted. `make reveal` shows the answer again, `make clear` ends it.")
-      return 0
+    val view = when (val outcome = engine.hint()) {
+      is Done -> outcome.value
+      is Refused -> return refused(outcome.refusal, "This exercise was already submitted. `make reveal` shows the answer again, `make clear` ends it.")
     }
-    if (active.hints >= scenario.hints.size) {
-      terminal.out("No hints left. Use `make answer` to submit or `make reveal` to see the answer.")
-      return 0
-    }
-    val used = active.hints + 1
-    store.save(state.copy(active = active.copy(hints = used)))
-    terminal.out("Hint $used/${scenario.hints.size} (-${plain(HINT_PENALTY)} point, -${plain(HINT_PENALTY * used)} in total): ${scenario.hints[used - 1]}")
+    val used = view.hintsUsed
+    terminal.out("Hint $used/${view.hintsTotal} (-${plain(view.hintPenalty)} point, -${plain(view.hintPenalty * used)} in total): ${view.hints.last()}")
     return 0
   }
 
   fun answer(): Int {
     val state = store.load()
     modeOf(state)?.let { return it.answer(state) }
-    val active = requireActive(state) ?: return 1
-    if (active.answered) {
-      terminal.out("This exercise was already submitted. Use `make clear`, then `make new`.")
-      return 0
-    }
-    val scenario = catalog.byId.getValue(active.id)
+    val submitted = "This exercise was already submitted. Use `make clear`, then `make new`."
+    (engine.answerable() as? Refused)?.let { return refused(it.refusal, submitted) }
     terminal.out("Four questions. Type the number of your choice and press Enter. Ctrl-C quits without scoring.")
     val nature = choose("1) What is the nature of the problem?", Answers.NATURES) ?: return inputClosed()
     val location = choose("2) Where is the cause?", Answers.LOCATIONS) ?: return inputClosed()
     val signal = choose("3) Which signal proves it?", Answers.SIGNALS) ?: return inputClosed()
     val cause = choose("4) What is the root cause?", Answers.CAUSES, Answers.CAUSE_GROUPS) ?: return inputClosed()
-    val expected = scenario.answer
-    val missed = mutableListOf<String>()
-    var points = 0.0
-    if (nature in expected.nature) points += NATURE_POINTS else missed += "nature"
-    if (location in expected.location) points += LOCATION_POINTS else missed += "location"
-    if (signal in expected.signal) points += SIGNAL_POINTS else missed += "signal"
-    val causeVerdict = when (cause) {
-      expected.cause -> {
-        points += CAUSE_POINTS
-        "correct"
-      }
-      in expected.partial -> {
-        points += PARTIAL_POINTS
-        missed += "cause (partial)"
-        "partly correct"
-      }
-      else -> {
-        missed += "cause"
-        "wrong"
-      }
+    val result = when (val outcome = engine.submit(Choices(nature, location, signal, cause))) {
+      is Done -> outcome.value
+      is Refused -> return refused(outcome.refusal, submitted)
     }
-    val raw = points
-    val score = (points - HINT_PENALTY * active.hints).coerceAtLeast(0.0)
-    banner("RESULT: ${plain(score)}/${plain(MAX_POINTS)}  (correct ${plain(raw)}/${plain(MAX_POINTS)}, ${active.hints} hint(s) used)  ·  exercise: ${scenario.title}")
-    terminal.out("  Nature   : ${verdict("nature" !in missed)}")
-    terminal.out("  Location : ${verdict("location" !in missed)}")
-    terminal.out("  Signal   : ${verdict("signal" !in missed)}")
-    terminal.out("  Cause    : $causeVerdict")
-    explain(scenario, active)
+    banner(
+      "RESULT: ${plain(result.score)}/${plain(result.max)}  (correct ${plain(result.raw)}/${plain(result.max)}, ${result.hintsUsed} hint(s) used)  ·  exercise: ${result.reveal.title}"
+    )
+    terminal.out("  Nature   : ${result.verdicts.nature}")
+    terminal.out("  Location : ${result.verdicts.location}")
+    terminal.out("  Signal   : ${result.verdicts.signal}")
+    terminal.out("  Cause    : ${if (result.verdicts.cause == ExerciseEngine.PARTIAL) "partly correct" else result.verdicts.cause}")
+    explain(result.reveal)
     val note = terminal.ask("\nOne line for your future self: what evidence did you use? (Enter to skip) ")?.trim().orEmpty()
-    finish(state.copy(active = active.copy(answered = true)), score, missed, note)
+    engine.note(result.n, note)
+    offerClear()
     return 0
   }
-
-  private fun verdict(correct: Boolean): String = if (correct) "correct" else "wrong"
 
   fun reveal(): Int {
     val state = store.load()
     modeOf(state)?.let { return it.reveal(state) }
-    val active = requireActive(state) ?: return 1
-    val scenario = catalog.byId.getValue(active.id)
-    if (active.answered) {
-      banner("EXERCISE #${active.n}: ${scenario.title} (already scored)")
-      explain(scenario, active)
-      offerClear(state)
-      return 0
+    val revealed = when (val outcome = engine.reveal()) {
+      is Done -> outcome.value
+      is Refused -> return refused(outcome.refusal)
     }
-    banner("EXERCISE #${active.n}: ${scenario.title} (not scored)")
-    explain(scenario, active)
-    finish(state.copy(active = active.copy(answered = true)), score = null)
+    banner("EXERCISE #${revealed.n}: ${revealed.reveal.title} (${if (revealed.wasAnswered) "already scored" else "not scored"})")
+    explain(revealed.reveal)
+    offerClear()
     return 0
   }
 
   fun clear(): Int {
-    val state = store.load()
-    if (state.active != null) {
-      annotator.annotate("lab: fault cleared", listOf("clear"), now())
-    }
-    store.save(state.copy(active = null))
+    engine.clear()
     terminal.out("No fault is running any more. The system recovers in about 10-60 seconds.")
     return 0
   }
 
   fun status(): Int {
     val state = store.load()
-    val active = state.active
     val mode = modeOf(state)
     if (mode != null) {
       mode.status(state)
-    } else if (active == null) {
+    } else if (state.active == null) {
       terminal.out("No exercise is running.")
-    } else if (resumable(active)) {
-      val scenario = catalog.byId.getValue(active.id)
-      val minutes = ((now() - active.started) / SECONDS_PER_MINUTE).roundToInt()
-      terminal.out("Exercise #${active.n} (level ${scenario.level}) has been running for $minutes min, ${active.hints} hint(s) used.")
-      terminal.out(scenario.ticket(Params(active.params, hhmm(active.started))))
-      if (active.mode == TOOLBOX) {
-        terminal.out(TOOLBOX_RULES)
+    } else {
+      when (val outcome = engine.active()) {
+        is Done -> {
+          val view = outcome.value.active
+          val minutes = (view.elapsedSeconds / SECONDS_PER_MINUTE).roundToInt()
+          terminal.out("Exercise #${view.n} (level ${view.level}) has been running for $minutes min, ${view.hintsUsed} hint(s) used.")
+          terminal.out(view.ticket)
+          view.rules?.let { terminal.out(it) }
+        }
+        is Refused -> refused(outcome.refusal)
       }
     }
     terminal.out()
@@ -220,13 +165,12 @@ class Exercises(
   }
 
   fun history(): Int {
-    val history = store.load().history
-    if (history.isEmpty()) {
+    val view = engine.history()
+    if (view.entries.isEmpty()) {
       terminal.out("No exercises yet.")
       return 0
     }
-    val scored = history.filter { it.score != null }
-    for (entry in history) {
+    for (entry in view.entries) {
       val score = entry.score?.let { "${plain(it)}/${plain(MAX_POINTS)}" } ?: "-"
       val at = Instant.ofEpochSecond(entry.at.toLong()).atZone(zone).format(DAY_TIME)
       val missed = if (entry.missed.isEmpty()) "" else "  missed: ${entry.missed.joinToString(", ")}"
@@ -236,78 +180,39 @@ class Exercises(
         terminal.out("     note: ${entry.note}")
       }
     }
-    if (scored.isNotEmpty()) {
-      terminal.out()
-      terminal.out("Average score: ${String.format(Locale.ROOT, "%.2f", scored.map { it.score!! }.average())}/${plain(MAX_POINTS)} over ${scored.size} exercise(s)")
-      terminal.out("By topic: " + byTopic(scored).joinToString(" · ") { (topic, average, count) -> "$topic ${String.format(Locale.ROOT, "%.1f", average)} ($count)" })
-      mostMissedCause(scored)?.let { (cause, count) -> terminal.out("Most missed cause: ${Answers.label(Answers.CAUSES, cause)} ($count time(s))") }
-    }
+    val average = view.average ?: return 0
+    terminal.out()
+    terminal.out("Average score: ${String.format(Locale.ROOT, "%.2f", average)}/${plain(MAX_POINTS)} over ${view.entries.count { it.score != null }} exercise(s)")
+    terminal.out("By topic: " + view.byTopic.joinToString(" · ") { "${it.topic} ${String.format(Locale.ROOT, "%.1f", it.average)} (${it.count})" })
+    view.mostMissedCause?.let { terminal.out("Most missed cause: ${it.label} (${it.count} time(s))") }
     return 0
   }
-
-  private fun byTopic(scored: List<HistoryEntry>): List<Triple<String, Double, Int>> =
-    scored.flatMap { entry -> catalog.byId[entry.id]?.topics.orEmpty().map { topic -> topic to entry.score!! } }
-      .groupBy({ it.first }, { it.second })
-      .map { (topic, scores) -> Triple(topic, scores.average(), scores.size) }
-      .sortedBy { it.second }
-
-  private fun mostMissedCause(scored: List<HistoryEntry>): Pair<String, Int>? =
-    scored.filter { entry -> entry.missed.any { it.startsWith("cause") } }
-      .mapNotNull { catalog.byId[it.id]?.answer?.cause }
-      .groupingBy { it }.eachCount()
-      .maxByOrNull { it.value }?.toPair()
 
   fun load(multiplier: Double): Int {
-    val x = multiplier.coerceIn(MIN_LOAD, MAX_LOAD)
-    store.update { state ->
-      val loadgen = state.base["loadgen"].orEmpty() + ("rate_multiplier" to x)
-      state.copy(base = state.base + ("loadgen" to loadgen))
-    }
-    terminal.out("Background load = ${plain(x)} x ${Baseline.BASE_RPS} rps = ${plain(Baseline.BASE_RPS * x)} rps (applied within a few seconds).")
+    val load = engine.load(multiplier)
+    terminal.out("Background load = ${plain(load.multiplier)} x ${Baseline.BASE_RPS} rps = ${plain(load.rps)} rps (applied within a few seconds).")
     return 0
   }
 
-  private fun pick(state: LabState, options: NewOptions): Scenario? {
-    val toolbox = options.mode == TOOLBOX
-    if (options.id.isNotEmpty()) {
-      val scenario = catalog.byId[options.id] ?: run {
-        terminal.out("No exercise '${options.id}'. See `make list`.")
-        return null
-      }
-      if (toolbox && scenario.cli.isEmpty()) {
-        terminal.out("'${options.id}' has no CLI proof yet, so it cannot run with `make toolbox`. `make list` tags the ones that can ($TOOLBOX_TAG).")
-        return null
-      }
-      return scenario
+  /** Prints why the engine did nothing. A refusal that only means "already done" exits 0, like the commands always did. */
+  private fun refused(refusal: Refusal, alreadyAnswered: String = ""): Int {
+    val (line, code) = when (refusal) {
+      Refusal.ExerciseOpen -> "An exercise is still open. Use `make answer`, `make reveal` or `make clear`, or `make new FORCE=1` to drop it." to 1
+      Refusal.NoExercise -> "No exercise is running. Use `make new` to start one." to 1
+      is Refusal.Stale -> stale(refusal.n) to 1
+      is Refusal.WrongMode -> stale(refusal.n) to 1
+      is Refusal.UnknownId -> "No exercise '${refusal.id}'. See `make list`." to 1
+      is Refusal.NoCli -> "'${refusal.id}' has no CLI proof yet, so it cannot run with `make toolbox`. `make list` tags the ones that can ($TOOLBOX_TAG)." to 1
+      Refusal.NoMatch -> "No exercise matches the LEVEL/TOPIC you chose. See `make list`." to 1
+      Refusal.AlreadyAnswered -> alreadyAnswered to 0
+      Refusal.NoHintsLeft -> "No hints left. Use `make answer` to submit or `make reveal` to see the answer." to 0
+      else -> error("an incident command cannot be refused with $refusal")
     }
-    val pool = catalog.all.filter {
-      (options.level == 0 || it.level == options.level) && (options.topic.isEmpty() || options.topic in it.topics) && (!toolbox || it.cli.isNotEmpty())
-    }
-    if (pool.isEmpty()) {
-      terminal.out("No exercise matches the LEVEL/TOPIC you chose. See `make list`.")
-      return null
-    }
-    val recent = state.history.takeLast(RECENT_WINDOW).map { it.id }
-    val fresh = pool.filter { it.id !in recent }
-    return (fresh.ifEmpty { pool }).random(random)
+    terminal.out(line)
+    return code
   }
 
-  private fun requireActive(state: LabState): ActiveExercise? {
-    val active = state.active ?: run {
-      terminal.out("No exercise is running. Use `make new` to start one.")
-      return null
-    }
-    return active.takeIf { resumable(it) }
-  }
-
-  /** False when the exercise was started by an older catalog and its params no longer render. */
-  private fun resumable(active: ActiveExercise): Boolean {
-    val renders = catalog.byId[active.id]?.let { scenario -> runCatching { scenario.ticket(Params(active.params, hhmm(active.started))) }.isSuccess } ?: false
-    if (!renders) {
-      terminal.out("Exercise #${active.n} was started by an older version of the lab and cannot be resumed. Use `make clear`, then `make new`.")
-    }
-    return renders
-  }
+  private fun stale(n: Int): String = "Exercise #$n was started by an older version of the lab and cannot be resumed. Use `make clear`, then `make new`."
 
   private fun choose(title: String, options: List<Pair<String, String>>, groups: Map<String, String> = emptyMap()): String? {
     terminal.out()
@@ -336,103 +241,69 @@ class Exercises(
     return 1
   }
 
-  private fun explain(scenario: Scenario, active: ActiveExercise) {
-    val params = Params(active.params, hhmm(active.started))
+  private fun explain(reveal: Reveal) {
     terminal.out()
     terminal.out("ANSWER")
-    terminal.out("  Nature   : ${scenario.answer.nature.joinToString(" / ") { Answers.label(Answers.NATURES, it) }}")
-    terminal.out("  Location : ${scenario.answer.location.joinToString(" / ") { Answers.label(Answers.LOCATIONS, it) }}")
-    terminal.out("  Signal   : ${scenario.answer.signal.joinToString(" / ") { Answers.label(Answers.SIGNALS, it) }}")
-    terminal.out("  Cause    : ${Answers.label(Answers.CAUSES, scenario.answer.cause)}")
+    terminal.out("  Nature   : ${reveal.answer.nature.joinToString(" / ") { it.label }}")
+    terminal.out("  Location : ${reveal.answer.location.joinToString(" / ") { it.label }}")
+    terminal.out("  Signal   : ${reveal.answer.signal.joinToString(" / ") { it.label }}")
+    terminal.out("  Cause    : ${reveal.answer.cause.label}")
     terminal.out()
     terminal.out("EXPLANATION")
-    terminal.out("  " + scenario.explain(params))
+    terminal.out("  " + reveal.explanation)
     terminal.out()
     terminal.out("TRACE (how to get there, step by step)")
-    scenario.steps.forEachIndexed { index, step -> terminal.out("  ${index + 1}. $step") }
+    reveal.steps.forEachIndexed { index, step -> terminal.out("  ${index + 1}. $step") }
     terminal.out()
     terminal.out("EVIDENCE TO LOOK FOR (PromQL, paste into Grafana Explore or Prometheus)")
-    scenario.evidence.forEach { terminal.out("  - $it") }
+    reveal.evidence.forEach { terminal.out("  - $it") }
     terminal.out()
-    if (scenario.cli.isNotEmpty()) {
+    if (reveal.cli.isNotEmpty()) {
       terminal.out("COMMANDS THAT PROVE IT (run them in `make shell`)")
-      scenario.cli.forEach { terminal.out("  $ $it") }
+      reveal.cli.forEach { terminal.out("  $ $it") }
       terminal.out()
     }
-    terminal.out("Read again in ${GuideIndex.where(scenario.doc)}")
+    terminal.out("Read again in ${GuideIndex.where(reveal.guide.joinToString("; ") { it.pointer })}")
   }
 
-  private fun finish(state: LabState, score: Double?, missed: List<String> = emptyList(), note: String = "") {
-    val active = state.active ?: return
-    val scenario = catalog.byId.getValue(active.id)
-    val entry = HistoryEntry(
-      n = active.n,
-      id = active.id,
-      mode = active.mode,
-      title = scenario.title,
-      level = scenario.level,
-      score = score,
-      hints = active.hints,
-      minutes = ((now() - active.started) / SECONDS_PER_MINUTE * TENTHS).roundToInt() / TENTHS,
-      at = now(),
-      missed = missed,
-      note = note
-    )
-    val next = state.copy(history = state.history + entry)
-    store.save(next)
-    offerClear(next)
-  }
-
-  private fun offerClear(state: LabState) {
+  private fun offerClear() {
     val reply = terminal.ask("\nClear the fault so the system goes back to normal? [Y/n] ")
     if (reply == null) {
       terminal.out()
     }
-    val clearIt = reply == null || reply.trim().lowercase() !in setOf("n", "no")
-    if (clearIt) {
-      annotator.annotate("lab: fault cleared", listOf("clear"), now())
-      store.save(state.copy(active = null))
+    if (reply == null || reply.trim().lowercase() !in setOf("n", "no")) {
+      engine.clear()
       terminal.out("Fault cleared. The system recovers in about 10-60 seconds. Use `make new` for the next exercise.")
     } else {
       terminal.out("The fault keeps running so you can keep looking. Use `make clear` when you are done.")
     }
   }
 
-  private fun banner(text: String) {
-    terminal.out()
-    terminal.out("=".repeat(BANNER_WIDTH))
-    terminal.out(text)
-    terminal.out("=".repeat(BANNER_WIDTH))
-  }
+  private fun banner(text: String) = Format.banner(terminal, text)
 
-  private fun hhmm(epochSeconds: Double): String = Instant.ofEpochSecond(epochSeconds.toLong()).atZone(zone).format(HOUR_MINUTE)
+  private fun hhmm(epochSeconds: Double): String = Format.hhmm(epochSeconds, zone)
 
-  private fun plain(value: Double): String = if (value == value.roundToInt().toDouble()) value.roundToInt().toString() else String.format(Locale.ROOT, "%.1f", value)
+  private fun plain(value: Double): String = Format.plain(value)
 
   companion object {
-    const val INCIDENT = "incident"
-    const val TOOLBOX = "toolbox"
-    const val RAMP = "ramp"
-    const val BENCH = "bench"
-    val MODES = listOf(INCIDENT, TOOLBOX, RAMP, BENCH)
-
-    /** The modes `make new` starts. The ramp and the bench have their own commands. */
-    val NEW_MODES = listOf(INCIDENT, TOOLBOX)
-    const val HINT_PENALTY = 0.5
-    const val NATURE_POINTS = 1.0
-    const val LOCATION_POINTS = 1.0
-    const val SIGNAL_POINTS = 1.0
-    const val CAUSE_POINTS = 2.0
-    const val PARTIAL_POINTS = 1.0
-    const val MAX_POINTS = NATURE_POINTS + LOCATION_POINTS + SIGNAL_POINTS + CAUSE_POINTS
-    const val MIN_LOAD = 0.1
-    const val MAX_LOAD = 6.0
+    const val INCIDENT = ExerciseEngine.INCIDENT
+    const val TOOLBOX = ExerciseEngine.TOOLBOX
+    const val RAMP = ExerciseEngine.RAMP
+    const val BENCH = ExerciseEngine.BENCH
+    val MODES = ExerciseEngine.MODES
+    val NEW_MODES = ExerciseEngine.NEW_MODES
+    const val HINT_PENALTY = ExerciseEngine.HINT_PENALTY
+    const val NATURE_POINTS = ExerciseEngine.NATURE_POINTS
+    const val LOCATION_POINTS = ExerciseEngine.LOCATION_POINTS
+    const val SIGNAL_POINTS = ExerciseEngine.SIGNAL_POINTS
+    const val CAUSE_POINTS = ExerciseEngine.CAUSE_POINTS
+    const val PARTIAL_POINTS = ExerciseEngine.PARTIAL_POINTS
+    const val MAX_POINTS = ExerciseEngine.MAX_POINTS
+    const val MIN_LOAD = ExerciseEngine.MIN_LOAD
+    const val MAX_LOAD = ExerciseEngine.MAX_LOAD
+    const val RECENT_WINDOW = ExerciseEngine.RECENT_WINDOW
+    const val TOOLBOX_RULES = ExerciseEngine.TOOLBOX_RULES
     private const val MAX_LEVEL = 3
-    const val RECENT_WINDOW = 5
-    private const val DECOY_MAX_LEAD_SECONDS = 600
-    private const val DECOY_MAX_LAG_SECONDS = 60
-    private const val MARKER_MAX_LEAD_SECONDS = 180
-    private const val BANNER_WIDTH = 72
     private const val SERVICE_COLUMN = 8
     private const val ID_COLUMN = 18
     const val TITLE_COLUMN = 48
@@ -440,11 +311,8 @@ class Exercises(
     private const val MINUTES_COLUMN = 5
     private const val MILLIS_PER_SECOND = 1_000.0
     private const val SECONDS_PER_MINUTE = 60.0
-    private const val TENTHS = 10.0
-    private val HOUR_MINUTE: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
     private val DAY_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM HH:mm")
     private const val TOOLBOX_TAG = "[toolbox]"
-    const val TOOLBOX_RULES = "CLI only: do not open Grafana. `make shell` gives you a toolbox on the host. Prove the cause with commands."
     const val LINKS = "  Grafana     http://localhost:3000   (dashboards '01 · RED by layer' and '02 · USE by layer')\n" +
       "  Traces      in Grafana: Explore > Tempo (search, service graph), or click an exemplar dot on a latency panel\n" +
       "  Profiles    in Grafana: Explore > Pyroscope (service = api, pricing, worker), or http://localhost:4040\n" +

@@ -210,6 +210,7 @@ services:
       CGROUP_ROOT: /host/cgroup
       HOST_VOLUMES: /host/volumes
       HOST_SYS: /host/sys
+      LAB_API_PORT: "8090"
     # Privileged with the host cgroup tree: the disk IOPS exercise writes postgres's io.max, which the Docker API cannot change.
     privileged: true
     volumes:

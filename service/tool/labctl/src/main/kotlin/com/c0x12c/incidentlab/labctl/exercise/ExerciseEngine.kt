@@ -1,0 +1,407 @@
+package com.c0x12c.incidentlab.labctl.exercise
+
+import com.c0x12c.incidentlab.labctl.control.Annotator
+import com.c0x12c.incidentlab.labctl.control.LabProbe
+import com.c0x12c.incidentlab.labctl.exercise.Outcome.Done
+import com.c0x12c.incidentlab.labctl.exercise.Outcome.Refused
+import com.c0x12c.incidentlab.labctl.guide.GuideIndex
+import com.c0x12c.incidentlab.labctl.scenario.Answers
+import com.c0x12c.incidentlab.labctl.scenario.Baseline
+import com.c0x12c.incidentlab.labctl.scenario.ExerciseContext
+import com.c0x12c.incidentlab.labctl.scenario.Params
+import com.c0x12c.incidentlab.labctl.scenario.Scenario
+import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
+import com.c0x12c.incidentlab.labctl.state.ActiveExercise
+import com.c0x12c.incidentlab.labctl.state.Choices
+import com.c0x12c.incidentlab.labctl.state.HistoryEntry
+import com.c0x12c.incidentlab.labctl.state.LabState
+import com.c0x12c.incidentlab.labctl.state.StateStore
+import com.c0x12c.incidentlab.labctl.state.withNote
+import java.time.ZoneId
+import kotlin.math.roundToInt
+import kotlin.random.Random
+
+data class NewOptions(
+  val level: Int = 0,
+  val topic: String = "",
+  val id: String = "",
+  val force: Boolean = false,
+  val mode: String = ExerciseEngine.INCIDENT
+)
+
+/** A mode with its own engine. The incident engine asks it for the view of an exercise in that mode. */
+interface ModeEngine {
+  val mode: String
+
+  fun view(active: ActiveExercise): ExerciseView
+
+  /** The scored answer of an answered exercise, or null. May read Prometheus. */
+  fun result(active: ActiveExercise): ScoredResult? = null
+}
+
+data class OptionsView(
+  val natures: List<Option>,
+  val locations: List<Option>,
+  val signals: List<Option>,
+  val causes: List<Option>,
+  val levels: List<Int>,
+  val topics: List<String>,
+  val modes: List<String>
+)
+
+/**
+ * The incident and toolbox exercises: every decision, no printing. The CLI and the HTTP API both
+ * call it and word the outcome their own way. Every change is a read-modify-write under the state
+ * file's lock; calls to Prometheus and Grafana stay outside it.
+ */
+class ExerciseEngine(
+  private val store: StateStore,
+  private val probe: LabProbe,
+  private val annotator: Annotator,
+  private val catalog: ScenarioCatalog = ScenarioCatalog,
+  private val random: Random = Random.Default,
+  private val now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
+  private val zone: ZoneId = ZoneId.systemDefault(),
+  private val modes: List<ModeEngine> = emptyList()
+) {
+
+  private data class Found(val active: ActiveExercise, val scenario: Scenario)
+
+  fun start(options: NewOptions): Outcome<ExerciseView> {
+    val state = store.load()
+    if (state.active != null && !options.force) return Refused(Refusal.ExerciseOpen)
+    val scenario = when (val picked = pick(state, options)) {
+      is Done -> picked.value
+      is Refused -> return picked
+    }
+    val context = ExerciseContext(cpuCount = probe.cpuCount(), productDetailSeconds = probe.productDetailSeconds(), tenants = probe.tenants())
+    val params = scenario.params(random, context)
+    val startedAt = now()
+    val active = store.withLock { current, write ->
+      if (current.active != null && !options.force) return@withLock null
+      ActiveExercise(id = scenario.id, mode = options.mode, params = params, started = startedAt, n = current.history.size + 1)
+        .also { write(current.copy(active = it)) }
+    } ?: return Refused(Refusal.ExerciseOpen)
+    if (random.nextDouble() < scenario.decoy) {
+      annotator.annotate(Answers.DECOYS.random(random), listOf("change"), startedAt + random.nextInt(-DECOY_MAX_LEAD_SECONDS, DECOY_MAX_LAG_SECONDS + 1))
+    }
+    scenario.marker?.let { annotator.annotate(it(rendered(active)), listOf("change"), startedAt - random.nextInt(0, MARKER_MAX_LEAD_SECONDS + 1)) }
+    return Done(ExerciseView(view(active, scenario)))
+  }
+
+  /** The open exercise in any mode. An answered one carries its result, and an incident its reveal. */
+  fun active(): Outcome<ExerciseView> = current(withResult = true)
+
+  private fun current(withResult: Boolean): Outcome<ExerciseView> {
+    val state = store.load()
+    val active = state.active ?: return Refused(Refusal.NoExercise)
+    modes.firstOrNull { it.mode == active.mode }?.let { mode ->
+      val view = mode.view(active)
+      return Done(if (withResult && active.answered) view.copy(result = mode.result(active)) else view)
+    }
+    return when (val found = incident(state)) {
+      is Refused -> found
+      is Done -> {
+        val (open, scenario) = found.value
+        if (open.answered && withResult) {
+          Done(ExerciseView(view(open, scenario), reveal = reveal(open, scenario), result = open.choices?.let { score(open, scenario, it) }))
+        } else {
+          Done(ExerciseView(view(open, scenario)))
+        }
+      }
+    }
+  }
+
+  fun hint(): Outcome<ActiveView> =
+    store.withLock { state, write ->
+      when (val found = incident(state)) {
+        is Refused -> found
+        is Done -> {
+          val (active, scenario) = found.value
+          when {
+            active.answered -> Refused(Refusal.AlreadyAnswered)
+            active.hints >= scenario.hints.size -> Refused(Refusal.NoHintsLeft)
+            else -> {
+              val next = active.copy(hints = active.hints + 1)
+              write(state.copy(active = next))
+              Done(view(next, scenario))
+            }
+          }
+        }
+      }
+    }
+
+  /** Whether [submit] would take an answer now. The CLI asks before it prompts for the four picks. */
+  fun answerable(): Outcome<Unit> =
+    when (val found = incident(store.load())) {
+      is Refused -> found
+      is Done -> if (found.value.active.answered) Refused(Refusal.AlreadyAnswered) else Done(Unit)
+    }
+
+  /** Scores the four picks and keeps the history entry. The fault keeps running until [clear]. */
+  fun submit(choices: Choices, note: String = ""): Outcome<Result> {
+    unknownKey(choices)?.let { return Refused(it) }
+    return store.withLock { state, write ->
+      when (val found = incident(state)) {
+        is Refused -> found
+        is Done -> {
+          val (active, scenario) = found.value
+          if (active.answered) {
+            Refused(Refusal.AlreadyAnswered)
+          } else {
+            val result = score(active, scenario, choices)
+            val entry = entry(active, scenario.title, scenario.level, result.score, result.missed, note)
+            write(state.copy(active = active.copy(answered = true, choices = choices), history = state.history + entry))
+            Done(result)
+          }
+        }
+      }
+    }
+  }
+
+  /** Sets the note of the latest history entry numbered [n]. */
+  fun note(n: Int, note: String) {
+    if (note.isNotEmpty()) store.update { it.withNote(n, note) }
+  }
+
+  /** The answer without a score. The first reveal of an exercise adds a history entry with no score. */
+  fun reveal(): Outcome<Revealed> =
+    store.withLock { state, write ->
+      when (val found = incident(state)) {
+        is Refused -> found
+        is Done -> {
+          val (active, scenario) = found.value
+          if (!active.answered) {
+            val entry = entry(active, scenario.title, scenario.level, score = null)
+            write(state.copy(active = active.copy(answered = true), history = state.history + entry))
+          }
+          Done(Revealed(active.n, active.answered, reveal(active, scenario)))
+        }
+      }
+    }
+
+  /** Ends the open exercise of any mode. False when none was open. */
+  fun clear(annotation: String = CLEARED): Boolean {
+    val wasOpen = store.withLock { state, write ->
+      write(state.copy(active = null))
+      state.active != null
+    }
+    if (wasOpen) {
+      annotator.annotate(annotation, listOf("clear"), now())
+    }
+    return wasOpen
+  }
+
+  fun status(): LabStatus {
+    val active = (current(withResult = false) as? Done)?.value?.active
+    return LabStatus(probe.serviceStatus(), active, loadMultiplier(store.load()), Baseline.BASE_RPS, HOST_LINKS)
+  }
+
+  fun history(): HistoryView {
+    val history = store.load().history
+    val scored = history.filter { it.score != null }
+    val missed = mostMissedCause(scored)?.let { (cause, count) ->
+      MissedCause(cause, Answers.label(Answers.CAUSES, cause), Answers.CAUSE_GROUPS[cause], count)
+    }
+    return HistoryView(history, scored.mapNotNull { it.score }.takeIf { it.isNotEmpty() }?.average(), byTopic(scored), missed)
+  }
+
+  fun load(multiplier: Double): LoadView {
+    val x = multiplier.coerceIn(MIN_LOAD, MAX_LOAD)
+    store.update { state ->
+      val loadgen = state.base["loadgen"].orEmpty() + ("rate_multiplier" to x)
+      state.copy(base = state.base + ("loadgen" to loadgen))
+    }
+    return LoadView(x, Baseline.BASE_RPS * x)
+  }
+
+  fun options(): OptionsView =
+    OptionsView(
+      natures = Answers.NATURES.map { (key, label) -> Option(key, label) },
+      locations = Answers.LOCATIONS.map { (key, label) -> Option(key, label) },
+      signals = Answers.SIGNALS.map { (key, label) -> Option(key, label) },
+      causes = Answers.CAUSES.map { (key, label) -> Option(key, label, Answers.CAUSE_GROUPS[key]) },
+      levels = levels(),
+      topics = Answers.TOPICS,
+      modes = NEW_MODES
+    )
+
+  fun levels(): List<Int> = catalog.all.map { it.level }.distinct().sorted()
+
+  private fun byTopic(scored: List<HistoryEntry>): List<TopicAverage> =
+    scored.flatMap { entry -> catalog.byId[entry.id]?.topics.orEmpty().map { topic -> topic to entry.score!! } }
+      .groupBy({ it.first }, { it.second })
+      .map { (topic, scores) -> TopicAverage(topic, scores.average(), scores.size) }
+      .sortedBy { it.average }
+
+  private fun mostMissedCause(scored: List<HistoryEntry>): Pair<String, Int>? =
+    scored.filter { entry -> entry.missed.any { it.startsWith("cause") } }
+      .mapNotNull { catalog.byId[it.id]?.answer?.cause }
+      .groupingBy { it }.eachCount()
+      .maxByOrNull { it.value }?.toPair()
+
+  private fun pick(state: LabState, options: NewOptions): Outcome<Scenario> {
+    val toolbox = options.mode == TOOLBOX
+    if (options.id.isNotEmpty()) {
+      val scenario = catalog.byId[options.id] ?: return Refused(Refusal.UnknownId(options.id))
+      if (toolbox && scenario.cli.isEmpty()) return Refused(Refusal.NoCli(options.id))
+      return Done(scenario)
+    }
+    val pool = catalog.all.filter {
+      (options.level == 0 || it.level == options.level) && (options.topic.isEmpty() || options.topic in it.topics) && (!toolbox || it.cli.isNotEmpty())
+    }
+    if (pool.isEmpty()) return Refused(Refusal.NoMatch)
+    val recent = state.history.takeLast(RECENT_WINDOW).map { it.id }
+    val fresh = pool.filter { it.id !in recent }
+    return Done((fresh.ifEmpty { pool }).random(random))
+  }
+
+  /** The open incident or toolbox exercise, if it still renders with this catalog. */
+  private fun incident(state: LabState): Outcome<Found> {
+    val active = state.active ?: return Refused(Refusal.NoExercise)
+    if (active.mode !in NEW_MODES) return Refused(Refusal.WrongMode(active.mode, active.n))
+    val scenario = catalog.byId[active.id]?.takeIf { runCatching { it.ticket(rendered(active)) }.isSuccess }
+      ?: return Refused(Refusal.Stale(active.n))
+    return Done(Found(active, scenario))
+  }
+
+  private fun unknownKey(choices: Choices): Refusal? =
+    listOf(
+      Triple("nature", choices.nature, Answers.NATURES),
+      Triple("location", choices.location, Answers.LOCATIONS),
+      Triple("signal", choices.signal, Answers.SIGNALS),
+      Triple("cause", choices.cause, Answers.CAUSES)
+    ).firstOrNull { (_, key, options) -> options.none { it.first == key } }?.let { (question, key, _) -> Refusal.UnknownKey(question, key) }
+
+  private fun score(active: ActiveExercise, scenario: Scenario, choices: Choices): Result {
+    val expected = scenario.answer
+    val missed = mutableListOf<String>()
+    var points = 0.0
+    if (choices.nature in expected.nature) points += NATURE_POINTS else missed += "nature"
+    if (choices.location in expected.location) points += LOCATION_POINTS else missed += "location"
+    if (choices.signal in expected.signal) points += SIGNAL_POINTS else missed += "signal"
+    val cause = when (choices.cause) {
+      expected.cause -> {
+        points += CAUSE_POINTS
+        CORRECT
+      }
+      in expected.partial -> {
+        points += PARTIAL_POINTS
+        missed += "cause (partial)"
+        PARTIAL
+      }
+      else -> {
+        missed += "cause"
+        WRONG
+      }
+    }
+    val verdicts = Verdicts(verdict("nature" !in missed), verdict("location" !in missed), verdict("signal" !in missed), cause)
+    val score = (points - HINT_PENALTY * active.hints).coerceAtLeast(0.0)
+    return Result(active.n, score, points, MAX_POINTS, active.hints, verdicts, missed, reveal(active, scenario))
+  }
+
+  private fun verdict(correct: Boolean): String = if (correct) CORRECT else WRONG
+
+  private fun view(active: ActiveExercise, scenario: Scenario): ActiveView =
+    ActiveView(
+      n = active.n,
+      mode = active.mode,
+      level = scenario.level,
+      ticket = scenario.ticket(rendered(active)),
+      startedAt = active.started,
+      elapsedSeconds = now() - active.started,
+      hintsUsed = active.hints,
+      hintsTotal = scenario.hints.size,
+      hintPenalty = HINT_PENALTY,
+      hints = scenario.hints.take(active.hints),
+      answered = active.answered,
+      rules = if (active.mode == TOOLBOX) TOOLBOX_RULES else null
+    )
+
+  private fun reveal(active: ActiveExercise, scenario: Scenario): Reveal {
+    val answer = scenario.answer
+    return Reveal(
+      id = scenario.id,
+      title = scenario.title,
+      level = scenario.level,
+      topics = scenario.topics,
+      answer = AnswerView(
+        nature = answer.nature.map { option(Answers.NATURES, it) },
+        location = answer.location.map { option(Answers.LOCATIONS, it) },
+        signal = answer.signal.map { option(Answers.SIGNALS, it) },
+        cause = cause(answer.cause),
+        partial = answer.partial.map(::cause)
+      ),
+      explanation = scenario.explain(rendered(active)),
+      steps = scenario.steps,
+      evidence = scenario.evidence,
+      cli = scenario.cli,
+      guide = GuideIndex.pointers(scenario.doc)
+    )
+  }
+
+  private fun option(options: List<Pair<String, String>>, key: String): Option = Option(key, Answers.label(options, key))
+
+  private fun cause(key: String): Option = Option(key, Answers.label(Answers.CAUSES, key), Answers.CAUSE_GROUPS[key])
+
+  private fun entry(active: ActiveExercise, title: String, level: Int, score: Double?, missed: List<String> = emptyList(), note: String = ""): HistoryEntry =
+    HistoryEntry(
+      n = active.n,
+      id = active.id,
+      mode = active.mode,
+      title = title,
+      level = level,
+      score = score,
+      hints = active.hints,
+      minutes = minutesSince(active.started, now()),
+      at = now(),
+      missed = missed,
+      note = note
+    )
+
+  private fun rendered(active: ActiveExercise): Params = Params(active.params, Format.hhmm(active.started, zone))
+
+  companion object {
+    const val INCIDENT = "incident"
+    const val TOOLBOX = "toolbox"
+    const val RAMP = "ramp"
+    const val BENCH = "bench"
+    val MODES = listOf(INCIDENT, TOOLBOX, RAMP, BENCH)
+
+    /** The modes a new incident starts in. The ramp and the bench have their own commands. */
+    val NEW_MODES = listOf(INCIDENT, TOOLBOX)
+    const val HINT_PENALTY = 0.5
+    const val NATURE_POINTS = 1.0
+    const val LOCATION_POINTS = 1.0
+    const val SIGNAL_POINTS = 1.0
+    const val CAUSE_POINTS = 2.0
+    const val PARTIAL_POINTS = 1.0
+    const val MAX_POINTS = NATURE_POINTS + LOCATION_POINTS + SIGNAL_POINTS + CAUSE_POINTS
+    const val MIN_LOAD = 0.1
+    const val MAX_LOAD = 6.0
+    const val RECENT_WINDOW = 5
+    const val CORRECT = "correct"
+    const val PARTIAL = "partial"
+    const val WRONG = "wrong"
+    const val CLEARED = "lab: fault cleared"
+    const val TOOLBOX_RULES = "CLI only: do not open Grafana. `make shell` gives you a toolbox on the host. Prove the cause with commands."
+
+    /** Where a browser on the host reaches the observability tools. */
+    val HOST_LINKS: Map<String, String> = mapOf(
+      "grafana" to "http://localhost:3000",
+      "prometheus" to "http://localhost:9090",
+      "pyroscope" to "http://localhost:4040"
+    )
+    private const val DECOY_MAX_LEAD_SECONDS = 600
+    private const val DECOY_MAX_LAG_SECONDS = 60
+    private const val MARKER_MAX_LEAD_SECONDS = 180
+    private const val MILLIS_PER_SECOND = 1_000.0
+    private const val SECONDS_PER_MINUTE = 60.0
+    private const val TENTHS = 10.0
+
+    fun loadMultiplier(state: LabState): Double = (state.base["loadgen"]?.get("rate_multiplier") as? Number)?.toDouble() ?: 1.0
+
+    /** Minutes to one decimal, the way history shows them. */
+    fun minutesSince(started: Double, now: Double): Double = ((now - started) / SECONDS_PER_MINUTE * TENTHS).roundToInt() / TENTHS
+  }
+}

@@ -10,16 +10,17 @@ import com.c0x12c.incidentlab.labctl.exercise.Format.millis
 import com.c0x12c.incidentlab.labctl.exercise.Format.percent
 import com.c0x12c.incidentlab.labctl.exercise.Format.plain
 import com.c0x12c.incidentlab.labctl.exercise.Format.rps
+import com.c0x12c.incidentlab.labctl.exercise.Outcome.Done
+import com.c0x12c.incidentlab.labctl.exercise.Outcome.Refused
+import com.c0x12c.incidentlab.labctl.exercise.Refusal
 import com.c0x12c.incidentlab.labctl.guide.GuideIndex
 import com.c0x12c.incidentlab.labctl.quiz.Quiz
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.BASE_RPS
 import com.c0x12c.incidentlab.labctl.scenario.Params
 import com.c0x12c.incidentlab.labctl.state.ActiveExercise
-import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.c0x12c.incidentlab.labctl.state.LabState
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import java.time.ZoneId
-import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
@@ -30,43 +31,39 @@ data class RampOptions(
 /**
  * `make ramp`: the load rises in steps while a hidden setup limits the lab. The learner reads the
  * knee, the highest throughput and the limiting resource off the dashboards. The score comes from
- * what Prometheus recorded for the same steps.
+ * what Prometheus recorded for the same steps. Prompts and printing over [RampEngine].
  */
 class RampExercise(
-  private val store: StateStore,
-  private val probe: LabProbe,
-  private val annotator: Annotator,
+  store: StateStore,
+  probe: LabProbe,
+  annotator: Annotator,
   private val terminal: Terminal,
-  private val random: Random = Random.Default,
+  random: Random = Random.Default,
   private val now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
   private val zone: ZoneId = ZoneId.systemDefault()
 ) : ExerciseMode {
 
+  private val engine = RampEngine(store, probe, annotator, random, now, zone)
+
   override val mode: String = MODE
 
   fun start(options: RampOptions): Int {
-    val state = store.load()
-    if (state.active != null) {
-      terminal.out("An exercise is still open. Use `make answer`, `make reveal` or `make clear` first.")
-      return 1
+    val view = when (val outcome = engine.start(options.every)) {
+      is Done -> outcome.value.active
+      is Refused -> {
+        val refusal = outcome.refusal
+        terminal.out(
+          if (refusal is Refusal.LoadNotOne) {
+            "Background load is ${plain(refusal.multiplier)} x. The ramp steps are set from the default $BASE_RPS rps, so run `make load X=1` first."
+          } else {
+            "An exercise is still open. Use `make answer`, `make reveal` or `make clear` first."
+          }
+        )
+        return 1
+      }
     }
-    val multiplier = (state.base["loadgen"]?.get("rate_multiplier") as? Number)?.toDouble() ?: 1.0
-    if (multiplier != 1.0) {
-      terminal.out("Background load is ${plain(multiplier)} x. The ramp steps are set from the default $BASE_RPS rps, so run `make load X=1` first.")
-      return 1
-    }
-    val every = options.every
-    val startedAt = now()
-    val number = state.history.size + 1
-    store.save(state.copy(active = ActiveExercise(id = RampCatalog.ID, mode = MODE, params = RampCatalog.params(random, every), started = startedAt, n = number)))
-    RampPlan.MULTIPLIERS.indices.forEach { index -> annotator.annotate("ramp step ${index + 1}: ${RampPlan.rps(index)} rps", listOf(TAG), startedAt + index * every) }
-    annotator.annotate("ramp over: back to $BASE_RPS rps", listOf(TAG), startedAt + RampPlan.totalSeconds(every))
-    Format.banner(terminal, "CAPACITY RAMP #$number  ·  started at ${hhmm(startedAt)}")
-    terminal.out(
-      "The load rises in ${RampPlan.size} steps of $every s: ${RampPlan.rates.joinToString(", ")} rps. Total ${minutes(RampPlan.totalSeconds(every))} min. " +
-        "After the last step the load goes back to $BASE_RPS rps and every limit is lifted."
-    )
-    terminal.out("Something may limit the lab before ${RampPlan.rates.last()} rps, or nothing may. It changes every run.")
+    Format.banner(terminal, "CAPACITY RAMP #${view.n}  ·  started at ${hhmm(view.startedAt)}")
+    RampEngine.intro(options.every).forEach(terminal::out)
     terminal.out()
     terminal.out("What to watch:")
     terminal.out("  - Offered against achieved: client requests/s (dashboard 01, row 1) against api requests/s by route and status (row 3). Where does achieved stop following offered?")
@@ -82,51 +79,43 @@ class RampExercise(
   }
 
   override fun answer(state: LabState): Int {
-    val active = state.active ?: return 1
-    if (active.answered) {
-      terminal.out("This ramp was already submitted. Use `make clear`, then `make ramp` for another one.")
-      return 0
+    val steps = when (val outcome = engine.steps()) {
+      is Done -> outcome.value
+      is Refused -> return refused(outcome.refusal)
     }
-    val params = params(active)
-    val every = params.int("every")
-    val stepsRun = RampPlan.stepsRun(params.elapsedSeconds, every)
-    if (stepsRun == 0) {
-      terminal.out("The first step (${RampPlan.rps(0)} rps) is not over yet: ${ceil(every - params.elapsedSeconds).toInt()} s to go. Answer after at least one step.")
-      return 1
-    }
-    val steps = RampMeasure(probe).read(active.started, every, stepsRun) ?: return prometheusDown()
     terminal.out("Three questions. Ctrl-C quits without scoring. Rates are in rps.")
     terminal.out()
-    val knee = askRate("1) At which offered rate did the service saturate (the knee)? Type 0 if it did not within ${RampPlan.rps(stepsRun - 1)} rps. ") ?: return inputClosed()
+    val knee = askRate("1) At which offered rate did the service saturate (the knee)? Type 0 if it did not within ${RampPlan.rps(steps.stepsRun - 1)} rps. ") ?: return inputClosed()
     val max = askRate("2) What was the highest successful throughput? ") ?: return inputClosed()
     val resource = choose("3) Which resource limited it?", RampCatalog.RESOURCES) ?: return inputClosed()
-    val hidden = RampCatalog.resource(params)
-    val verdict = RampMath.verdict(RampAnswer(knee, max, resource), steps, hidden)
-    Format.banner(terminal, "RESULT: ${plain(verdict.points)}/${plain(RampMath.TOTAL_POINTS)}  ·  capacity ramp, $stepsRun of ${RampPlan.size} steps run")
-    terminal.out("  Knee       : you said ${if (knee <= 0) "none" else rps(knee)}, measured ${kneeText(verdict.knee)}: ${word(verdict.kneeCorrect)} (within one step)")
-    terminal.out("  Throughput : you said ${rps(max)}, measured ${rps(verdict.maxThroughput)}: ${word(verdict.maxCorrect)} (within ${(RampMath.MAX_TOLERANCE * PERCENT).roundToInt()}%)")
-    terminal.out("  Resource   : you said '${label(resource)}', the hidden limit was '${label(hidden)}': ${word(verdict.resourceCorrect)}")
-    explain(params, steps)
+    val result = when (val outcome = engine.submit(steps, RampAnswer(knee, max, resource))) {
+      is Done -> outcome.value
+      is Refused -> return refused(outcome.refusal)
+    }
+    val verdicts = result.verdicts!!
+    Format.banner(terminal, "RESULT: ${plain(result.score!!)}/${plain(result.max)}  ·  capacity ramp, ${result.stepsRun} of ${result.stepsTotal} steps run")
+    terminal.out("  Knee       : you said ${if (knee <= 0) "none" else rps(knee)}, measured ${kneeText(result.measured)}: ${word(verdicts.knee)} (within one step)")
+    terminal.out("  Throughput : you said ${rps(max)}, measured ${rps(result.measured.maxRps)}: ${word(verdicts.max)} (within ${(RampMath.MAX_TOLERANCE * PERCENT).roundToInt()}%)")
+    terminal.out("  Resource   : you said '${RampEngine.label(resource)}', the hidden limit was '${result.measured.resourceLabel}': ${word(verdicts.resource)}")
+    explain(result)
     val note = terminal.ask("\nOne line for your future self: how did you read the knee? (Enter to skip) ")?.trim().orEmpty()
-    finish(state.copy(active = active.copy(answered = true)), params, verdict.points, verdict.missed, note)
+    engine.note(result.n, note)
+    offerClear()
     return 0
   }
 
   override fun reveal(state: LabState): Int {
-    val active = state.active ?: return 1
-    val params = params(active)
-    val every = params.int("every")
-    Format.banner(terminal, "CAPACITY RAMP #${active.n}: ${RampCatalog.title(params)} (${if (active.answered) "already scored" else "not scored"})")
-    val steps = RampMeasure(probe).read(active.started, every, RampPlan.stepsRun(params.elapsedSeconds, every))
-    if (steps == null) {
+    val revealed = when (val outcome = engine.reveal()) {
+      is Done -> outcome.value
+      is Refused -> return 1
+    }
+    val result = revealed.result
+    Format.banner(terminal, "CAPACITY RAMP #${result.n}: ${result.title} (${if (revealed.wasAnswered) "already scored" else "not scored"})")
+    if (result.prometheusDown) {
       terminal.out("(Prometheus did not answer, so there is no step table.)")
     }
-    explain(params, steps.orEmpty())
-    if (active.answered) {
-      offerClear(state)
-    } else {
-      finish(state.copy(active = active.copy(answered = true)), params, score = null)
-    }
+    explain(result)
+    offerClear()
     return 0
   }
 
@@ -145,66 +134,55 @@ class RampExercise(
     } else {
       val into = (params.elapsedSeconds - step * every).roundToInt()
       val left = RampPlan.totalSeconds(every) - params.elapsedSeconds
-      terminal.out("Capacity ramp #${active.n}: step ${step + 1} of ${RampPlan.size} at ${RampPlan.rps(step)} rps, $into s into the step, ${minutes(left)} min to the end.")
+      terminal.out("Capacity ramp #${active.n}: step ${step + 1} of ${RampPlan.size} at ${RampPlan.rps(step)} rps, $into s into the step, ${RampEngine.minutes(left)} min to the end.")
     }
   }
 
-  private fun explain(params: Params, steps: List<StepReading>) {
-    if (steps.isNotEmpty()) {
-      val knee = RampMath.knee(steps)
+  private fun refused(refusal: Refusal): Int =
+    when (refusal) {
+      Refusal.AlreadyAnswered -> {
+        terminal.out("This ramp was already submitted. Use `make clear`, then `make ramp` for another one.")
+        0
+      }
+      is Refusal.TooEarly -> {
+        terminal.out("The first step (${RampPlan.rps(0)} rps) is not over yet: ${refusal.secondsLeft} s to go. Answer after at least one step.")
+        1
+      }
+      Refusal.PrometheusDown -> {
+        terminal.out("Prometheus did not answer, so nothing can be scored. Check `make ps`, then run `make answer` again.")
+        1
+      }
+      else -> 1
+    }
+
+  private fun explain(result: RampResult) {
+    if (result.table.isNotEmpty()) {
       terminal.out()
       terminal.out("STEP TABLE (each window skips the first ${RampPlan.SETTLE_SECONDS} s of its step)")
       terminal.out("  step   offered  achieved        p99   errors")
-      for (step in steps) {
-        val mark = if (knee == step.index) "  <- knee" else ""
+      for (row in result.table) {
+        val mark = if (row.knee) "  <- knee" else ""
         terminal.out(
-          "  ${(step.index + 1).toString().padStart(STEP_COLUMN)}  ${rps(step.offered).padStart(RATE_COLUMN)}  ${rps(step.achieved).padStart(RATE_COLUMN)}  " +
-            "${millis(step.p99Seconds).padStart(TIME_COLUMN)}  ${percent(step.errorShare).padStart(SHARE_COLUMN)}$mark"
+          "  ${row.step.toString().padStart(STEP_COLUMN)}  ${rps(row.rpsOffered).padStart(RATE_COLUMN)}  ${rps(row.rpsAchieved).padStart(RATE_COLUMN)}  " +
+            "${millis(row.p99).padStart(TIME_COLUMN)}  ${percent(row.errorShare).padStart(SHARE_COLUMN)}$mark"
         )
       }
-      terminal.out("  Measured knee: ${kneeText(knee)}. Highest throughput: ${rps(RampMath.maxThroughput(steps))}.")
+      terminal.out("  Measured knee: ${kneeText(result.measured)}. Highest throughput: ${rps(result.measured.maxRps)}.")
     }
     terminal.out()
     terminal.out("HOW TO READ IT")
-    terminal.out("  offered is what loadgen sent, achieved is what api answered with a 2xx, p99 is api's, errors are the share users saw.")
-    terminal.out(
-      "  The knee is the first step where p99 is above ${RampMath.KNEE_P99_FACTOR.roundToInt()} times the first step's, or where errors go above " +
-        "${(RampMath.KNEE_ERROR_SHARE * PERCENT).roundToInt()}%. p99 bends before achieved stops following offered, because the queue starts before the resource is full. " +
-        "Plan with the rate at the bend, not with the rate where the service falls over."
-    )
-    terminal.out("  " + RampCatalog.explain(params))
+    result.notes.forEach { terminal.out("  $it") }
     terminal.out()
     terminal.out("Read again in ${GuideIndex.where(DOC)}")
   }
 
-  private fun finish(state: LabState, params: Params, score: Double?, missed: List<String> = emptyList(), note: String = "") {
-    val active = state.active ?: return
-    val entry = HistoryEntry(
-      n = active.n,
-      id = active.id,
-      mode = MODE,
-      title = RampCatalog.title(params),
-      level = 0,
-      score = score,
-      hints = 0,
-      minutes = ((now() - active.started) / SECONDS_PER_MINUTE * TENTHS).roundToInt() / TENTHS,
-      at = now(),
-      missed = missed,
-      note = note
-    )
-    val next = state.copy(history = state.history + entry)
-    store.save(next)
-    offerClear(next)
-  }
-
-  private fun offerClear(state: LabState) {
+  private fun offerClear() {
     val reply = terminal.ask("\nStop the ramp so the lab goes back to normal? [Y/n] ")
     if (reply == null) {
       terminal.out()
     }
     if (reply == null || reply.trim().lowercase() !in setOf("n", "no")) {
-      annotator.annotate("lab: ramp cleared", listOf("clear"), now())
-      store.save(state.copy(active = null))
+      engine.clear()
       terminal.out("Ramp stopped. The lab recovers in about 10-60 seconds.")
     } else {
       terminal.out("The ramp keeps running. Use `make clear` when you are done.")
@@ -239,34 +217,22 @@ class RampExercise(
     return 1
   }
 
-  private fun prometheusDown(): Int {
-    terminal.out("Prometheus did not answer, so nothing can be scored. Check `make ps`, then run `make answer` again.")
-    return 1
-  }
-
   private fun params(active: ActiveExercise): Params = Params(active.params, hhmm(active.started), now() - active.started)
 
-  private fun label(key: String): String = RampCatalog.RESOURCES.firstOrNull { it.first == key }?.second?.substringBefore(':') ?: key
-
-  private fun kneeText(knee: Int?): String = knee?.let { "${RampPlan.rps(it)} rps (step ${it + 1})" } ?: "none within the range"
+  private fun kneeText(measured: RampMeasured): String = measured.kneeRps?.let { "$it rps (step ${measured.kneeStep})" } ?: "none within the range"
 
   private fun word(correct: Boolean): String = if (correct) "correct" else "wrong"
-
-  private fun minutes(seconds: Number): String = plain(seconds.toDouble() / SECONDS_PER_MINUTE)
 
   private fun hhmm(epochSeconds: Double): String = Format.hhmm(epochSeconds, zone)
 
   companion object {
-    const val MODE = Exercises.RAMP
-    const val DOC = "Capacity from a ramp test > Finding the knee; Capacity from a ramp test > The ramp in this lab"
-    private const val TAG = "ramp"
+    const val MODE = RampEngine.MODE
+    const val DOC = RampEngine.DOC
     private const val PERCENT = 100
     private const val STEP_COLUMN = 4
     private const val RATE_COLUMN = 8
     private const val TIME_COLUMN = 9
     private const val SHARE_COLUMN = 7
     private const val MILLIS_PER_SECOND = 1_000.0
-    private const val SECONDS_PER_MINUTE = 60.0
-    private const val TENTHS = 10.0
   }
 }
