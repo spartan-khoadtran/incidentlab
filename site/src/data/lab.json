@@ -263,6 +263,24 @@
     "level" : 3,
     "topics" : [ "disk", "db", "use" ],
     "toolbox" : true
+  }, {
+    "id" : "gc_pressure",
+    "title" : "Full GC pauses from a large churning heap",
+    "level" : 2,
+    "topics" : [ "jvm", "use", "runtime" ],
+    "toolbox" : true
+  }, {
+    "id" : "vthread_pinning",
+    "title" : "Virtual threads pinned by old synchronized code",
+    "level" : 3,
+    "topics" : [ "jvm", "runtime", "use" ],
+    "toolbox" : true
+  }, {
+    "id" : "sync_logging",
+    "title" : "DEBUG logging turned on for a support case",
+    "level" : 2,
+    "topics" : [ "runtime", "use", "cpu" ],
+    "toolbox" : true
   } ],
   "topics" : [ "red", "load", "layers", "use", "container", "runtime", "db", "async", "host", "little", "cpu", "jvm", "disk", "network", "profiling", "capacity" ],
   "levels" : [ 1, 2, 3 ],
@@ -324,6 +342,10 @@
     "numbers" : 9,
     "concepts" : 16
   }, {
+    "file" : "runtime.md",
+    "numbers" : 10,
+    "concepts" : 16
+  }, {
     "file" : "toolbox.md",
     "numbers" : 3,
     "concepts" : 15
@@ -348,11 +370,11 @@
     "quiz_questions" : 50
   },
   "counts" : {
-    "scenarios" : 44,
-    "toolbox" : 23,
-    "causes" : 38,
-    "signals" : 23,
-    "numbers" : 127,
-    "concepts" : 243
+    "scenarios" : 47,
+    "toolbox" : 26,
+    "causes" : 41,
+    "signals" : 26,
+    "numbers" : 137,
+    "concepts" : 259
   }
 }

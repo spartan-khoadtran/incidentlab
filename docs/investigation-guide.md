@@ -12,7 +12,6 @@ RED and USE are two checklists that complete each other. RED asks whether the se
 | Point of view | The workload, seen from the caller | The resource, seen from inside |
 | Three metrics | Rate, Errors, Duration | Utilization, Saturation, Errors |
 | Answers | Is there a problem? In which service? Is it load or architecture? | Why is it slow? Which resource is the bottleneck? |
-| Proposed by | Tom Wilkie | Brendan Gregg |
 | Blind spot | Does not name the resource. Does not see errors that happen before the request reaches the service | Does not say whether users are affected. A busy resource is not always a problem |
 
 Three ideas run through this guide:
@@ -502,10 +501,3 @@ Linking the two:
 - The latency gap between two adjacent layers is where the time is lost.
 - Rate flat, duration up: architecture. Rate and duration up together: maybe load, but check retries first.
 - RED finds the place, USE finds the resource, the other methods find the reason.
-
-## References
-
-- Brendan Gregg, The USE Method, and USE Method: Linux Performance Checklist.
-- Grafana Labs, The RED Method: How to Instrument Your Services, based on Tom Wilkie's talk. The talk makes clear that RED and USE are two views that complete each other.
-- Google SRE Book, Monitoring Distributed Systems: the four golden signals.
-- Datadog Docs, Trace Metrics.

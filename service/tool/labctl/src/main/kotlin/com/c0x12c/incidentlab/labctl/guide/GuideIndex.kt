@@ -18,8 +18,7 @@ object GuideIndex {
       "In this lab",
       "Applying on Datadog",
       "End-to-end investigation example",
-      "Cheat sheet",
-      "References"
+      "Cheat sheet"
     ).associateWith { "investigation-guide.md" } +
       listOf(
         "Benchmarking mistakes",

@@ -102,6 +102,6 @@ class GuidePointersTest {
 
   private companion object {
     val NOTE = Regex("""\s*\([^)]*\)$""")
-    val UNDRILLED_SECTIONS = setOf("References")
+    val UNDRILLED_SECTIONS = emptySet<String>()
   }
 }
