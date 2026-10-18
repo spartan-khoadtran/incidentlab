@@ -89,7 +89,8 @@ For an interactive view (zoom, search, trace a path), open `docs/diagrams/archit
 
 ## Quick start
 
-You need Docker Desktop (give it 4 CPUs and 8 GB RAM) or OrbStack (no settings needed), and `make`.
+You need Docker Desktop (give it 4 CPUs and 8 GB RAM, because 15 containers run at once and the CPU
+exercises need cores to spare) or OrbStack (no settings needed), and `make`.
 Nothing else is installed on your machine: the services are built inside Docker.
 
 ```bash

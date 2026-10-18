@@ -4,7 +4,7 @@ This is the study guide for incidentlab. The incident exercises on the live lab 
 
 ## Overview
 
-RED and USE are two checklists that complete each other. RED asks "is the service serving well?". USE asks "which resource is the bottleneck?". The usual order: RED to find where the problem is, USE to find why.
+RED and USE are two checklists that complete each other. RED asks whether the service is serving well. USE asks which resource is the bottleneck. The usual order: RED to find where the problem is, USE to find why. RED goes first because it is short: three numbers per service, and they say whether users hurt. USE has many resources per service, so you check them only where RED points.
 
 | | RED | USE |
 |---|---|---|
@@ -29,11 +29,11 @@ For each service, watch request rate, errors and duration. RED measures user hea
 
 Requests per second.
 
-- Split by endpoint or operation. The total rate of a service is rarely enough: `/health` at 1000 rps hides `/checkout` at 20 rps.
+- Split by endpoint or operation. The total rate of a service is rarely enough: `/health` at 1000 rps hides `/checkout` at 20 rps. If `/checkout` drops by half, the total moves by 1%, and nobody sees it on the chart. In PromQL, `sum by (route)` gives one line per endpoint.
 - Split by the dimensions you need for workload characterization: client or tenant, region, app version, status code. When the rate goes up, you will need to know who is calling more.
-- Read against a baseline. Compare with the same hour yesterday or last week, because traffic repeats by day and by week.
+- Read against a baseline. Compare with the same hour yesterday or last week, because traffic repeats by day and by week. Without a baseline, 300 rps means nothing: it is high at 3 am and low at noon. In PromQL, `offset 1w` draws last week's line on the same chart.
 - A drop in rate is a symptom too. A broken upstream, a wrong DNS record or a crashing client all stop requests from reaching the service. The service looks "healthy" because it has nothing to do.
-- Rate is the clue for load versus architecture. Rate flat and duration up: the problem is in the service itself. Rate and duration up together: it may be load. Check with workload characterization.
+- Rate is the clue for load versus architecture. Rate flat and duration up: the problem is in the service itself, because the same work now takes longer. Rate and duration up together: it may be load. It is only a maybe, because retries also raise the rate (see [Causal chain](#causal-chain)). Check with workload characterization.
 
 ### Errors
 
@@ -58,10 +58,10 @@ Time per request.
 
 - Use the distribution. Read p50, p95, p99, not the average. Example: 98 requests take 10 ms and 2 take 5 s. The average is about 110 ms and looks fine. But p99 is 5 s, so 2% of users wait 5 seconds.
 - Split the duration of successful requests from the duration of failed ones. Failed requests are often very fast (fail fast) or very slow (timeout). When a dependency dies and the service answers 500 right away, the combined latency goes down, and the system looks better than before.
-- Percentiles cannot be averaged. The p99 of a whole service must be built from the histograms of every instance, not from the average of each pod's p99.
-- Histogram buckets must cover the latency range. Coarse buckets (say, a jump from 1 s to 10 s) make p99 very wrong.
+- Percentiles cannot be averaged. A percentile is a position in the sorted list of all requests, and an average of two positions is not a position. Example: pod A serves 995 rps, all under 100 ms. Pod B is broken: it serves 5 rps, and every request takes 2 s. The average of the two p99s is about 1 s. But B's requests are only 0.5% of the total, so the real p99 of the service is under 100 ms. How: add up the histogram buckets of every instance first, then take the percentile once: `histogram_quantile(0.99, sum by (le) (rate(x_bucket[1m])))`.
+- Histogram buckets must cover the latency range. A histogram only counts how many requests fall into each bucket. To get p99, Prometheus assumes the values spread evenly inside the bucket. With a jump from 1 s to 10 s, a real p99 of 1.2 s can show as about 5 s. How: put bucket edges close together around your SLO and your normal p99.
 - Duration is only recorded when the request ends. During an incident, requests that are still hanging are not counted yet, so p99 can look fine until they time out. Also watch the number of requests in flight to see it sooner.
-- With little traffic, percentiles are unstable. With a few dozen requests per minute, p99 is almost the max and jumps around. Use a longer time window.
+- With little traffic, percentiles are unstable. p99 needs about 100 requests to have one slower request above it. With 30 requests per minute, p99 is just the slowest request of the minute, so one bad request moves the line. Use a longer time window, like `[10m]` instead of `[1m]`.
 
 ### RED for other workloads
 
@@ -85,13 +85,13 @@ For each resource, check utilization, saturation and errors. Use it early in an 
 ### Order of checks
 
 1. Errors first. They are objective, quick to read, and rule things out early.
-2. Saturation second. It is easier to read than utilization: anything above 0 may be a problem.
+2. Saturation second. It is easier to read than utilization: anything above 0 may be a problem. Saturation is work that waits, and waiting is time that a user feels. 80% busy can be fine or bad, depending on the resource.
 3. Utilization last. It needs interpretation by resource type and by the length of the measuring window.
 4. When you find something, dig in with another method, then come back and continue the loop over the remaining resources. The first thing you find may be a problem, but not the problem.
 
 ### Reading the numbers
 
-- Utilization at 100% is usually a bottleneck. Confirm with saturation and with the effect on users.
+- Utilization at 100% is usually a bottleneck. Confirm with saturation and with the effect on users. A resource can be at 100% with nobody waiting: a batch job can use every CPU, and no request waits behind it. 100% only hurts when work queues behind it.
 - Utilization above 60% can already be a problem. A long window hides bursts of 100%. Some resources, like disks, cannot be interrupted mid-operation. And queueing delay grows fast as utilization rises (see [Why latency rises before 100%](#why-latency-rises-before-100)).
 - Saturation above 0 can be a problem. Measure it as queue length or as time spent waiting in the queue.
 - Errors above 0 are worth a look, especially when they rise while performance is bad. Errors that recover on their own (a successful retry, one failed disk in a RAID set) do not draw attention, but they still slow things down.
@@ -132,13 +132,13 @@ If a resource does not fit these three metrics, use another method, such as late
 
 - A per-minute average hides bursts. CPU at 60% on average can be 30 seconds at 100% and 30 seconds at 20%. During the first 30 seconds, requests queued.
 - Total CPU hides one core at 100%. A total of 12% with one core at 100% is a single-threaded app: the load is flat, the architecture is the limit.
-- Looking only at utilization. Saturation is what creates latency.
+- Looking only at utilization. Utilization says how busy a resource is. Saturation says who waits for it, and the wait is what adds latency.
 - High memory "used" is not a problem by itself. Linux uses free memory as page cache. Look at available memory and at saturation (swap, OOM, PSI).
 - A resource with no metric still goes on the list. Buses, interconnects and cloud quotas rarely have a dashboard. Write them down as known unknowns; do not skip them.
 
 ## RED at many layers
 
-A request passes through many layers. Each layer has its own idea of what a "request" is and sees only one part of the story. So R, E and D differ between layers. That difference is the clue: the problem usually sits at the first layer where the numbers start to drift.
+A request passes through many layers. Each layer has its own idea of what a "request" is and sees only one part of the story. So R, E and D differ between layers. That difference is the clue: the problem usually sits at the first layer where the numbers start to drift. Each layer contains the layers below it. If the lower layer is normal and the upper one is not, the extra time or errors come from between the two.
 
 Read the layers top to bottom. Each one is a measuring point that sits inside the one above it. The difference between two adjacent rows tells you where the time goes.
 
@@ -158,7 +158,7 @@ Read the layers top to bottom. Each one is a measuring point that sits inside th
 - Caches and CDNs absorb traffic. The edge receives 10k rps but the origin only 1k rps. A lower cache hit rate means the origin rate jumps, even though the user count did not change.
 - Retries. A client SDK, a service mesh or the LB retries, so a lower layer sees a higher rate than the layer above. A retry storm shows up here.
 - Fan-out. One request into the gateway becomes 5 internal calls, then 20 DB queries. A higher DB rate can come from new code that fans out more (N+1 queries), not from more users.
-- Health checks, bots, synthetic tests. The LB counts them; APM usually filters them out.
+- Health checks, bots, synthetic tests. The LB counts them, but APM usually filters them out. In this lab, the RED filter skips `/health`, `/metrics` and `/admin`.
 - Async. A request is accepted and pushed into a queue. The consumer's rate can differ from the producer's rate for a while.
 
 ### Why Errors differ
@@ -173,12 +173,12 @@ Read the layers top to bottom. Each one is a measuring point that sits inside th
 
 - Client duration covers everything. The server only sees the middle part.
 - App duration starts when the app accepts the request. The time the request waited before that (the LB queue, the accept queue, the worker queue) is not counted. When the service is overloaded, that wait grows and APM does not see it.
-- The gap between LB latency and app latency is about equal to the queueing time. That is USE saturation showing up as RED duration.
+- The gap between LB latency and app latency is about equal to the queueing time. The LB starts its timer before the queue, and the app starts its timer after it. The network hop between them is short, so most of the gap is the wait. That is USE saturation showing up as RED duration. How: draw the LB p99 and the app p99 on one chart. The gap is an estimate, because the slowest requests at the two layers are not always the same requests.
 - A DB span seen from the app can include the wait for a connection. A 200 ms span while the DB spent 5 ms on the query: the other 195 ms were pool wait or network.
 
 ### Tail amplification
 
-A request that calls N downstream services in parallel must wait for the slowest one. So the tail latency of the lower layer is amplified at the upper layer. With N calls, the share of upstream requests that hit at least one slow call is 1 minus p^N, where p is the share of fast calls. With 20 parallel calls, each above its p99 1% of the time, about 18% of upstream requests hit a slow call. So with a large fan-out, watch p99.9 at the lower layer, not only p99 or p50.
+A request that calls N downstream services in parallel must wait for the slowest one. So the tail latency of the lower layer is amplified at the upper layer. With N calls, the share of upstream requests that hit at least one slow call is 1 minus p^N, where p is the share of fast calls. With 20 parallel calls, each above its p99 1% of the time, about 18% of upstream requests hit a slow call. So with a large fan-out, watch p99.9 at the lower layer, not only p99 or p50. Why: for the upstream p99 to stay fast with 20 calls, each call must be fast 99.95% of the time (0.9995^20 is about 0.99). So the upstream p99 depends on the lower layer's p99.95. p99.9 is the closest percentile most dashboards have.
 
 ### Compare two adjacent layers
 
@@ -198,12 +198,13 @@ A request that calls N downstream services in parallel must wait for the slowest
 - RED for a consumer: messages consumed per second, failed messages or messages sent to a DLQ, processing time per message.
 - What users care about is end to end: from the moment the event is created until it is processed. That is the time in the queue plus the processing time.
 - Time in the queue shows as consumer lag, which is the saturation of the consumer group. Processing time can stay flat while lag grows, because the produce rate is above the consume rate.
-- Lag in time is easier to read than lag in messages. A lag of 10k messages is 100 seconds at 100 msg/s, but 1 second at 10k msg/s.
-- A poison message that is retried for ever blocks its whole partition. Errors stay low, but the lag of one partition grows in a straight line.
+- Read lag in seconds, not in messages. A message count means nothing without the rate: 10k messages is 100 seconds behind at 100 msg/s, but 1 second at 10k msg/s. Users and SLAs think in time, for example an order must show up within 30 s. A lag in seconds compares directly with that deadline. An alert in seconds also stays right when traffic grows, but an alert at 10k messages does not.
+- How to measure it: take the age of the oldest message not processed yet, which is now minus its timestamp. If you only have the message count, divide it by the consume rate. That division breaks when the consumer is stuck, because the rate is 0. The age still works then. In this lab, `kafka_consumer_lag_seconds` is that age, per partition.
+- A poison message that is retried for ever blocks its whole partition. Errors stay low, because it is one message failing again and again. The lag of that partition grows in a straight line: new messages keep coming at a steady rate, and none leave.
 
 ## USE at many layers
 
-The "CPU" an app sees is really many layers stacked: physical cores, the hypervisor, the VM, the container's cgroup, the runtime, then the thread pool inside the app. Each layer has its own limit, so it has its own utilization, saturation and errors. The bottleneck usually sits at the layer with the lowest limit, and that layer often does not show up in host metrics.
+The "CPU" an app sees is really many layers stacked: physical cores, the hypervisor, the VM, the container's cgroup, the runtime, then the thread pool inside the app. Each layer has its own limit, so it has its own utilization, saturation and errors. The bottleneck usually sits at the layer with the lowest limit, and that layer often does not show up in host metrics. Host metrics measure the whole machine. A container limit or a pool size is smaller than the machine, so it fills up while the host still looks idle.
 
 cgroup limits (CPU, memory, disk I/O, network I/O) are checked with USE exactly like physical resources.
 
@@ -262,15 +263,17 @@ L = λ × W
 
 Three common uses:
 
-- Check whether a pool is big enough. A service gets 200 rps with a mean duration of 50 ms, so on average 10 requests are in progress at once. A thread pool of 8 is certainly saturated.
+- Check whether a pool is big enough. A service gets 200 rps with a mean duration of 50 ms, so on average 10 requests are in progress at once. A thread pool of 8 is certainly saturated. 8 threads at 50 ms each finish at most 160 requests per second. 200 arrive, so the queue grows by 40 every second until requests time out.
 - See how a slow downstream drags the upstream along. 400 queries/s, query latency goes from 5 ms to 50 ms: the connections in use at once go from 2 to 20. A pool of 10 is full, requests wait, and API latency rises further.
 - Turn consumer lag into time. Lag in time is about lag in messages divided by the consume rate.
 
-Little's Law uses averages for a system in steady state. Good enough for capacity estimates, not for tail latency.
+Little's Law uses averages for a system in steady state. Good enough for capacity estimates, not for tail latency. It says how many requests are inside on average, but not how the time is spread between them, so it cannot give a p99.
 
 ### Why latency rises before 100%
 
 In a single-server model (M/M/1), response time over service time grows as 1 / (1 − utilization). The curve bends hard after about 60 to 70%. That is why utilization above 60% counts as a possible problem.
+
+Why: requests arrive at random, so they come in bursts. At 50% busy, the server has a lot of idle time, and it clears a burst quickly. At 90% busy, it has only 10% idle time. A burst takes a long time to clear, and the next burst often arrives before the queue is empty.
 
 | Utilization | Response time / service time |
 |---|---|
@@ -281,7 +284,7 @@ In a single-server model (M/M/1), response time over service time grows as 1 / (
 | 90% | 10x |
 | 95% | 20x |
 
-A system with many servers (many cores, many workers) stays flat longer, then goes vertical near 100%. The main point does not change: latency rises clearly before the resource reports "full".
+A system with many servers (many cores, many workers) stays flat longer, then goes vertical near 100%. With many servers, a new request usually finds one free. The queue only forms when almost all of them are busy. The main point does not change: latency rises clearly before the resource reports that it is full.
 
 ### Causal chain
 
@@ -293,7 +296,7 @@ The typical chain when an incident spreads:
 4. Clients time out and retry. Rate rises, saturation gets worse. This loop feeds itself.
 5. Finally errors rise: timeouts, empty pools, 503s.
 
-So rate and duration rising together is not proof of load. Separate new traffic from retry traffic before you conclude.
+So rate and duration rising together is not proof of load. Separate new traffic from retry traffic before you conclude. How: compare the user requests with the attempts the client sends, or count retries at the client or the mesh. If attempts grow faster than user requests, the extra load is retries. In this lab, compare `client_attempts_total` with `client_requests_total`.
 
 ### The combined process
 
@@ -338,7 +341,7 @@ When the rate goes up, answer four questions: who causes the load (client, tenan
 
 ### Performance mantras
 
-When you know where it is slow, pick a fix in this order: do not do it, do it once, do less, do it later, do it when nobody waits, do it in parallel, do it cheaper. The example at the end of this guide uses the first two that apply.
+When you know where it is slow, pick a fix in this order: do not do it, do it once, do less, do it later, do it when nobody waits, do it in parallel, do it cheaper. The first ones remove work, and the last ones only make the same work faster. Work you remove costs nothing and cannot break again, so try those first. The example at the end of this guide uses the first two that apply.
 
 ### Deeper methods
 
@@ -430,7 +433,7 @@ Tip: put LB latency and APM latency on the same chart. The gap between the two l
 
 ### Monitors
 
-- Page on-call on symptoms at the user-facing layer: SLO burn rate, p99 duration, error rate. That is RED.
+- Page on-call on symptoms at the user-facing layer: SLO burn rate, p99 duration, error rate. That is RED. A page wakes a person up, so it should fire only when users hurt. A cause like a pool at 90% is often harmless, and paging on it teaches people to ignore pages.
 - Use USE for early warnings or tickets, not pages: pool above 80%, throttling that lasts, a disk filling up.
 - The exception worth a page is saturation that predicts a certain incident: a disk that fills within 2 hours, consumer lag past the freshness deadline.
 - Alert on the gap between two layers: 5xx created by the LB above 0 while APM errors look normal means the backend is not receiving requests.

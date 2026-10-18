@@ -40,7 +40,7 @@ object Concepts {
         "Nothing yet: rate never helps with latency",
         "The LB is dropping requests, so the rate only looks flat"
       ),
-      explanation = "Rate flat and duration up points at architecture. Rate and duration up together may be load; check with workload characterization.",
+      explanation = "The same amount of work now takes longer, so something in the system got slower. Rate and duration up together may be load; check with workload characterization.",
       doc = "RED method in detail > Rate"
     ),
     ChoiceQuestion(
@@ -95,7 +95,7 @@ object Concepts {
         "Take the median of the 20 p99 values",
         "Take the p99 of the busiest pod"
       ),
-      explanation = "Percentiles cannot be averaged. The service-level p99 comes from the combined histogram buckets.",
+      explanation = "A percentile is a position in the sorted requests, so it cannot be averaged. A small pod with a bad p99 pulls the average up even if it serves almost nothing. Add the buckets first, then compute p99 once.",
       doc = "RED method in detail > Duration"
     ),
     ChoiceQuestion(
@@ -174,7 +174,7 @@ object Concepts {
         "Restart the service that owns it and watch",
         "Skip to utilization on all the other resources"
       ),
-      explanation = "The first thing you find may be a problem, but not the problem. Finish the loop.",
+      explanation = "A system often has more than one thing wrong at once. If you stop at the first find, you may fix a harmless one and miss the cause.",
       doc = "USE method in detail > Order of checks"
     ),
     ChoiceQuestion(
@@ -196,7 +196,7 @@ object Concepts {
         "None: you need a baseline for every metric",
         "Throughput: more work is always a risk"
       ),
-      explanation = "Saturation above 0 can be a problem, errors above 0 deserve a look, utilization needs interpretation.",
+      explanation = "Saturation is work that waits, and any wait adds latency. Utilization needs the resource type and the window before it means anything.",
       doc = "USE method in detail > Reading the numbers"
     ),
     ChoiceQuestion(
@@ -273,7 +273,7 @@ object Concepts {
         "A memory leak in the app",
         "Add RAM before anything else"
       ),
-      explanation = "High used memory is not a problem by itself. The saturation signals are what matter.",
+      explanation = "The kernel gives page cache back when an app needs memory, so high used memory is not a problem by itself. Swapping, OOM kills and PSI show real pressure.",
       doc = "USE method in detail > Pitfalls"
     ),
     ChoiceQuestion(
@@ -396,7 +396,7 @@ object Concepts {
         "p99 is enough at every layer",
         "The mean: fan-out averages the tail out"
       ),
-      explanation = "The upstream waits for the slowest call. The share that hits a slow call is 1 − p^N, so the tail of the lower layer is amplified.",
+      explanation = "The upstream waits for the slowest call, and the share that hits a slow call is 1 − p^N. For the upstream p99 to stay fast with 20 calls, each call must be fast 99.95% of the time.",
       doc = "RED at many layers > Tail amplification"
     ),
     ChoiceQuestion(
@@ -462,7 +462,7 @@ object Concepts {
         "Messages are harder to count",
         "Seconds never change with the consume rate"
       ),
-      explanation = "Lag in time is about lag in messages divided by the consume rate, and it compares with an SLA.",
+      explanation = "A message count means nothing without the rate. Users and SLAs think in time, so seconds compare directly with the deadline and stay right when traffic grows. Measure the age of the oldest unprocessed message.",
       doc = "RED at many layers > The async layer"
     ),
 
@@ -576,7 +576,7 @@ object Concepts {
         "Yes, if you use the max rate",
         "No: it only works for queues, not for services"
       ),
-      explanation = "Little's Law links means. For p99 you need the distribution or queueing theory.",
+      explanation = "Little's Law says how many requests are inside on average, not how the time is spread between them. For p99 you need the distribution or queueing theory.",
       doc = "Linking RED and USE > Little's Law"
     ),
     ChoiceQuestion(
@@ -587,7 +587,7 @@ object Concepts {
         "Because hardware fails above 70%",
         "It does not; only 100% matters"
       ),
-      explanation = "At 80% utilization the response time is 5 times the service time; at 90%, 10 times. Latency rises well before the resource reports full.",
+      explanation = "Requests arrive in bursts. At 90% busy there is only 10% idle time to clear a burst, so the queue rarely empties: response time is 10 times the service time.",
       doc = "Linking RED and USE > Why latency rises before 100%"
     ),
     ChoiceQuestion(
@@ -710,7 +710,7 @@ object Concepts {
         "Do it cheaper",
         "Do it when nobody waits"
       ),
-      explanation = "The order is: do not do it, do it once, do less, do it later, do it when nobody waits, do it in parallel, do it cheaper.",
+      explanation = "The first fixes remove work, the last ones only make it faster. Work you remove costs nothing and cannot break again.",
       doc = "Combining with other methods > Performance mantras"
     ),
     ChoiceQuestion(
@@ -868,7 +868,7 @@ object Concepts {
         "Any CPU throttling",
         "Disk usage above 70%"
       ),
-      explanation = "Page on RED symptoms. USE signals are early warnings or tickets, except saturation that predicts a certain incident, like a disk that fills within 2 hours.",
+      explanation = "A page wakes a person, so it should mean users hurt. USE signals are early warnings or tickets, except saturation that predicts a certain incident, like a disk that fills within 2 hours.",
       doc = "Applying on Datadog > Monitors"
     ),
 
