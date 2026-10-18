@@ -1,6 +1,8 @@
 package com.c0x12c.incidentlab.labctl.export
 
 import com.c0x12c.incidentlab.labctl.LabJson
+import com.c0x12c.incidentlab.labctl.Main
+import com.c0x12c.incidentlab.labctl.bench.BenchCatalog
 import com.c0x12c.incidentlab.labctl.bench.BenchExercise
 import com.c0x12c.incidentlab.labctl.control.ControlDaemon
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
@@ -9,7 +11,9 @@ import com.c0x12c.incidentlab.labctl.quiz.Concepts
 import com.c0x12c.incidentlab.labctl.quiz.Drill
 import com.c0x12c.incidentlab.labctl.quiz.Numbers
 import com.c0x12c.incidentlab.labctl.ramp.RampExercise
+import com.c0x12c.incidentlab.labctl.ramp.RampPlan
 import com.c0x12c.incidentlab.labctl.scenario.Answers
+import com.c0x12c.incidentlab.labctl.scenario.Baseline
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
 import java.nio.file.Files
 import java.nio.file.Path
@@ -55,6 +59,15 @@ object LabExport {
     val concepts: Int
   )
 
+  data class Defaults(
+    val baseRps: Int,
+    val rampRates: List<Int>,
+    val rampStepSeconds: Int,
+    val benchClients: Int,
+    val benchSeconds: Int,
+    val quizQuestions: Int
+  )
+
   data class Export(
     val scenarios: List<ScenarioCard>,
     val topics: List<String>,
@@ -64,6 +77,7 @@ object LabExport {
     val scoring: Scoring,
     val tickSeconds: Long,
     val recentWindow: Int,
+    val defaults: Defaults,
     val counts: Counts
   )
 
@@ -99,6 +113,14 @@ object LabExport {
       ),
       tickSeconds = ControlDaemon.TICK.seconds,
       recentWindow = Exercises.RECENT_WINDOW,
+      defaults = Defaults(
+        baseRps = Baseline.BASE_RPS,
+        rampRates = RampPlan.rates,
+        rampStepSeconds = RampPlan.DEFAULT_STEP_SECONDS,
+        benchClients = BenchCatalog.DEFAULT_CLIENTS,
+        benchSeconds = BenchCatalog.DEFAULT_SECONDS,
+        quizQuestions = Main.DEFAULT_QUIZ_QUESTIONS
+      ),
       counts = Counts(
         scenarios = scenarios.size,
         toolbox = scenarios.count { it.toolbox },
