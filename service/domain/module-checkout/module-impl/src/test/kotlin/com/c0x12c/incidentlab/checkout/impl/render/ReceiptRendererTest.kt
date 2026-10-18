@@ -8,6 +8,7 @@ import assertk.assertions.isLessThan
 import com.fasterxml.jackson.databind.ObjectMapper
 import java.lang.management.ManagementFactory
 import java.time.Duration
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
 class ReceiptRendererTest {
@@ -17,6 +18,11 @@ class ReceiptRendererTest {
   private val receipt = Receipt(orderId = 42, total = 123.45, items = listOf(1, 2, 3))
   private val renderer = ReceiptRenderer(ObjectMapper())
   private val threads = ManagementFactory.getThreadMXBean()
+
+  @BeforeEach
+  fun warmUp() {
+    renderer.render(receipt, Duration.ZERO)
+  }
 
   @Test
   fun `a platform thread spends about the requested CPU time, measured as CPU time`() {

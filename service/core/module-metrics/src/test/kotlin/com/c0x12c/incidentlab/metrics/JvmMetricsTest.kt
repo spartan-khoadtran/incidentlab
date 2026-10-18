@@ -2,6 +2,7 @@ package com.c0x12c.incidentlab.metrics
 
 import assertk.assertThat
 import assertk.assertions.contains
+import assertk.assertions.isGreaterThan
 import assertk.assertions.isTrue
 import io.micrometer.prometheusmetrics.PrometheusConfig
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
@@ -42,6 +43,7 @@ class JvmMetricsTest {
     assertThat(text).contains("jvm_gc_max_data_size_bytes")
     assertThat(text).contains("jvm_gc_memory_allocated_bytes_total")
     assertThat(text).contains("jvm_gc_memory_promoted_bytes_total")
+    assertThat(liveData(text)).isGreaterThan(0.0)
   }
 
   @Test

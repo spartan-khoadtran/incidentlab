@@ -11,6 +11,7 @@ import com.c0x12c.incidentlab.checkout.impl.CheckoutFaults
 import com.c0x12c.incidentlab.faults.Faults
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import io.opentelemetry.api.OpenTelemetry
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import kotlin.math.exp
@@ -39,7 +40,14 @@ class InventoryCacheTest {
     val faults = Faults(CheckoutFaults.DEFAULTS).also { it.replace(mapOf(CheckoutFaults.LOCK_MS to HOLD_MS)) }
     val cache = InventoryCache(faults, tracer, registry, OneMeanHold)
 
-    val threads = (1..THREADS).map { thread { cache.refresh() } }
+    val start = CountDownLatch(1)
+    val threads = (1..THREADS).map {
+      thread {
+        start.await()
+        cache.refresh()
+      }
+    }
+    start.countDown()
     threads.forEach { it.join() }
 
     val wait = registry.find("app_lock_wait_seconds").timer()!!
