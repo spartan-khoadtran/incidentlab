@@ -36,6 +36,17 @@ class BoardsTest {
   }
 
   @Test
+  fun `the USE board ends with the host disk row and the Postgres row reads disk waits`() {
+    val panels = UseBoard.build().panels
+    val rows = panels.filter { it["type"] == "row" }.map { it["title"] }
+    val expressions = panels.flatMap { (it["targets"] as? List<*>).orEmpty() }.map { (it as Map<*, *>)["expr"] as String }
+
+    assertThat(rows.last()).isEqualTo("Disk (host, node-exporter)")
+    assertThat(listOf("pg_wait_events", "pg_wal_sync_seconds_total", "pg_checkpoints_total", "node_disk_io_time_weighted_seconds_total").all { name -> expressions.any { it.contains(name) } }).isTrue()
+    assertThat(expressions.none { it.contains("[RI]") }).isTrue()
+  }
+
+  @Test
   fun `latency quantile targets ask for exemplars and rate targets do not`() {
     val targets = RedBoard.build().panels.flatMap { (it["targets"] as? List<*>).orEmpty() }.map { it as Map<*, *> }
     val (quantiles, others) = targets.partition { (it["expr"] as String).startsWith("histogram_quantile(") }
