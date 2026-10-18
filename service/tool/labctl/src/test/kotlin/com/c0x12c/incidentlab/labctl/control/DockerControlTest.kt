@@ -92,6 +92,13 @@ class DockerControlTest {
   }
 
   @Test
+  fun `an engine error at start wires no container applier instead of stopping the daemon`() {
+    val broken = DockerEngine { method, path, _ -> throw IllegalStateException("docker $method $path -> 500") }
+
+    assertThat(DockerControl(broken, "foo").containerAppliers { cgroupStub }).isEmpty()
+  }
+
+  @Test
   fun `every container found wires CPU, netem and the cgroup applier`() {
     val appliers = DockerControl(FakeEngine(container(3, "foo", "api"), container(6, "foo", "postgres")), "foo").containerAppliers { cgroupStub }
 

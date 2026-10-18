@@ -216,7 +216,7 @@ export function ExerciseTab() {
         )}
       </div>
       <aside className="play-side">
-        <Hints view={view} busy={busy === "hint"} error={hintError} onHint={() => act("hint", async () => setView(await api.hint()), setHintError)} />
+        <Hints view={view} busy={busy === "hint"} error={hintError} onHint={() => act("hint", async () => setView(await api.hint(view.key)), setHintError)} />
         <ExplorePanel view={view} status={status} />
         <section className="give-up">
           <button type="button" className="btn btn-quiet" onClick={() => setConfirmReveal(true)}>

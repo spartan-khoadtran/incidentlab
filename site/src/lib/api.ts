@@ -240,7 +240,7 @@ export const api = {
   options: () => call<Options>("GET", "/options"),
   start: (body: NewExercise) => call<ActiveView>("POST", "/exercises", body),
   exercise: () => call<ActiveView>("GET", "/exercise"),
-  hint: () => call<ActiveView>("POST", "/exercise/hint"),
+  hint: (key: string) => call<ActiveView>("POST", "/exercise/hint", { key }),
   answer: (key: string, body: Answer) => call<Result>("POST", "/exercise/answer", { ...body, key }),
   reveal: (key: string) => call<Reveal>("POST", "/exercise/reveal", { key }),
   /** Without a key it ends whatever is open: only for an exercise the page cannot read, such as a stale one. */

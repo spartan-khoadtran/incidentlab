@@ -18,8 +18,8 @@ afterAll(() => server.close());
 describe("api client", () => {
   it("sends Content-Type and X-Lab-Client on every POST, and neither on a GET", async () => {
     await api.health();
-    await api.start({ mode: "incident" });
-    await api.hint();
+    const view = await api.start({ mode: "incident" });
+    await api.hint(view.key);
     const get = state.calls.find((c) => c.method === "GET")!;
     expect(get.headers["x-lab-client"]).toBeNull();
     for (const c of state.calls.filter((c) => c.method === "POST")) {

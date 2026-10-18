@@ -24,7 +24,7 @@ fi
 
 filters=$(jq -cn --arg p "$project" --arg s "$service" \
   '{label: ["com.docker.compose.project=\($p)", "com.docker.compose.service=\($s)", "com.docker.compose.oneoff=False"]}')
-id=$(curl -s -G --unix-socket "$sock" --data-urlencode "all=1" --data-urlencode "filters=$filters" "http://localhost/containers/json" | jq -r '.[0].Id // empty')
+id=$(curl -s -G --unix-socket "$sock" --data-urlencode "all=1" --data-urlencode "filters=$filters" "http://localhost/containers/json" | jq -r 'sort_by(.State != "running") | .[0].Id // empty')
 if [ -z "$id" ]; then
   echo "cid: no container for service $service in compose project $project (is the lab up?)" >&2
   exit 1

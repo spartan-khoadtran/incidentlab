@@ -123,7 +123,9 @@ class DockerControl(
    * out, so `capabilities.json` does not list its keys and no exercise that needs it can start.
    */
   fun containerAppliers(cgroups: ((String) -> String?) -> Applier?): List<Applier> {
-    val missing = Services.BASE_DOCKER.keys.filter { containerId(it) == null }.toSet()
+    val missing = Services.BASE_DOCKER.keys.filter { container ->
+      runCatching { containerId(container) }.onFailure { warn { "docker: cannot look up $container: ${it.message}" } }.getOrNull() == null
+    }.toSet()
     if (missing.isNotEmpty()) {
       info { "compose project $project has no container for ${missing.sorted().joinToString()}: the exercises that change it are disabled" }
     }

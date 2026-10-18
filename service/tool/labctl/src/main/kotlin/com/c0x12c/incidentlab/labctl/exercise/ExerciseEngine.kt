@@ -123,8 +123,9 @@ class ExerciseEngine(
     }
   }
 
-  fun hint(): Outcome<ActiveView> =
+  fun hint(key: String? = null): Outcome<ActiveView> =
     store.withLock { state, write ->
+      if (!state.active.matches(key)) return@withLock Refused(Refusal.ExerciseChanged)
       when (val found = incident(state)) {
         is Refused -> found
         is Done -> {

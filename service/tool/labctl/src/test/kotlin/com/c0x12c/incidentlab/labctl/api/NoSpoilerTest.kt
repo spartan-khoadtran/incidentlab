@@ -20,6 +20,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.ZoneId
 import kotlin.random.Random
@@ -52,6 +53,23 @@ class NoSpoilerTest {
         }
       }
       assertThat(leaks).isEmpty()
+    }
+  }
+
+  @Test
+  fun `an exercise opened before the key existed does not show its id through the key`(@TempDir dir: Path) {
+    val path = dir.resolve("state.json")
+    Files.writeString(path, """{"active": {"id": "rtt_amplified", "params": {"delay": 5, "k": 9}, "started": $NOW, "n": 2}}""")
+    val store = StateStore(path)
+    val probe = FakePrometheus { _, _ -> null }
+    val annotator = FakeAnnotator()
+    val exercises = ExerciseEngine(store, probe, annotator, now = { NOW }, zone = ZoneId.of("UTC"))
+    LabApi(exercises, RampEngine(store, probe, annotator), BenchEngine(store, probe, annotator), QuizSessions()).start(0).use { server ->
+      val base = "http://127.0.0.1:${server.port}"
+      val seen = get("$base/api/exercise") + get("$base/api/status")
+
+      assertThat(seen.contains("rtt_amplified")).isEqualTo(false)
+      assertThat(seen.contains("\"key\":\"legacy-2-")).isEqualTo(true)
     }
   }
 

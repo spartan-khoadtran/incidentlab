@@ -16,8 +16,8 @@ data class ActiveExercise(
   val choices: Choices? = null,
   /** What the learner said about a ramp, and how many steps had run. */
   val rampAnswer: RampSubmission? = null,
-  /** Names this exercise for a command that reads it first and writes later. A file written before the field existed gets one from its id and start. */
-  val key: String = "$id@$started",
+  /** Names this exercise for a command that reads it first and writes later. The API shows it, so an older file's default never holds the scenario id. */
+  val key: String = "legacy-$n-$started",
   /** Annotations written ahead of time, so an early end can delete the ones still in the future. */
   val annotations: List<PlannedAnnotation> = emptyList()
 ) {

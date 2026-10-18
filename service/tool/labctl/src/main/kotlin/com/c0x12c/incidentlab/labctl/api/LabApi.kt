@@ -77,8 +77,8 @@ class LabApi(
     get("/api/options") { ok(exercises.options()) },
     post("/api/exercises") { created(exercises.start(newOptions(it.body(NewRequest::class))).orFail()) },
     get("/api/exercise") { ok(exercises.active().orFail()) },
-    post("/api/exercise/hint") {
-      ok(exercises.hint().orFail { refusal -> (refusal as? Refusal.WrongMode)?.let { noHints(it.mode) } })
+    post("/api/exercise/hint") { call ->
+      ok(exercises.hint(call.body(KeyRequest::class).key).orFail { refusal -> (refusal as? Refusal.WrongMode)?.let { noHints(it.mode) } })
     },
     post("/api/exercise/answer") { call ->
       val request = call.body(AnswerRequest::class)

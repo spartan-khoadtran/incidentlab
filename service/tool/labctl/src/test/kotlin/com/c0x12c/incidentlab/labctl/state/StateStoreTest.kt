@@ -40,7 +40,7 @@ class StateStoreTest {
 
     assertThat(state.active?.mode).isEqualTo("incident")
     assertThat(state.history.map { it.mode }).isEqualTo(listOf("incident"))
-    assertThat(state.active?.key).isEqualTo("pool_hold@1.5")
+    assertThat(state.active?.key).isEqualTo("legacy-3-1.5")
     assertThat(StateStore(path).load().active?.key).isEqualTo(state.active?.key)
     assertThat(state.active?.annotations).isEqualTo(emptyList<PlannedAnnotation>())
   }

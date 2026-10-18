@@ -27,7 +27,7 @@ An error is an HTTP status plus `{"error": "<code>", "message": "<one plain sent
 
 ## The exercise key
 
-Every exercise gets a random `key` when it starts. `n` is not enough: it repeats after a clear. The answer, reveal and clear calls of every mode take an optional `key` in the body. Without it, the call acts on whatever exercise is open. With it, the call acts only when that exercise is still the open one, else 409 `exercise_changed`. The site always sends the key of the exercise it shows. The key is not a spoiler: it is random and says nothing about the scenario.
+Every exercise gets a random `key` when it starts. `n` is not enough: it repeats after a clear. The hint, answer, reveal and clear calls of every mode take an optional `key` in the body. Without it, the call acts on whatever exercise is open. With it, the call acts only when that exercise is still the open one, else 409 `exercise_changed`. The site always sends the key of the exercise it shows. The key is not a spoiler: it is random and says nothing about the scenario.
 
 ## Write calls
 
@@ -84,7 +84,7 @@ HistoryEntry = { n, id, mode, title, level, score: number|null, hints, minutes, 
   - `result` once it is answered: the same `Result` that `POST /api/exercise/answer` returned, or the same `RampResult` that `POST /api/ramp/answer` returned. A reveal is not an answer, so a revealed exercise has no `result`. A ramp's `result` is read again from Prometheus and is left out when Prometheus does not answer.
 
   404 `no_exercise`.
-- `POST /api/exercise/hint` -> `ActiveView` with the new hint at the end of `hints`. 409 `no_hints_left` (also for a ramp or a bench), or `already_answered`.
+- `POST /api/exercise/hint` body `{ key?: string }` -> `ActiveView` with the new hint at the end of `hints`. 409 `no_hints_left` (also for a ramp or a bench), or `already_answered`.
 - `POST /api/exercise/answer` body `{ nature, location, signal, cause, note?: string, key?: string }` -> `Result`. Keys come from `/api/options`. 400 `unknown_key` or `missing_field`. 409 `already_answered`, or `exercise_changed`. Keeps the history entry like `make answer`, note included (one line, at most 500 characters). Does not clear the fault.
 - `POST /api/exercise/reveal` body `{ key?: string }` -> `Reveal`. Not scored. 409 `exercise_changed`. The first reveal adds a history entry with `score: null`, like `make reveal`. Does not clear the fault.
 - `POST /api/exercise/clear` body `{ key?: string }` -> `{ cleared: true }`. Ends the open exercise of any mode, with the annotation "lab: fault cleared". A ramp or a bench that ends before its time also loses its annotations that are still in the future. 409 `exercise_changed` when `key` names another exercise than the open one; with no exercise open, it still answers `{ cleared: true }`.

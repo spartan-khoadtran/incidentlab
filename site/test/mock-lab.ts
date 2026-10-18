@@ -145,6 +145,7 @@ export class MockLab {
       case route === "GET /exercise":
         return this.active ? { status: 200, body: this.view() } : err(404, "no_exercise", "No exercise is open.");
       case route === "POST /exercise/hint": {
+        if (changed()) return changed()!;
         if (this.active && (this.active.mode === "ramp" || this.active.mode === "bench")) return err(409, "no_hints_left", `A ${this.active.mode} has no hints.`);
         const refused = incident();
         if (refused) return refused;
