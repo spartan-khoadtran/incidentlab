@@ -51,8 +51,8 @@ services:
     volumes:
       - ./config/envoy.yaml:/etc/envoy/envoy.yaml:ro
     ports:
-      - "8080:8080"
-      - "9901:9901"
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:9901:9901"
     labels:
       com.datadoghq.ad.checks: '{"envoy": {"instances": [{"openmetrics_endpoint": "http://%%host%%:9901/stats/prometheus"}]}}'
 
@@ -241,7 +241,7 @@ services:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - promdata:/prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
 
   grafana:
     image: grafana/grafana:11.6.0
@@ -258,7 +258,7 @@ services:
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
 
   # Traces. Read them in Grafana (Explore or Drilldown > Traces); there is no separate UI.
   tempo:
@@ -281,7 +281,7 @@ services:
       - pyroscopedata:/data
     mem_limit: 768m
     ports:
-      - "4040:4040"
+      - "127.0.0.1:4040:4040"
 
   node-exporter:
     image: prom/node-exporter:v1.9.1
@@ -295,7 +295,7 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
 
-  # Shell on the Docker VM for the CLI-only exercises: `make shell`. It sees every process and cgroup, read-only.
+  # Shell on the Docker VM for the CLI-only exercises: `make shell`. It sees every process and cgroup. It is root on the VM with full Docker API access (a :ro bind does not limit a socket).
   toolbox:
     build: ./config/toolbox
     image: incidentlab-toolbox:latest
@@ -320,7 +320,7 @@ services:
     restart: unless-stopped
     mem_limit: 64m
     ports:
-      - "4000:80"
+      - "127.0.0.1:4000:80"
 
   # ------------------------------------------------------------------ optional: Datadog (make up-datadog)
   datadog-agent:

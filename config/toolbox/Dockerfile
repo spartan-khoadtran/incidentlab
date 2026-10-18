@@ -1,5 +1,5 @@
 # The host toolbox for the CLI-only exercises (`make toolbox`, `make shell`). It reads the whole Docker VM:
-# compose runs it with the host PID namespace, privileged, with the cgroup tree and the docker socket read-only.
+# compose runs it with the host PID namespace, privileged, with the cgroup tree read-only and the docker socket.
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
