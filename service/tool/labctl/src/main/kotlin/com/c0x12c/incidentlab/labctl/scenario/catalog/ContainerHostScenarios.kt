@@ -206,7 +206,7 @@ internal object ContainerHostScenarios {
     decoy = 0.3,
     ticket = { p ->
       "At ${p.startedAt}, api moved to a smaller burstable VM to save cost. Right now every panel looks normal. The on-call lead asks you to keep " +
-        "watching for a few minutes: 'this kind of VM does not always stay fast'. When something changes, tell us what changed and why."
+        "watching for a few minutes, because this kind of VM does not always stay fast. When something changes, tell us what changed and why."
     },
     hints = listOf(
       "Nothing is wrong yet. Write down the baseline now: api p99 by route, CPU usage against the limit, the throttled share. Then wait.",

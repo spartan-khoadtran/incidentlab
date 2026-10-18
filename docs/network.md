@@ -60,7 +60,7 @@ When a segment is lost, TCP sends it again. How fast depends on what comes after
 | The lost segment is the last one in flight | A tail loss probe, or the RTO timer | 200 ms or more on Linux |
 | A SYN is lost | The RTO timer, with the first RTO at 1 s | 1 s, then 2 s for a second loss |
 
-- The RTO is the retransmission timeout. TCP computes it from the measured RTT and its variation. On Linux its floor is 200 ms by default (`tcp_rto_min_us`). The standard asks for a 1 s floor, but Linux uses 200 ms.
+- The RTO is the retransmission timeout. TCP computes it from the measured RTT and its variation. On Linux its floor is 200 ms by default. Since Linux 6.11 the sysctl `tcp_rto_min_us` sets it. The standard asks for a 1 s floor, but Linux uses 200 ms.
 - After each timeout, the RTO doubles. On a fast network, a segment lost twice costs about 200 ms, then about 400 ms more.
 - A small request fits in one segment. If it is lost, nothing follows it, so no duplicate ACK can come. The sender waits for a timer.
 - A tail loss probe resends the last segment before the RTO fires. With one segment in flight, Linux sends it after two RTTs plus 200 ms. It never waits longer than the RTO. Either way, the wait is about 200 ms.
@@ -92,7 +92,7 @@ Linux keeps TCP counters per network namespace. Each container has its own names
 
 ## Network panels in this lab
 
-Every service in the lab exports the TCP counters of its own namespace. The netem exercises shape api's outgoing traffic, so the evidence sits in api's counters.
+Every Kotlin service in the lab (api, pricing, worker, loadgen, noisy, pgobserver) exports the TCP counters of its own namespace. The netem exercises shape api's outgoing traffic, so the evidence sits in api's counters.
 
 ### The network row
 

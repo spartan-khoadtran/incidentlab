@@ -50,10 +50,10 @@ internal object DiskScenarios {
     steps = listOf(
       "Problem statement: /checkout p99 up, /products normal, no slow query or lock in Postgres, no app deploy.",
       "RED: the rate is flat, so suspect architecture. Only the route that writes slowed down.",
-      "Postgres: every write query is a little slower, none is a lot slower, and pg_lock_waiters stays at 0.",
+      "Postgres: exec time by query is flat and pg_lock_waiters stays at 0. Postgres times each statement, not the WAL flush at its commit.",
       "Wait events: IO / WALSync grew, and the mean WAL sync time is many times its baseline. Commits wait for the disk.",
       "Host disk row: busy share and await up, while Postgres sends the same work as before. Someone else uses the disk.",
-      "Throughput by device and the noisy job's fsync rate: the nightly export writes about as many MB/s as the disk takes.",
+      "Throughput by device and the noisy job's fsync rate: the nightly export makes most of the disk's write traffic.",
       "The cause: another process saturates the disk under the WAL. Commits pay for it, cached reads do not."
     ),
     evidence = listOf(
@@ -104,7 +104,7 @@ internal object DiskScenarios {
       "Checkpoints in the last minute by kind, and WAL written per second: how often, and what happens right after each checkpoint?",
       "checkpoint_timeout and checkpoint_completion_target: over how many seconds does each checkpoint write its pages now?"
     ),
-    answer = Answer(nature = setOf("arch"), location = setOf("db"), signal = setOf("disk_io"), cause = "checkpoint_bursts"),
+    answer = Answer(nature = setOf("arch"), location = setOf("db", "disk"), signal = setOf("disk_io"), cause = "checkpoint_bursts"),
     explain = { p ->
       val perInterval = p.int("rows") * CHECKPOINT_TIMEOUT_S
       val pages = (STATS_PAGES * (1 - exp(-perInterval.toDouble() / STATS_PAGES))).roundToInt()
@@ -117,7 +117,7 @@ internal object DiskScenarios {
         "(about ${p.fixed(mb / window, 1)} MB/s) and flushes them at once, every $CHECKPOINT_TIMEOUT_S s. " +
         "Right after each checkpoint, the first change to every page also writes a full page image to the WAL, so the WAL jumps too. " +
         "The commits that land in that window wait behind the burst: p99 spikes every $CHECKPOINT_TIMEOUT_S s and p50 does not move. " +
-        "The small max_wal_size also lets the WAL request checkpoints of its own, so some show as requested. " +
+        "The small max_wal_size can also make the WAL request a checkpoint before the timer fires, so some may show as requested. " +
         "The job alone writes at a steady rate: a steady load cannot make a 30 s pattern, the checkpoint timer does. " +
         "Fix: put the three settings back (or at least a completion target near 0.9 and a timeout of minutes), with a reload."
     },
@@ -162,7 +162,7 @@ internal object DiskScenarios {
     hints = listOf(
       "Both teams can be right. Compare what Postgres waits for with what the host disk does.",
       "Mean WAL sync time against host disk await: do they rise together?",
-      "Look at write IOPS on the host and at the WAL syncs per second. Is there a flat ceiling at one round number?"
+      "The kernel can cap one container's I/O before it reaches the device. Read the postgres container's cgroup io.max and compare it with the WAL syncs per second."
     ),
     answer = Answer(nature = setOf("arch"), location = setOf("disk"), signal = setOf("disk_io"), cause = "iops_limit", partial = setOf("disk_io_contention")),
     explain = { p ->
@@ -182,7 +182,7 @@ internal object DiskScenarios {
       "Postgres: IO / WALSync grew and the mean WAL sync time is many times its baseline.",
       "Host disk row: await and busy share are low and flat. The disk itself is not the bottleneck.",
       "The gap between Postgres's I/O time and the device await means the wait sits above the device.",
-      "Write IOPS sit flat at one round number while demand is higher: a quota. The postgres cgroup io.max holds the limit.",
+      "The postgres cgroup io.max holds a write quota at one round number. The WAL flushes alone use a large share of it, so every burst waits.",
       "The cause: an IOPS limit between the database and an idle disk."
     ),
     evidence = listOf(

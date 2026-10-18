@@ -72,7 +72,7 @@ internal object ProfilingScenarios {
       "histogram_quantile(0.99, sum by (le, route) (rate(http_client_duration_seconds_bucket{job=\"api\"}[1m])))"
     ),
     cli = listOf(
-      "top -H -b -n 1 -p $(pgrep -f checkout-api) | head -20   # many api threads busy at once: CPU work on every request, not one event loop thread"
+      "top -H -b -n 1 -p $(pgrep -f checkout-api) | head -20   # two threads busy at once, the virtual-thread carriers: CPU work on every request, not one event loop thread"
     ),
     doc = "CPU profiling > Reading a flame graph; Profiles in this lab > A good first query"
   )

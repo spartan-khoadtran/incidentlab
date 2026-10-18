@@ -74,7 +74,7 @@ internal object JvmScenarios {
       "RED: the rate is flat and the LB p99 tracks api's p99. Postgres and pricing are flat, so the time is spent inside api.",
       "The api latency heatmap: a few requests at a time jump far above the main band, on every route at the same moments.",
       "Something stops the whole process. The JVM row: full GCs (MarkSweepCompact) come every few dozen seconds, with pauses above 100 ms.",
-      "Live data after full GC sits close to the old gen max: each GC frees little, so GCs come often.",
+      "Live data after full GC takes most of the old gen max: each GC frees little, so GCs come often.",
       "Not a leak: live data is high but flat, RSS is flat and nothing restarts.",
       "The cause: a large on-heap store that keeps changing. Its objects are promoted and then die, and every full GC pause lands in p99."
     ),
@@ -130,7 +130,7 @@ internal object JvmScenarios {
       "USE: CPU is a few percent of 2 cores with no throttling, and the DB pool is far from full. No classic resource is saturated.",
       "Little's Law: api's in-flight requests climb while nothing is busy. Requests wait for something that has no gauge of its own.",
       "The JVM row: pinned events started at the deploy, and time pinned per second sits near 2, the number of carriers.",
-      "If the lab has profiles (Explore > Pyroscope, service api), a wall-clock profile shows the checkout time sleeping inside the synchronized block.",
+      "The CPU profile in Pyroscope (service api) shows no new hot code, because the pinned carriers sleep. The lock profile is empty too: no lock is contended.",
       "The cause: synchronized around blocking work pins virtual threads, so only 2 checkouts make progress at once. Demand is above that cap."
     ),
     evidence = listOf(
@@ -165,7 +165,7 @@ internal object JvmScenarios {
       "CPU user against system in the Runtime row. What does a service do on every request that costs system time?",
       "Count api's log lines: how many lines does one request write, and what does each line cost?"
     ),
-    answer = Answer(nature = setOf("arch"), location = setOf("api"), signal = setOf("user_vs_sys"), cause = "sync_logging", partial = setOf("single_thread_cpu")),
+    answer = Answer(nature = setOf("arch"), location = setOf("api"), signal = setOf("user_vs_sys"), cause = "sync_logging", partial = setOf("hot_code_path")),
     explain = { p ->
       val lines = p.int("lines")
       val perSecond = lines * BASE_RPS
