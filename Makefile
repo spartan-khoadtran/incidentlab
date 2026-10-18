@@ -5,7 +5,7 @@ CTL      = $(COMPOSE) exec control $(LABCTL)
 GRADLE   = cd service && ./gradlew
 
 .DEFAULT_GOAL := help
-.PHONY: help up up-datadog wait new hint answer reveal clear status list history quiz load ramp \
+.PHONY: help up up-datadog wait new hint answer reveal clear status list history quiz load ramp bench \
         open logs ps stop down nuke check build test lint format dashboards
 
 help: ## List the commands
@@ -80,6 +80,9 @@ load: ## Change the background load: X=1.5 (times the default 50 rps)
 
 ramp: ## Capacity ramp on the live lab: the load rises in steps, find the knee. Option: STEP=60 (seconds per step)
 	@$(CTL) ramp $(if $(STEP),--every $(STEP))
+
+bench: ## Closed-loop bench on the live lab, not scored, then a before/after report. Options: CLIENTS=20 SECONDS=120
+	@$(CTL) bench $(if $(CLIENTS),--clients $(CLIENTS)) $(if $(SECONDS),--seconds $(SECONDS))
 
 # ----------------------------------------------------------------------------- tools
 open: ## Open Grafana in the browser (macOS)

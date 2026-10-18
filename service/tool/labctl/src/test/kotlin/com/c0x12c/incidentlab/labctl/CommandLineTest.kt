@@ -5,6 +5,7 @@ import assertk.assertThat
 import assertk.assertions.hasMessage
 import assertk.assertions.isEqualTo
 import assertk.assertions.isInstanceOf
+import com.c0x12c.incidentlab.labctl.bench.BenchOptions
 import com.c0x12c.incidentlab.labctl.exercise.NewOptions
 import com.c0x12c.incidentlab.labctl.quiz.QuizKind
 import com.c0x12c.incidentlab.labctl.ramp.RampOptions
@@ -56,5 +57,14 @@ class CommandLineTest {
     )
     assertFailure { CommandLine.rampOptions(listOf("--every")) }.isInstanceOf(UsageError::class)
     assertFailure { CommandLine.rampOptions(listOf("--steps", "3")) }.isInstanceOf(UsageError::class)
+  }
+
+  @Test
+  fun `bench takes a client count and a length within bounds`() {
+    assertThat(CommandLine.benchOptions(emptyList())).isEqualTo(BenchOptions(clients = 20, seconds = 120))
+    assertThat(CommandLine.benchOptions(listOf("--clients", "50", "--seconds", "180"))).isEqualTo(BenchOptions(clients = 50, seconds = 180))
+    assertFailure { CommandLine.benchOptions(listOf("--clients", "0")) }.hasMessage("CLIENTS must be a whole number between 1 and 200, for example `make bench CLIENTS=50`.")
+    assertFailure { CommandLine.benchOptions(listOf("--seconds", "10")) }.isInstanceOf(UsageError::class)
+    assertFailure { CommandLine.benchOptions(listOf("--rate", "10")) }.isInstanceOf(UsageError::class)
   }
 }

@@ -1,5 +1,6 @@
 package com.c0x12c.incidentlab.labctl
 
+import com.c0x12c.incidentlab.labctl.bench.BenchExercise
 import com.c0x12c.incidentlab.labctl.control.ContainerCpuApplier
 import com.c0x12c.incidentlab.labctl.control.ControlDaemon
 import com.c0x12c.incidentlab.labctl.control.DockerControl
@@ -20,6 +21,7 @@ import kotlin.system.exitProcess
 //   labctl daemon            keeps every service in the desired fault state (runs in the control container)
 //   labctl new|hint|answer|reveal|clear|status|list|history|load|quiz
 //   labctl ramp              a capacity ramp on the live lab (its own mode of make answer)
+//   labctl bench             closed-loop clients for a while, then a before/after report
 object Main : Logging {
 
   @JvmStatic
@@ -35,7 +37,8 @@ object Main : Logging {
     val probe = HttpLabProbe(http)
     val annotator = GrafanaAnnotator(http, terminal)
     val ramp = RampExercise(store, probe, annotator, terminal)
-    val exercises = Exercises(store, probe, annotator, terminal, modes = listOf(ramp))
+    val bench = BenchExercise(store, probe, annotator, terminal)
+    val exercises = Exercises(store, probe, annotator, terminal, modes = listOf(ramp, bench))
     return try {
       when (command) {
         "daemon" -> {
@@ -57,6 +60,7 @@ object Main : Logging {
         "history" -> exercises.history()
         "load" -> exercises.load(CommandLine.loadMultiplier(args.getOrNull(1)))
         "ramp" -> ramp.start(CommandLine.rampOptions(args.drop(1)))
+        "bench" -> bench.start(CommandLine.benchOptions(args.drop(1)))
         "quiz" -> {
           val options = CommandLine.quizOptions(args.drop(1), DEFAULT_QUIZ_QUESTIONS)
           terminal.out("Drills from the guide. A number question takes a number (a comma or a dot both work as the decimal separator). A concept question takes the number of one option.")
@@ -74,7 +78,7 @@ object Main : Logging {
   private fun usage(): Int {
     println(
       "usage: labctl daemon | new [--level N] [--topic T] [--id ID] [--force] | hint | answer | reveal | clear | status | list | history | load X | " +
-        "quiz [-n N] [--kind numbers|concepts|all] | ramp [--every S]"
+        "quiz [-n N] [--kind numbers|concepts|all] | ramp [--every S] | bench [--clients N] [--seconds S]"
     )
     return USAGE_EXIT
   }
