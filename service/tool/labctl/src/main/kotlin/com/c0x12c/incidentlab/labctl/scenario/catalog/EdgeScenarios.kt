@@ -86,6 +86,10 @@ internal object EdgeScenarios {
       "envoy_cluster_membership_healthy{envoy_cluster_name=\"api\"}",
       "sum(rate(http_server_requests_total{job=\"api\"}[1m]))"
     ),
+    cli = listOf(
+      "for i in 1 2 3 4 5; do curl -s http://envoy:9901/clusters | grep health_flags; sleep 2; done   # the api host often shows /failed_active_hc",
+      "for i in 1 2 3 4 5; do curl -s -o /dev/null -w '%{http_code}\\n' http://api:8000/health; done   # api's own health check fails about half the time"
+    ),
     doc = "RED at many layers > Why Errors differ"
   )
 

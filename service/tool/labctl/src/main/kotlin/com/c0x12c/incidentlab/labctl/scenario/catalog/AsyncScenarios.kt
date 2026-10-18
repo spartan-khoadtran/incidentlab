@@ -53,6 +53,10 @@ internal object AsyncScenarios {
       "sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
       "max(kafka_consumer_lag_seconds)"
     ),
+    cli = listOf(
+      "for i in 1 2; do curl -s http://worker:8002/metrics | grep '^kafka_consumer_lag_messages'; sleep 15; done   # lag grows on every partition",
+      "for i in 1 2; do curl -s http://api:8000/metrics | grep '^kafka_produced_total.*outcome=\"ok\"'; sleep 10; done   # source=backfill grows much faster than source=checkout"
+    ),
     doc = "RED at many layers > The async layer"
   )
 
@@ -93,6 +97,10 @@ internal object AsyncScenarios {
       "sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
       "max(kafka_consumer_lag_seconds)"
     ),
+    cli = listOf(
+      "for i in 1 2; do curl -s http://worker:8002/metrics | grep -E '^kafka_processing_seconds_(sum|count)'; sleep 30; done   # (sum2 - sum1) / (count2 - count1) is the time per message, far above 0.025 s",
+      "for i in 1 2; do curl -s http://api:8000/metrics | grep '^kafka_produced_total.*outcome=\"ok\"'; sleep 10; done   # only source=checkout grows: the producer did not change"
+    ),
     doc = "RED at many layers > The async layer"
   )
 
@@ -126,6 +134,9 @@ internal object AsyncScenarios {
     evidence = listOf(
       "kafka_consumer_lag_messages",
       "sum by (partition) (rate(kafka_consumer_retries_total[1m]))"
+    ),
+    cli = listOf(
+      "for i in 1 2; do curl -s http://worker:8002/metrics | grep -E '^kafka_consumer_(lag_messages|retries_total)'; sleep 15; done   # one partition: its lag and its retries grow, the others stay flat"
     ),
     doc = "RED at many layers > The async layer (poison message)"
   )
