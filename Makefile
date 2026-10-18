@@ -32,6 +32,7 @@ wait:
 	@echo ""
 	@echo "  Grafana     http://localhost:3000"
 	@echo "  Traces      in Grafana: Explore > Tempo (or click an exemplar dot on a latency panel)"
+	@echo "  Profiles    in Grafana: Explore > Pyroscope (service = api, pricing, worker), or http://localhost:4040"
 	@echo "  Prometheus  http://localhost:9090"
 	@echo "  Envoy       http://localhost:8080 (admin: http://localhost:9901)"
 	@echo ""

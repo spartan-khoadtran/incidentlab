@@ -401,6 +401,7 @@ class Exercises(
     private val DAY_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM HH:mm")
     const val LINKS = "  Grafana     http://localhost:3000   (dashboards '01 · RED by layer' and '02 · USE by layer')\n" +
       "  Traces      in Grafana: Explore > Tempo (search, service graph), or click an exemplar dot on a latency panel\n" +
+      "  Profiles    in Grafana: Explore > Pyroscope (service = api, pricing, worker), or http://localhost:4040\n" +
       "  Prometheus  http://localhost:9090"
   }
 }
