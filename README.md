@@ -1,16 +1,27 @@
-# redlab: practice incident investigation with RED and USE
+# redlab: practice incident investigation
 
 A lab for the part of on-call nobody teaches: you get a ticket, a few dashboards, some traces, and a
 system that is slow or failing for a reason you do not know yet. redlab runs a small checkout system with
 Docker Compose (Envoy, api, pricing, Postgres, Redis, Kafka, worker) plus Prometheus, Grafana and Tempo.
-It injects a random fault and opens a ticket. You investigate with RED and USE across the layers, name the
-kind of problem, the layer, the signal that proves it and the root cause, and the lab scores you.
+It injects a random fault and opens a ticket. You find the cause, and the lab scores four answers: the
+kind of problem, the layer, the signal that proves it and the root cause.
+
+You compare every layer from the client down to the host. Along the way the exercises train:
+
+- Little's Law and queueing, to explain why latency rises long before a resource is at 100%
+- percentiles and tail latency, where p99 jumps and the mean stays flat
+- loops that feed themselves: slow calls make timeouts, timeouts make retries, retries make load
+- Kafka lag, and how long a backlog takes to drain after the fix
+- a trend that predicts an outage before users see it, like a slow memory leak
+- traces and exemplars, to go from a slow panel to the slow span
+- false leads: a deploy note that is not the cause, a busy host that hurts no one
 
 The method is in [docs/investigation-guide.md](docs/investigation-guide.md): RED and USE in detail, how
-the numbers differ between layers, how to link them with Little's Law, and where each layer lives in the
-dashboards. Every exercise and every quiz question points back at a section of it.
+the numbers differ between layers, how to link them with Little's Law, the other methods and anti-methods
+around them, and where each layer lives in the dashboards. Every exercise and every quiz question points
+back at a section of it.
 
-> **For training only.** This repo exists to teach incident investigation with the RED and USE methods.
+> **For training only.** This repo exists to teach incident investigation.
 > The services break on purpose, and the code is not meant for production use.
 
 ## Two ways to practice
@@ -60,7 +71,7 @@ make quiz KIND=numbers     # calculations only
 1. `make up` builds and starts everything. Wait 3 to 5 minutes so the dashboards show a normal baseline.
 2. `make new` picks a scenario you did not play in the last 5 rounds. It draws random parameters and
    saves them as the active exercise. Within 3 seconds the daemon turns the fault on.
-3. You read the ticket and investigate with RED and USE in Grafana. Traces are there too (Explore > Tempo).
+3. You read the ticket and investigate in Grafana. Traces are there too (Explore > Tempo).
 4. `make answer` asks four multiple choice questions: the nature of the problem, the location, the
    signal that proves it, and the cause. You get nature 1, location 1, signal 1, cause 2 (1 for a
    partial cause), so 5 points max. Each `make hint` you used takes 0.5 off. Then you can type one
