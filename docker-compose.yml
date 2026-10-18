@@ -89,8 +89,8 @@ services:
       PORT: "8001"
       PYROSCOPE_APPLICATION_NAME: pricing
     cpus: "2.0"
-    mem_limit: 256m
-    memswap_limit: 256m
+    mem_limit: 384m
+    memswap_limit: 384m
     labels:
       com.datadoghq.ad.checks: '{"openmetrics": {"instances": [{"openmetrics_endpoint": "http://%%host%%:8001/metrics", "namespace": "lab", "metrics": [".*"]}]}}'
 

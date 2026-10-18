@@ -35,4 +35,16 @@ class BlockDeviceTest {
     assertThat(BlockDevice.wholeDisk(sys, "254:17")).isEqualTo("254:16")
     assertThat(BlockDevice.wholeDisk(sys, "254:16")).isEqualTo("254:16")
   }
+
+  @Test
+  fun `a btrfs mount finds its disk through the mount source`() {
+    val mountinfo = listOf(
+      "2399 2390 0:36 / / rw,relatime - overlay overlay rw,lowerdir=/x",
+      "2411 2399 0:36 /docker/volumes /host/volumes ro,noatime master:69 - btrfs /dev/vdb1 rw,ssd,subvol=/docker",
+      "2412 2399 0:22 / /host/sys ro - sysfs sysfs ro"
+    )
+    assertThat(BlockDevice.mountSource(mountinfo, "/host/volumes")).isEqualTo("/dev/vdb1")
+    assertThat(BlockDevice.mountSource(mountinfo, "/host/volumes/incidentlab_pgdata/_data")).isEqualTo("/dev/vdb1")
+    assertThat(BlockDevice.mountSource(mountinfo, "/host/sys")).isEqualTo(null)
+  }
 }

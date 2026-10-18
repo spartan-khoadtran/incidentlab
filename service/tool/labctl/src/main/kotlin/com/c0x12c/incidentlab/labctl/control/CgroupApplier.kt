@@ -67,14 +67,14 @@ class CgroupApplier(
         ?: UNLIMITED
 
     /** Null, with one log line, when the host cgroup tree, the volumes or sysfs are not mounted. */
-    fun ifAvailable(containerId: (String) -> String?, cgroupRoot: Path, volumes: Path, sys: Path): CgroupApplier? {
+    fun ifAvailable(containerId: (String) -> String?, cgroupRoot: Path, volumes: Path, sys: Path, mountinfo: Path = Path.of("/proc/self/mountinfo")): CgroupApplier? {
       val missing = listOf(cgroupRoot, volumes, sys).filterNot { Files.isDirectory(it) }
       if (missing.isNotEmpty()) {
         info { "not mounted: ${missing.joinToString()}: disk IOPS exercises are disabled" }
         return null
       }
       return try {
-        val disk = BlockDevice.under(volumes, sys)
+        val disk = BlockDevice.under(volumes, sys, mountinfo)
         info { "disk IOPS limits apply to device $disk (the disk under $volumes)" }
         CgroupApplier(containerId, cgroupRoot, disk)
       } catch (e: Exception) {

@@ -91,10 +91,17 @@ class CgroupApplierTest {
     Files.writeString(disk.resolve("dev"), "254:16\n")
     val partition = Files.createDirectories(disk.resolve("vdb1"))
     Files.writeString(partition.resolve("partition"), "1\n")
+    Files.writeString(partition.resolve("dev"), "254:17\n")
     Files.createDirectories(sys.resolve("dev/block"))
-    Files.createSymbolicLink(sys.resolve("dev/block/$device"), Path.of("../../devices/virtual/block/vdb/vdb1"))
+    Files.createSymbolicLink(sys.resolve("dev/block/254:17"), Path.of("../../devices/virtual/block/vdb/vdb1"))
+    if (device != "254:17") {
+      Files.createSymbolicLink(sys.resolve("dev/block/$device"), Path.of("../../devices/virtual/block/vdb/vdb1"))
+    }
+    Files.createDirectories(sys.resolve("class/block"))
+    Files.createSymbolicLink(sys.resolve("class/block/vdb1"), Path.of("../../devices/virtual/block/vdb/vdb1"))
+    val mountinfo = Files.writeString(root.resolve("mountinfo"), "2411 2399 0:36 /docker/volumes $volumes ro - btrfs /dev/vdb1 rw\n")
 
-    val applier = CgroupApplier.ifAvailable(ids::get, Files.createDirectories(root.resolve("cgroup")), volumes, sys)
+    val applier = CgroupApplier.ifAvailable(ids::get, Files.createDirectories(root.resolve("cgroup")), volumes, sys, mountinfo)
 
     assertThat(applier).isNotNull()
     val file = ioMax(root, "cgroup/docker/abc123", "")
