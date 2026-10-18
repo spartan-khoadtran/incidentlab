@@ -113,13 +113,14 @@ Pinning looks like a saturated resource with no gauge of its own.
 | Signal | Pinning | A saturated DB pool | CPU saturation |
 |---|---|---|---|
 | CPU | Low | Low | High |
-| In-flight requests | High, growing | High, growing | High |
+| In-flight requests | Above normal. Growing without end only when demand passes the carriers | High, growing | High |
 | Pool in use | Low | At max | Any |
-| `jvm_virtual_thread_pinned_seconds_total` rate | Near the carrier count | About 0 | About 0 |
+| `jvm_virtual_thread_pinned_seconds_total` rate | A large share of the carrier count | About 0 | About 0 |
 
 - `rate(jvm_virtual_thread_pinned_seconds_total[1m])` is seconds pinned per second. That is about how many carriers are blocked at once. When it reaches the carrier count, every other request waits.
 - `rate(jvm_virtual_thread_pinned_total[1m])` is pinned parks per second. A step at a deploy points at new code.
-- Demand against capacity: rate × pinned time / carriers. Above 1, the queue grows until clients time out.
+- Demand against capacity: rate × pinned time / carriers. Below 1, the carriers act like a busy queue with C servers. Every request waits for a carrier, /health and the metrics scrape too, so p99 rises on every route.
+- With 2 carriers at 75% busy, about 2 × 0.75² / 1.75 = 64% of requests find both busy and wait. Above 1, the queue grows until clients time out and health checks fail.
 - A lock profile shows nothing when each request locks its own object. Nobody waits for the lock. They wait for a carrier.
 
 ## System time

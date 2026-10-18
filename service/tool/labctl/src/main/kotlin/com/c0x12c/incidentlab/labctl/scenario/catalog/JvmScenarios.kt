@@ -29,11 +29,24 @@ internal object JvmScenarios {
   /** Bytes the GC-pressure store spends per object: a bare 16-byte Object plus its 4-byte slot. */
   const val BYTES_PER_OBJECT = 20
 
-  const val PIN_HOLD_MIN_MS = 110
-  const val PIN_HOLD_MAX_MS = 163
+  // 15 checkouts/s × (50 + hold) ms on 2 carriers: 45 to 62 ms keeps them 71 to 84% busy.
+  const val PIN_HOLD_MIN_MS = 45
+  const val PIN_HOLD_MAX_MS = 62
 
   /** Share of the 2 carriers that checkouts need when each holds one for its DB work plus [holdMs]. */
   fun carrierDemand(holdMs: Int): Double = CHECKOUTS_PER_SECOND * (BASE_CHECKOUT_HOLD_MS + holdMs) / MILLIS_PER_SECOND / CARRIERS
+
+  /** Chance that a request finds both carriers busy: Erlang C for 2 servers, 2ρ² / (1 + ρ). */
+  fun carrierBusyChance(holdMs: Int): Double {
+    val rho = carrierDemand(holdMs)
+    return 2 * rho * rho / (1 + rho)
+  }
+
+  /** Mean wait for a carrier in seconds, as M/M/2: the busy chance over (2 / S − λ). */
+  fun carrierWaitSeconds(holdMs: Int): Double {
+    val service = (BASE_CHECKOUT_HOLD_MS + holdMs) / MILLIS_PER_SECOND
+    return carrierBusyChance(holdMs) / (CARRIERS / service - CHECKOUTS_PER_SECOND)
+  }
 
   private fun gcPressure() = Scenario(
     id = "gc_pressure",
@@ -108,46 +121,54 @@ internal object JvmScenarios {
     marker = { "Deploy checkout-api v2.43: legacy synchronized cache put back" },
     decoy = 0.3,
     ticket = { p ->
-      "Since ${p.startedAt}, checkout throughput fell and p99 keeps climbing. api CPU is under 10%, and Postgres and pricing look fine. " +
-        "A teammate took a thread dump: only two threads are doing any work."
+      "Since ${p.startedAt}, p99 is up on every route, /checkout the most, and /products is slower too. Throughput is normal and there are no errors. " +
+        "api CPU is under 10%, and Postgres and pricing look fine. A teammate took a thread dump: only two threads are doing any work."
     },
     hints = listOf(
       "Postgres and pricing are fine and CPU is low. So what limits how many requests api runs at the same time?",
       "api runs each request on a virtual thread, carried by as many platform threads as it has cores. What keeps a virtual thread on its carrier while it waits?",
-      "In the JVM row: pinned virtual threads per second and time pinned per second, against api's in-flight requests."
+      "In the JVM row: pinned virtual threads per second and time pinned per second, against the number of carriers."
     ),
     answer = Answer(nature = setOf("arch"), location = setOf("api"), signal = setOf("vthread_pinned"), cause = "vthread_pinning", partial = setOf("app_lock")),
     explain = { p ->
       val hold = p.int("hold")
       val perCheckout = BASE_CHECKOUT_HOLD_MS + hold
-      val capacity = CARRIERS * MILLIS_PER_SECOND / perCheckout
+      val pinnedPerSecond = CHECKOUTS_PER_SECOND * perCheckout / MILLIS_PER_SECOND
+      val rho = carrierDemand(hold)
       "v2.43 runs the checkout DB work and a blocking cache put (about $hold ms) inside synchronized. On JDK 21 a virtual thread that blocks " +
         "inside synchronized cannot unmount: it keeps its carrier thread for the whole wait. api has $CARRIERS cores, so $CARRIERS carriers. " +
-        "Each checkout now holds one for about $BASE_CHECKOUT_HOLD_MS + $hold = $perCheckout ms, so at most $CARRIERS × 1000 / $perCheckout = " +
-        "${p.fixed(capacity, 1)} checkouts/s can pass. $CHECKOUTS_PER_SECOND arrive per second: the demand is " +
-        "${p.fixed(carrierDemand(hold), 2)} times the capacity, so the queue grows until clients time out. Every other request waits for a carrier too. " +
-        "CPU stays low because the carriers sleep, and time pinned per second sits near $CARRIERS: both carriers are blocked almost all the time. " +
+        "Each checkout now holds one for about $BASE_CHECKOUT_HOLD_MS + $hold = $perCheckout ms. $CHECKOUTS_PER_SECOND checkouts/s need " +
+        "$CHECKOUTS_PER_SECOND × $perCheckout / 1000 = ${p.fixed(pinnedPerSecond, 2)} carrier-seconds per second, so the $CARRIERS carriers are " +
+        "${(rho * PERCENT).roundToInt()}% busy with pinned work alone. That is a queue with $CARRIERS servers. " +
+        "A request finds both carriers busy about 2ρ² / (1 + ρ) = ${(carrierBusyChance(hold) * PERCENT).roundToInt()}% of the time, and then it waits for one to free up. " +
+        "The mean wait is about that share / ($CARRIERS / ${p.fixed(perCheckout / MILLIS_PER_SECOND, 3)} s − $CHECKOUTS_PER_SECOND) = " +
+        "${(carrierWaitSeconds(hold) * MILLIS_PER_SECOND).roundToInt()} ms, and the slow tail is several times longer. " +
+        "That formula assumes random service times. Here they vary less, so the real wait is somewhat shorter. " +
+        "Every request runs on a virtual thread, so /products and /health wait in the same queue: p99 rises on every route, and /checkout most, " +
+        "because it queues for a carrier twice. CPU stays low because the pinned carriers sleep, and time pinned per second sits near " +
+        "${p.fixed(pinnedPerSecond, 1)}. The busy share is under 100%, so throughput holds and nothing fails. Above 100% the queue would grow " +
+        "without end, and api would stop answering, health checks included. " +
         "The lock itself is never contended (each request locks its own object), so a lock profile shows nothing. The limit is the carrier count. " +
         "Fix: use a ReentrantLock instead of synchronized, or move the blocking call out of the block. On JDK 24 and later synchronized no longer pins."
     },
     steps = listOf(
-      "Problem statement: checkout throughput down, p99 climbing, CPU low, Postgres and pricing fine, and a deploy just before.",
-      "RED: Postgres exec time and pricing's own p99 are flat. The time is spent inside api, or before it.",
+      "Problem statement: p99 up on every route, /checkout most, CPU low, Postgres and pricing fine, throughput normal, and a deploy just before.",
+      "RED: Postgres exec time and pricing's own p99 are flat. The time is spent inside api.",
       "USE: CPU is a few percent of 2 cores with no throttling, and the DB pool is far from full. No classic resource is saturated.",
-      "Little's Law: api's in-flight requests climb while nothing is busy. Requests wait for something that has no gauge of its own.",
-      "The JVM row: pinned events started at the deploy, and time pinned per second sits near 2, the number of carriers.",
+      "Little's Law: api's in-flight requests are above normal while nothing is busy. Requests wait for something that has no gauge of its own.",
+      "The JVM row: pinned events started at the deploy, and time pinned per second sits near 1.5, most of the 2 carriers.",
       "The CPU profile in Pyroscope (service api) shows no new hot code, because the pinned carriers sleep. The lock profile is empty too: no lock is contended.",
-      "The cause: synchronized around blocking work pins virtual threads, so only 2 checkouts make progress at once. Demand is above that cap."
+      "The cause: synchronized around blocking work pins virtual threads, so the 2 carriers become a busy 2-server queue that every request waits in."
     ),
     evidence = listOf(
       "sum(rate(jvm_virtual_thread_pinned_seconds_total{job=\"api\"}[1m]))",
       "sum(rate(jvm_virtual_thread_pinned_total{job=\"api\"}[1m]))",
       "http_server_inflight{job=\"api\"}",
       "rate(process_cpu_seconds_total{job=\"api\"}[1m])",
-      "sum(rate(http_server_requests_total{job=\"api\",route=\"/checkout\"}[1m]))"
+      "histogram_quantile(0.99, sum by (le, route) (rate(http_server_duration_seconds_bucket{job=\"api\"}[1m])))"
     ),
     cli = listOf(
-      "curl -s http://api:8000/metrics | grep ^jvm_virtual_thread_pinned_seconds_total; sleep 10; curl -s http://api:8000/metrics | grep ^jvm_virtual_thread_pinned_seconds_total   # grows about 20 s in 10 s: both carriers pinned",
+      "curl -s http://api:8000/metrics | grep ^jvm_virtual_thread_pinned_seconds_total; sleep 10; curl -s http://api:8000/metrics | grep ^jvm_virtual_thread_pinned_seconds_total   # grows about 13 to 16 s in 10 s: the 2 carriers are pinned most of the time",
       "top -H -b -n 1 -p $(pgrep -f checkout-api) | head -15   # CPU low on every thread: the carriers sleep, they do not compute"
     ),
     doc = "Virtual threads > Pinning"
