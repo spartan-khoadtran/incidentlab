@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse as parseYaml } from "yaml";
 import { parseCompose } from "./lib/compose.ts";
 import { groupOf } from "./lib/groups.ts";
 import { parseMakefile } from "./lib/makefile.ts";
@@ -85,6 +86,24 @@ const inThisLab = (() => {
   return section.slice(section.indexOf("</h2>") + 5).replaceAll('href="#', 'href="/guide/investigation-guide#');
 })();
 write("highlights.json", { inThisLab });
+
+const dashboardDir = join(ROOT, "config", "grafana", "dashboards");
+const dashboards = existsSync(dashboardDir)
+  ? readdirSync(dashboardDir)
+      .filter((f) => f.endsWith(".json"))
+      .sort()
+      .map((f) => {
+        const d = JSON.parse(readFileSync(join(dashboardDir, f), "utf8")) as { uid: string; title: string };
+        return { uid: d.uid, title: d.title };
+      })
+  : [];
+const datasourceFile = join(ROOT, "config", "grafana", "provisioning", "datasources", "datasources.yml");
+const datasources = existsSync(datasourceFile)
+  ? ((parseYaml(readFileSync(datasourceFile, "utf8")) as { datasources?: { name: string; uid?: string; type: string }[] }).datasources ?? [])
+      .filter((d) => d.uid)
+      .map((d) => ({ name: d.name, uid: d.uid as string, type: d.type }))
+  : [];
+write("grafana.json", { dashboards, datasources });
 
 const lab = JSON.parse(readFileSync(join(SITE, "src", "data", "lab.json"), "utf8")) as LabJson;
 const clip = (text: string) => (text.length > 220 ? `${text.slice(0, 217).replace(/\s+\S*$/, "")}...` : text);

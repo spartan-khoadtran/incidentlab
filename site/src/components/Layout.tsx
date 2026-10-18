@@ -8,6 +8,7 @@ import { SearchDialog } from "./SearchDialog";
 
 const NAV = [
   { to: "/", label: "Start", end: true },
+  { to: "/play", label: "Play" },
   { to: "/how-it-works", label: "How it works" },
   { to: "/guide", label: "Guide" },
   { to: "/catalog", label: "Catalog" },

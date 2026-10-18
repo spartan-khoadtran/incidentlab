@@ -7,6 +7,8 @@
 !service/settings.gradle
 !service/**/build.gradle
 !service/tool/labctl/src/main/kotlin/com/c0x12c/incidentlab/labctl/scenario/Answers.kt
+!config/grafana/dashboards/*.json
+!config/grafana/provisioning/datasources/datasources.yml
 !site
 site/node_modules
 site/dist

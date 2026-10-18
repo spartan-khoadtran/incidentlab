@@ -369,6 +369,24 @@
     "bench_seconds" : 120,
     "quiz_questions" : 50
   },
+  "limits" : {
+    "load_multiplier" : {
+      "min" : 0.1,
+      "max" : 6.0
+    },
+    "ramp_step_seconds" : {
+      "min" : 30.0,
+      "max" : 300.0
+    },
+    "bench_clients" : {
+      "min" : 1.0,
+      "max" : 200.0
+    },
+    "bench_seconds" : {
+      "min" : 30.0,
+      "max" : 600.0
+    }
+  },
   "counts" : {
     "scenarios" : 47,
     "toolbox" : 26,

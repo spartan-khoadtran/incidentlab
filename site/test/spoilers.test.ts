@@ -63,6 +63,20 @@ describe("no spoilers", () => {
     expect([...withNotes, ...plainParts].filter((p) => text.includes(p))).toEqual([]);
   });
 
+  it.runIf(existsSync(join(SITE, "dist")))("never bundles the fake lab the tests and LAB_MOCK use", () => {
+    const leaks = files(join(SITE, "dist"))
+      .filter((f) => /\.(js|html|json)$/.test(f))
+      .filter((f) => /mock_fault|Mock fault for the handbook|MockLab/.test(readFileSync(f, "utf8")));
+    expect(leaks).toEqual([]);
+  });
+
+  it("keeps the only reveal and answer calls in the API client", () => {
+    const callers = files(join(SITE, "src"))
+      .filter((f) => /\.(ts|tsx)$/.test(f) && !f.endsWith("api.ts"))
+      .filter((f) => /\/exercise\/(reveal|answer)|\/quiz\/\$\{/.test(readFileSync(f, "utf8")));
+    expect(callers).toEqual([]);
+  });
+
   it.runIf(existsSync(join(SITE, "dist")))("keeps every scenario's guide pointer out of the built bundle", () => {
     const leaks = files(join(SITE, "dist"))
       .filter((f) => /\.(js|html|css|json)$/.test(f))
