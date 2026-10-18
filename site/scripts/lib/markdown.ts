@@ -31,7 +31,7 @@ export interface RenderedDoc {
   words: number;
 }
 
-const COMMAND = /^(make|curl|cd|docker|vmstat|mpstat|pidstat|iostat|sar|ss|nstat|free|dmesg|top|uptime|perf|bpftrace|psql|cat|grep|ls|ps|kill|cg|nsenter|tc|ip|pgrep|toolbox-help|kernel-check|offcputime|profile|biolatency|runqlat|execsnoop|opensnoop|tcpretrans|strace|ltrace|jcmd|jstack|watch)\b/;
+const COMMAND = /^(make|curl|cd|docker|vmstat|mpstat|pidstat|iostat|sar|ss|nstat|free|dmesg|top|uptime|perf|bpftrace|psql|cat|grep|ls|ps|kill|cg|pid (?:api|pricing|worker|noisy|postgres|SERVICE)|containers|nsenter|tc|ip|pgrep|toolbox-help|kernel-check|offcputime|profile|biolatency|runqlat|execsnoop|opensnoop|tcpretrans|strace|ltrace|jcmd|jstack|watch)\b/;
 const METRIC = /^[a-z][a-z0-9]*(?:_[a-z0-9]+){2,}$/;
 
 /** Turns `cpu.md#busy-polling` into the site route for that doc. */

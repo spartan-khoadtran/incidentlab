@@ -110,8 +110,8 @@ internal object AppScenarios {
       "rate(cgroup_cpu_throttled_periods_total{job=\"api\"}[1m]) / rate(cgroup_cpu_periods_total{job=\"api\"}[1m])"
     ),
     cli = listOf(
-      "pidstat -t -p $(pgrep -f checkout-api) 5 1 | grep Average | sort -k9 -nr | head -4   # one thread takes most of the process CPU, under one core",
-      "cat $(cg $(pgrep -f checkout-api))/cpu.max; grep -E 'nr_periods|nr_throttled' $(cg $(pgrep -f checkout-api))/cpu.stat   # 200000 100000 is 2 cores, and nr_throttled stays flat",
+      "pidstat -t -p $(pid api) 5 1 | grep Average | sort -k9 -nr | head -4   # one thread takes most of the process CPU, under one core",
+      "cat $(cg $(pid api))/cpu.max; grep -E 'nr_periods|nr_throttled' $(cg $(pid api))/cpu.stat   # 200000 100000 is 2 cores, and nr_throttled stays flat",
       "bpftrace -e 'profile:hz:99 { @[comm] = count(); } interval:s:10 { exit(); }'   # needs BPF: one thread name gets most of the samples"
     ),
     doc = "USE method in detail > Pitfalls (total CPU hides one core)"

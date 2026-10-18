@@ -194,7 +194,7 @@ internal object DiskScenarios {
       "pg_wait_events{type=\"IO\"}"
     ),
     cli = listOf(
-      "cat $(cg $(pgrep -o -x postgres))/io.max   # a line <maj:min> ... wiops=N: the write quota on the postgres cgroup",
+      "cat $(cg $(pid postgres))/io.max   # a line <maj:min> ... wiops=N: the write quota on the postgres cgroup",
       "iostat -xz 1 5   # w_await and %util of that disk stay low: the device is idle",
       "PGPASSWORD=lab psql -h postgres -U lab lab -c \"SELECT wait_event_type, wait_event, count(*) FROM pg_stat_activity WHERE wait_event IS NOT NULL GROUP BY 1, 2 ORDER BY 3 DESC\"   # IO WALSync shows up again and again although the disk is idle"
     ),

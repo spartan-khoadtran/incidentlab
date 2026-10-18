@@ -15,21 +15,20 @@ The 60-second checklist (Ctrl-C stops the ones that repeat)
   sar -n TCP,ETCP 1      active/s, passive/s, retrans/s
   top                    press 1 for every CPU, H for threads, q to quit
 
-Find a service's process
-  pgrep -f checkout-api      api          pgrep -f pricing-api   pricing
-  pgrep -f orders-worker     worker       pgrep -o -x postgres   Postgres (oldest postgres process)
-  containers                 every container with its PID and cgroup
+Find a service's process (from the docker socket: pgrep also matches other projects on this VM)
+  pid api        pid pricing      pid worker      pid noisy      pid postgres
+  containers     every container with its PID and cgroup
 
 Read a container's cgroup
-  C=$(cg $(pgrep -f checkout-api))
+  C=$(cg $(pid api))
   cat $C/cpu.max $C/memory.max           the limits
   cat $C/cpu.stat                        nr_periods, nr_throttled, throttled_usec
   cat $C/memory.current $C/memory.events usage now, oom_kill
   cat $C/cpu.pressure                    time spent waiting for a CPU (PSI)
 
 Enter a container's network namespace (the tools stay the toolbox's)
-  nsenter -t $(pgrep -f checkout-api) -n ss -tn
-  nsenter -t $(pgrep -f checkout-api) -n sar -n TCP,ETCP 1
+  nsenter -t $(pid api) -n ss -tn
+  nsenter -t $(pid api) -n sar -n TCP,ETCP 1
   nsenter -t 1 -n sar -n DEV 1           the VM's own interfaces
 
 Ask the services

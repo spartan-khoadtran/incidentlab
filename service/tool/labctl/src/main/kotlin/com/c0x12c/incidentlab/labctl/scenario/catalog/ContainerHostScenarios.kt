@@ -60,9 +60,9 @@ internal object ContainerHostScenarios {
       "sum(rate(node_cpu_seconds_total{mode!=\"idle\"}[1m])) / count(node_cpu_seconds_total{mode=\"idle\"})"
     ),
     cli = listOf(
-      "cat $(cg $(pgrep -f checkout-api))/cpu.max   # quota and period in microseconds: 8000 100000 is 0.08 cores",
-      "grep -E 'nr_periods|nr_throttled' $(cg $(pgrep -f checkout-api))/cpu.stat; sleep 10; grep -E 'nr_periods|nr_throttled' $(cg $(pgrep -f checkout-api))/cpu.stat   # nr_throttled grows with nr_periods",
-      "pidstat -p $(pgrep -f checkout-api) 1 5   # %CPU sits at the quota, under 10% of one core",
+      "cat $(cg $(pid api))/cpu.max   # quota and period in microseconds: 8000 100000 is 0.08 cores",
+      "grep -E 'nr_periods|nr_throttled' $(cg $(pid api))/cpu.stat; sleep 10; grep -E 'nr_periods|nr_throttled' $(cg $(pid api))/cpu.stat   # nr_throttled grows with nr_periods",
+      "pidstat -p $(pid api) 1 5   # %CPU sits at the quota, under 10% of one core",
       "mpstat 1 5   # %idle stays high: the VM has CPU to spare"
     ),
     doc = "USE at many layers > One layer hides another"
@@ -105,7 +105,7 @@ internal object ContainerHostScenarios {
     cli = listOf(
       "dmesg -T | grep -i 'killed process' | tail -5   # Memory cgroup out of memory: Killed process ... (java), about once a minute",
       "curl -s --unix-socket /var/run/docker.sock http://localhost/containers/incidentlab-api-1/json | jq '{RestartCount, StartedAt: .State.StartedAt}'   # RestartCount climbs, StartedAt is less than a minute ago",
-      "cat $(cg $(pgrep -f checkout-api))/memory.max; for i in 1 2 3 4 5 6; do cat $(cg $(pgrep -f checkout-api))/memory.current; sleep 5; done   # climbs to the limit, then starts low again"
+      "cat $(cg $(pid api))/memory.max; for i in 1 2 3 4 5 6; do cat $(cg $(pid api))/memory.current; sleep 5; done   # climbs to the limit, then starts low again"
     ),
     doc = "USE at many layers > Layers and their metrics (container, cgroup)"
   )
@@ -149,8 +149,8 @@ internal object ContainerHostScenarios {
       "(cgroup_memory_limit_bytes{job=\"api\"} - cgroup_memory_usage_bytes{job=\"api\"}) / deriv(cgroup_memory_usage_bytes{job=\"api\"}[5m]) / 60"
     ),
     cli = listOf(
-      "pidstat -r -p $(pgrep -f checkout-api) 60 3   # RSS grows by about the same amount every minute and never drops",
-      "cat $(cg $(pgrep -f checkout-api))/memory.current; sleep 60; cat $(cg $(pgrep -f checkout-api))/memory.current $(cg $(pgrep -f checkout-api))/memory.max   # minutes left = (max - now) / growth per minute",
+      "pidstat -r -p $(pid api) 60 3   # RSS grows by about the same amount every minute and never drops",
+      "cat $(cg $(pid api))/memory.current; sleep 60; cat $(cg $(pid api))/memory.current $(cg $(pid api))/memory.max   # minutes left = (max - now) / growth per minute",
       "curl -s --unix-socket /var/run/docker.sock http://localhost/containers/incidentlab-api-1/json | jq .RestartCount   # no OOM kill yet"
     ),
     doc = "Applying on Datadog > Monitors (saturation that predicts an incident); USE at many layers > Layers and their metrics (container, cgroup)"
@@ -190,9 +190,9 @@ internal object ContainerHostScenarios {
     ),
     cli = listOf(
       "nproc; vmstat 1 5   # r far above the CPU count, id near 0",
-      "pidstat -p $(pgrep -f /run/app/noisy) 1 5   # one batch job takes several cores",
-      "cat $(cg $(pgrep -f /run/app/noisy))/cpu.weight $(cg $(pgrep -f checkout-api))/cpu.weight   # noisy weighs far more than the default 100",
-      "cat $(cg $(pgrep -f checkout-api))/cpu.pressure   # some avg10 rises: api waits for a CPU"
+      "pidstat -p $(pid noisy) 1 5   # one batch job takes several cores",
+      "cat $(cg $(pid noisy))/cpu.weight $(cg $(pid api))/cpu.weight   # noisy weighs far more than the default 100",
+      "cat $(cg $(pid api))/cpu.pressure   # some avg10 rises: api waits for a CPU"
     ),
     doc = "USE at many layers > Layers and their metrics (hypervisor, host)"
   )

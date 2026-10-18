@@ -176,7 +176,7 @@ internal object JvmScenarios {
     ),
     cli = listOf(
       "curl -s http://api:8000/metrics | grep ^jvm_virtual_thread_pinned_seconds_total; sleep 10; curl -s http://api:8000/metrics | grep ^jvm_virtual_thread_pinned_seconds_total   # grows about 13 to 16 s in 10 s: the 2 carriers are pinned most of the time",
-      "top -H -b -n 1 -p $(pgrep -f checkout-api) | head -15   # CPU low on every thread: the carriers sleep, they do not compute"
+      "top -H -b -n 1 -p $(pid api) | head -15   # CPU low on every thread: the carriers sleep, they do not compute"
     ),
     doc = "Virtual threads > Pinning"
   )
@@ -233,8 +233,8 @@ internal object JvmScenarios {
       "histogram_quantile(0.5, sum by (le, route) (rate(http_server_duration_seconds_bucket{job=\"api\"}[1m])))"
     ),
     cli = listOf(
-      "grep -E '^(user|system)_usec' $(cg $(pgrep -f checkout-api))/cpu.stat; sleep 10; grep -E '^(user|system)_usec' $(cg $(pgrep -f checkout-api))/cpu.stat   # system_usec grows about half as fast as user_usec: time spent in syscalls",
-      "grep ^syscw /proc/$(pgrep -f checkout-api)/io; sleep 10; grep ^syscw /proc/$(pgrep -f checkout-api)/io   # write syscalls: the rise / 10 / 50 is about the lines per request"
+      "grep -E '^(user|system)_usec' $(cg $(pid api))/cpu.stat; sleep 10; grep -E '^(user|system)_usec' $(cg $(pid api))/cpu.stat   # system_usec grows about half as fast as user_usec: time spent in syscalls",
+      "grep ^syscw /proc/$(pid api)/io; sleep 10; grep ^syscw /proc/$(pid api)/io   # write syscalls: the rise / 10 / 50 is about the lines per request"
     ),
     doc = "System time > Logging costs"
   )

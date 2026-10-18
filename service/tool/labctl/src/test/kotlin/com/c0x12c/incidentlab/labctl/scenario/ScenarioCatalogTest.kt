@@ -224,6 +224,9 @@ class ScenarioCatalogTest {
   fun `cli entries are toolbox commands that say what to read`() {
     val entries = ScenarioCatalog.all.flatMap { it.cli }
     assertThat(entries.all { it.contains("   # ") && !it.contains("docker exec") && !it.contains("docker compose") && !it.contains("\${") }).isTrue()
+    assertThat(entries.filter { it.contains("pgrep") }).isEmpty()
+    val services = entries.flatMap { line -> Regex("""\$\(pid ([a-z]+)\)""").findAll(line).map { it.groupValues[1] }.toList() }.toSet()
+    assertThat(services.isNotEmpty() && services.all { it in Services.ENDPOINTS || it == "postgres" }).isTrue()
   }
 
   @Test

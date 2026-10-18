@@ -39,7 +39,7 @@ Containers share the kernel of the machine. A tool on the host sees every contai
 
 | What | Seen from the host | Where the container's own view lives |
 |---|---|---|
-| Processes | Every container's processes, with host PIDs | `pgrep -f checkout-api` gives the host PID of api |
+| Processes | Every container's processes, with host PIDs | `pid api` gives the host PID of api's container |
 | CPU and memory totals | `vmstat`, `free`, `/proc/meminfo` show the whole machine | The cgroup files: `cpu.max`, `cpu.stat`, `memory.current`, `memory.max` |
 | Network | `sar -n DEV`, `ss` show one network namespace | Run the tool inside the container's namespace with `nsenter -t PID -n` |
 | Kernel log | `dmesg` is shared by all containers | The same `dmesg`. An OOM kill names the PID and the process. |
@@ -128,11 +128,13 @@ The lab runs one more container, `toolbox`. It is a root shell on the Docker VM 
 | `pid: host` | `pgrep`, `top` and `pidstat` see the processes of every container |
 | `cgroup: host`, `/sys/fs/cgroup` read-only | `/proc/PID/cgroup` paths are complete, and you can read but not change a limit |
 | `privileged: true` | `dmesg`, `nsenter`, `strace`, `perf` and `bpftrace` are allowed |
-| The docker socket | `containers` lists every container with its PID and cgroup |
+| The docker socket | `pid SERVICE` prints a lab container's PID, and `containers` lists every container with its PID and cgroup |
 | The compose network | `psql`, `curl http://api:8000/metrics`, `curl http://worker:8002/metrics` work by service name |
 
 The toolbox adds a few helpers:
-- `cg PID` prints the cgroup directory of a process. `cat $(cg $(pgrep -f checkout-api))/cpu.max` reads api's CPU limit.
+- `pid SERVICE` prints the host PID of a lab container's main process, from the docker socket: `pid api`, `pid pricing`, `pid worker`, `pid noisy`, `pid postgres`. For api, pricing, worker and noisy that is the java process. For postgres it is the postmaster.
+- Use `pid`, not `pgrep`. With `pid: host`, `pgrep -x postgres` also matches the Postgres of any other project on the same VM.
+- `cg PID` prints the cgroup directory of a process. `cat $(cg $(pid api))/cpu.max` reads api's CPU limit.
 - `containers` lists the containers with their main PID.
 - `kernel-check` says which kernel features work on this VM. Run it first.
 

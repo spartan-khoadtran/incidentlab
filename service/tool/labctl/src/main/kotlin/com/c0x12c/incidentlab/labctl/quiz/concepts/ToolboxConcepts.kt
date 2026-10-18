@@ -70,7 +70,7 @@ internal object ToolboxConcepts {
         "sar needs a daemon that is not running, so it shows zeros",
         "api's traffic goes over a unix socket, not an interface"
       ),
-      explanation = "Run the tool inside api's namespace with nsenter -t $(pgrep -f checkout-api) -n sar -n DEV 1. The binary stays the toolbox's.",
+      explanation = "Run the tool inside api's namespace with nsenter -t $(pid api) -n sar -n DEV 1. The binary stays the toolbox's.",
       doc = "The 60-second checklist > From host to container (network namespace)"
     ),
     ChoiceQuestion(
@@ -153,14 +153,25 @@ internal object ToolboxConcepts {
     ),
     // ---------------------------------------------------------------- The toolbox in this lab
     ChoiceQuestion(
-      text = "Why can pgrep -f checkout-api in the toolbox find api's process?",
+      text = "Why can top and pidstat in the toolbox show api's java process?",
       answer = "The toolbox runs with pid: host, so it sees the processes of every container",
       others = listOf(
         "The toolbox and api run from the same image",
-        "pgrep asks the docker socket for the processes",
+        "top reads the processes from the docker socket",
         "api publishes its PID on /metrics"
       ),
       explanation = "With the host PID namespace, top, pidstat and pgrep see every process on the VM, with the VM's PIDs.",
+      doc = "The toolbox in this lab > make toolbox and make shell"
+    ),
+    ChoiceQuestion(
+      text = "In the toolbox, pgrep -o -x postgres prints a PID, but its cgroup has no io.max line that the lab set. Why?",
+      answer = "pgrep sees every container on the VM and matched another project's Postgres. pid postgres asks Docker for the lab's container",
+      others = listOf(
+        "Postgres hides its io.max from pgrep",
+        "The oldest postgres process is always a worker, not the postmaster",
+        "io.max only shows inside the container"
+      ),
+      explanation = "With pid: host, a name or a command line can match a process of any container. The container's main PID, from the docker socket, is the lab's own process.",
       doc = "The toolbox in this lab > make toolbox and make shell"
     ),
     ChoiceQuestion(

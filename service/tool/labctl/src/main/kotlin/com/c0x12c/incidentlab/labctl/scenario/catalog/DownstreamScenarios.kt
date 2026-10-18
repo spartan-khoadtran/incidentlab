@@ -198,9 +198,9 @@ internal object DownstreamScenarios {
       "histogram_quantile(0.99, sum by (le, route) (rate(http_server_duration_seconds_bucket{job=\"pricing\"}[1m])))"
     ),
     cli = listOf(
-      "pidstat -t -p $(pgrep -f pricing-api) 5 1 | grep Average | sort -k9 -nr | head -4   # one pricing thread takes most of the process CPU, under one core",
-      "cat $(cg $(pgrep -f pricing-api))/cpu.max; grep -E 'nr_periods|nr_throttled' $(cg $(pgrep -f pricing-api))/cpu.stat   # 2 cores, and nr_throttled stays flat",
-      "pidstat -t -p $(pgrep -f checkout-api) 5 1 | grep Average | sort -k9 -nr | head -4   # api itself is nearly idle: it waits for pricing"
+      "pidstat -t -p $(pid pricing) 5 1 | grep Average | sort -k9 -nr | head -4   # one pricing thread takes most of the process CPU, under one core",
+      "cat $(cg $(pid pricing))/cpu.max; grep -E 'nr_periods|nr_throttled' $(cg $(pid pricing))/cpu.stat   # 2 cores, and nr_throttled stays flat",
+      "pidstat -t -p $(pid api) 5 1 | grep Average | sort -k9 -nr | head -4   # api itself is nearly idle: it waits for pricing"
     ),
     doc = "USE method in detail > Pitfalls (total CPU hides one core); USE at many layers > A service as a resource"
   )
