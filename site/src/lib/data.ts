@@ -10,15 +10,13 @@ export interface Scenario {
   title: string;
   level: number;
   topics: string[];
-  doc: string;
-  doc_file: string | null;
   toolbox: boolean;
 }
 
 export interface Mode {
   id: string;
-  doc: string;
-  doc_file: string | null;
+  guide: string;
+  guide_file: string | null;
 }
 
 export interface QuizFile {

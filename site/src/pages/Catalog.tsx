@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useSearchParams } from "react-router";
-import { Level, PageHead, Pointer } from "../components/Bits";
+import { Level, PageHead } from "../components/Bits";
 import { Cmd } from "../components/Copy";
 import { lab, type Scenario } from "../lib/data";
 import { normalize } from "../lib/search";
@@ -43,10 +43,10 @@ export function Catalog() {
     <div className="page">
       <PageHead kicker="Catalog" title={`${lab.counts.scenarios} incidents to work`}>
         <p>
-          The same list <code>make list</code> prints: id, title, level and topics, plus the guide section each one trains. Titles hint at the cause, so <code>make new</code> picks at random and does not say which one it chose.
+          The same list <code>make list</code> prints: id, title, level and topics. Titles hint at the cause, so <code>make new</code> picks at random and does not say which one it chose.
         </p>
         <p className="callout callout-quiet">
-          No answers here. The cause, the signal, the ticket, the hints and the proof only show in the terminal, after you play.
+          No answers here. The cause, the signal, the ticket, the hints, the proof and the guide section to read again only show in the terminal, after you play.
         </p>
       </PageHead>
 
@@ -115,10 +115,6 @@ export function Catalog() {
                         {t}
                       </button>
                     ))}
-                  </div>
-                  <div className="row-read">
-                    <span className="row-label">Guide</span>
-                    <Pointer doc={s.doc} compact />
                   </div>
                   <div className="row-play">
                     <Cmd text={`make new ID=${s.id}`} />

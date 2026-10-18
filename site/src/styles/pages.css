@@ -869,10 +869,10 @@
 
 .board-row {
   display: grid;
-  grid-template-columns: minmax(140px, 0.6fr) minmax(180px, 1.2fr) minmax(0, 1fr) minmax(330px, max-content);
+  grid-template-columns: minmax(150px, 0.5fr) minmax(0, 1.5fr) minmax(330px, max-content);
   grid-template-areas:
-    "id title read play"
-    "id topics read play";
+    "id title play"
+    "id topics play";
   gap: 6px 22px;
   padding: 16px 0;
   border-bottom: 1px solid var(--rule);
@@ -915,23 +915,6 @@
   align-items: flex-start;
 }
 
-.row-read {
-  grid-area: read;
-  display: grid;
-  align-content: start;
-  gap: 2px;
-  font-size: 0.88rem;
-  min-width: 0;
-}
-
-.row-label {
-  font-family: var(--font-mono);
-  font-size: 0.66rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--ink-3);
-}
-
 .row-play {
   grid-area: play;
   display: grid;
@@ -948,10 +931,9 @@
   .board-row {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
-      "id id"
-      "title title"
-      "topics topics"
-      "read play";
+      "id play"
+      "title play"
+      "topics play";
   }
   .row-id {
     flex-direction: row;
@@ -966,7 +948,6 @@
       "id"
       "title"
       "topics"
-      "read"
       "play";
   }
 }

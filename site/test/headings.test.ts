@@ -81,9 +81,9 @@ describe("pointers", () => {
     expect(resolvePointer("Nowhere > Rate", fixture)[0].href).toBeNull();
   });
 
-  it("finds every pointer of the catalog and the modes in the docs", () => {
-    const lab = JSON.parse(siteFile("src/data/lab.json")) as { scenarios: { id: string; doc: string }[]; modes: { id: string; doc: string }[] };
-    const broken = [...lab.scenarios, ...lab.modes].flatMap((s) => resolvePointer(s.doc, all).filter((p) => !p.href).map((p) => `${s.id}: ${p.label}`));
+  it("finds every mode pointer in the docs", () => {
+    const lab = JSON.parse(siteFile("src/data/lab.json")) as { modes: { id: string; guide: string }[] };
+    const broken = lab.modes.flatMap((m) => resolvePointer(m.guide, all).filter((p) => !p.href).map((p) => `${m.id}: ${p.label}`));
     expect(broken).toEqual([]);
   });
 

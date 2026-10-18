@@ -4,372 +4,284 @@
     "title" : "One tenant's traffic surges",
     "level" : 1,
     "topics" : [ "red", "load" ],
-    "doc" : "RED method in detail > Rate; Combining with other methods > Workload characterization",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "global_surge",
     "title" : "Traffic grows across every tenant",
     "level" : 1,
     "topics" : [ "red", "load", "little" ],
-    "doc" : "RED method in detail > Rate; Linking RED and USE > Why latency rises before 100%",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "mix_shift",
     "title" : "Same traffic, heavier mix",
     "level" : 2,
     "topics" : [ "red", "load", "layers" ],
-    "doc" : "RED method in detail > Rate (split by endpoint)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "client_outage",
     "title" : "One client stopped calling",
     "level" : 1,
     "topics" : [ "red", "load" ],
-    "doc" : "RED method in detail > Rate (a drop is a symptom)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "retry_storm",
     "title" : "Retry storm",
     "level" : 2,
     "topics" : [ "red", "layers" ],
-    "doc" : "RED at many layers > Why Rate differs; Linking RED and USE > Causal chain",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "client_timeout",
     "title" : "Client timeout shorter than server latency",
     "level" : 3,
     "topics" : [ "layers", "red" ],
-    "doc" : "RED at many layers > Why Errors differ (mismatched timeouts)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "timeout_retry",
     "title" : "Client timeouts turn into retries",
     "level" : 3,
     "topics" : [ "red", "layers" ],
-    "doc" : "Linking RED and USE > Causal chain; RED at many layers > Why Rate differs (retry)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "surge_queue",
     "title" : "A real surge queues before the app",
     "level" : 2,
     "topics" : [ "load", "layers", "little" ],
-    "doc" : "RED at many layers > Why Duration differs; Combining with other methods > Workload characterization",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "queue_before_app",
     "title" : "Requests queue before the app accepts them",
     "level" : 2,
     "topics" : [ "layers", "red" ],
-    "doc" : "RED at many layers > Why Duration differs",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "lb_no_healthy",
     "title" : "The LB answers 503 itself",
     "level" : 1,
     "topics" : [ "layers", "red" ],
-    "doc" : "RED at many layers > Why Errors differ",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "lb_flapping",
     "title" : "The LB drops a few requests now and then",
     "level" : 2,
     "topics" : [ "layers", "red" ],
-    "doc" : "RED at many layers > Why Errors differ; RED method in detail > Errors (ratio and count)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "n_plus_one",
     "title" : "N+1 queries after an ORM change",
     "level" : 1,
     "topics" : [ "layers", "red" ],
-    "doc" : "RED at many layers > Why Rate differs (fan-out)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "single_thread_cpu",
     "title" : "One core saturated by CPU work on the event loop",
     "level" : 2,
     "topics" : [ "use", "runtime" ],
-    "doc" : "USE method in detail > Pitfalls (total CPU hides one core)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "cache_miss",
     "title" : "Cache misses push the load onto the DB",
     "level" : 2,
     "topics" : [ "layers", "red" ],
-    "doc" : "RED at many layers > Why Rate differs (cache)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "app_lock",
     "title" : "Checkouts wait for each other on one lock",
     "level" : 2,
     "topics" : [ "use", "runtime" ],
-    "doc" : "USE method in detail > Software resources (mutex, lock); Off-CPU time > Waiting on a lock",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "fork_decoy",
     "title" : "A fork storm on the host, slower product pages",
     "level" : 3,
     "topics" : [ "host", "layers" ],
-    "doc" : "RED at many layers > Why Rate differs (cache); CPU busy with no work > Short-lived processes",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "pool_hold",
     "title" : "Connection pool exhausted after a deploy",
     "level" : 2,
     "topics" : [ "layers", "use", "little" ],
-    "doc" : "End-to-end investigation example; Linking RED and USE > Little's Law",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "pool_shrunk",
     "title" : "Connection pool shrunk by a config change",
     "level" : 2,
     "topics" : [ "layers", "use", "little" ],
-    "doc" : "USE at many layers > Common examples (pool full while the DB idles); USE at many layers > How to do it (write the limit next to the metric)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "pool_timeout",
     "title" : "Pool acquire timeout set too short",
     "level" : 2,
     "topics" : [ "use", "db" ],
-    "doc" : "USE method in detail > Software resources (connection pool errors); USE method in detail > Reading the numbers (errors above 0)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "db_lock",
     "title" : "Lock contention on one hot row",
     "level" : 3,
     "topics" : [ "use", "db", "layers" ],
-    "doc" : "USE method in detail > Software resources (mutex, lock); End-to-end investigation example (compare with it)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "downstream_slow",
     "title" : "A slow downstream",
     "level" : 1,
     "topics" : [ "layers", "red" ],
-    "doc" : "RED at many layers > Compare two adjacent layers",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "downstream_errors",
     "title" : "A downstream returns errors",
     "level" : 1,
     "topics" : [ "layers", "red" ],
-    "doc" : "RED at many layers > Why Errors differ",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "api_timeout",
     "title" : "api times out on pricing before pricing answers",
     "level" : 3,
     "topics" : [ "layers", "red" ],
-    "doc" : "RED at many layers > Why Errors differ (mismatched timeouts)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "pricing_cpu",
     "title" : "pricing saturates its single event loop thread",
     "level" : 2,
     "topics" : [ "use", "runtime", "layers" ],
-    "doc" : "USE method in detail > Pitfalls (total CPU hides one core); USE at many layers > A service as a resource",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "tail_latency",
     "title" : "Only the tail is slow",
     "level" : 2,
     "topics" : [ "red", "layers" ],
-    "doc" : "RED method in detail > Duration; RED at many layers > Tail amplification",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "two_faults",
     "title" : "Two changes at once, one of them harmless",
     "level" : 3,
     "topics" : [ "layers", "host" ],
-    "doc" : "USE method in detail > Order of checks (the first thing you find); Combining with other methods > Anti-methods",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "unexplained_win",
     "title" : "Good news that is not",
     "level" : 3,
     "topics" : [ "layers", "red" ],
-    "doc" : "RED at many layers > Why Errors differ (a fallback hides errors); RED at many layers > Compare two adjacent layers",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "consumer_backlog",
     "title" : "The consumer cannot keep up",
     "level" : 2,
     "topics" : [ "async", "load" ],
-    "doc" : "RED at many layers > The async layer",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "consumer_slow",
     "title" : "The worker got slower per message",
     "level" : 2,
     "topics" : [ "async", "layers" ],
-    "doc" : "RED at many layers > The async layer",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "poison_message",
     "title" : "Poison message",
     "level" : 3,
     "topics" : [ "async" ],
-    "doc" : "RED at many layers > The async layer (poison message)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "lag_after_fix",
     "title" : "Lag stays high after the fix",
     "level" : 3,
     "topics" : [ "async", "little" ],
-    "doc" : "RED at many layers > The async layer; Linking RED and USE > Little's Law",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : false
   }, {
     "id" : "busy_poll",
     "title" : "The worker burns a core doing nothing",
     "level" : 2,
     "topics" : [ "async", "cpu", "use" ],
-    "doc" : "CPU busy with no work > Busy polling",
-    "doc_file" : "cpu.md",
     "toolbox" : true
   }, {
     "id" : "cpu_throttle",
     "title" : "CPU throttling at the container",
     "level" : 2,
     "topics" : [ "use", "container" ],
-    "doc" : "USE at many layers > One layer hides another",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "oom",
     "title" : "Periodic OOM kill",
     "level" : 3,
     "topics" : [ "use", "container" ],
-    "doc" : "USE at many layers > Layers and their metrics (container, cgroup)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "slow_leak",
     "title" : "Memory climbs slowly after a deploy",
     "level" : 2,
     "topics" : [ "use", "container" ],
-    "doc" : "Applying on Datadog > Monitors (saturation that predicts an incident); USE at many layers > Layers and their metrics (container, cgroup)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "noisy_neighbor",
     "title" : "Noisy neighbour on the host",
     "level" : 2,
     "topics" : [ "use", "host" ],
-    "doc" : "USE at many layers > Layers and their metrics (hypervisor, host)",
-    "doc_file" : "investigation-guide.md",
     "toolbox" : true
   }, {
     "id" : "cpu_credits",
     "title" : "A burstable VM runs out of CPU credits",
     "level" : 2,
     "topics" : [ "use", "container", "cpu" ],
-    "doc" : "CPU shares and quotas > CPU credits on burstable instances",
-    "doc_file" : "cpu.md",
     "toolbox" : false
   }, {
     "id" : "hot_code_path",
     "title" : "A hot code path on every request",
     "level" : 3,
     "topics" : [ "profiling", "use", "runtime" ],
-    "doc" : "CPU profiling > Reading a flame graph; Profiles in this lab > A good first query",
-    "doc_file" : "profiling.md",
     "toolbox" : true
   }, {
     "id" : "packet_loss",
     "title" : "Packet loss between api and pricing",
     "level" : 2,
     "topics" : [ "network", "layers" ],
-    "doc" : "TCP behaviour you feel in p99 > Retransmits and the minimum RTO",
-    "doc_file" : "network.md",
     "toolbox" : true
   }, {
     "id" : "rtt_amplified",
     "title" : "A few milliseconds of network, many round trips",
     "level" : 3,
     "topics" : [ "network", "layers", "db" ],
-    "doc" : "Network math > Round trips add up",
-    "doc_file" : "network.md",
     "toolbox" : true
   }, {
     "id" : "no_keepalive",
     "title" : "Every call to pricing opens a new connection",
     "level" : 3,
     "topics" : [ "network", "layers" ],
-    "doc" : "TCP behaviour you feel in p99 > Connections and TIME_WAIT",
-    "doc_file" : "network.md",
     "toolbox" : true
   }, {
     "id" : "wal_fsync_contention",
     "title" : "A batch job fills the database disk",
     "level" : 2,
     "topics" : [ "disk", "use", "layers", "db" ],
-    "doc" : "Postgres and the disk > WAL and fsync at commit; Disk math > Await and the queue",
-    "doc_file" : "disk.md",
     "toolbox" : true
   }, {
     "id" : "checkpoint_bursts",
     "title" : "Latency spikes every half minute",
     "level" : 3,
     "topics" : [ "disk", "db", "use" ],
-    "doc" : "Postgres and the disk > Checkpoints; Disk panels in this lab > The Postgres row",
-    "doc_file" : "disk.md",
     "toolbox" : true
   }, {
     "id" : "iops_limit",
     "title" : "Database I/O slow on an idle disk",
     "level" : 3,
     "topics" : [ "disk", "db", "use" ],
-    "doc" : "Postgres and the disk > IOPS limits in the cloud; Disk panels in this lab > The Postgres row",
-    "doc_file" : "disk.md",
     "toolbox" : true
   } ],
   "topics" : [ "red", "load", "layers", "use", "container", "runtime", "db", "async", "host", "little", "cpu", "jvm", "disk", "network", "profiling", "capacity" ],
   "levels" : [ 1, 2, 3 ],
   "modes" : [ {
     "id" : "incident",
-    "doc" : "In this lab",
-    "doc_file" : "investigation-guide.md"
+    "guide" : "In this lab",
+    "guide_file" : "investigation-guide.md"
   }, {
     "id" : "toolbox",
-    "doc" : "The toolbox in this lab > make toolbox and make shell",
-    "doc_file" : "toolbox.md"
+    "guide" : "The toolbox in this lab > make toolbox and make shell",
+    "guide_file" : "toolbox.md"
   }, {
     "id" : "ramp",
-    "doc" : "Capacity from a ramp test > Finding the knee; Capacity from a ramp test > The ramp in this lab",
-    "doc_file" : "capacity.md"
+    "guide" : "Capacity from a ramp test > Finding the knee; Capacity from a ramp test > The ramp in this lab",
+    "guide_file" : "capacity.md"
   }, {
     "id" : "bench",
-    "doc" : "Closed-loop clients in this lab > What make bench does; Closed-loop clients in this lab > Why the two p99 values differ",
-    "doc_file" : "capacity.md"
+    "guide" : "Closed-loop clients in this lab > What make bench does; Closed-loop clients in this lab > Why the two p99 values differ",
+    "guide_file" : "capacity.md"
   } ],
   "quiz" : [ {
     "file" : "benchmarking.md",

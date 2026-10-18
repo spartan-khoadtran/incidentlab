@@ -21,8 +21,9 @@ import java.nio.file.StandardCopyOption
 import kotlin.random.Random
 
 /**
- * What the handbook site may show about the catalog and the quiz. It holds ids, titles, levels,
- * topics and guide pointers, and counts. It never holds an answer, a ticket, a hint or a proof.
+ * What the handbook site may show about the catalog and the quiz: what `make list` prints, and
+ * counts. A scenario's guide pointer stays out, because it names the cause and the CLI only prints
+ * it after the answer. It never holds an answer, a ticket, a hint or a proof.
  */
 object LabExport {
 
@@ -31,12 +32,10 @@ object LabExport {
     val title: String,
     val level: Int,
     val topics: List<String>,
-    val doc: String,
-    val docFile: String?,
     val toolbox: Boolean
   )
 
-  data class ModeCard(val id: String, val doc: String, val docFile: String?)
+  data class ModeCard(val id: String, val guide: String, val guideFile: String?)
 
   data class QuizFile(val file: String, val numbers: Int, val concepts: Int)
 
@@ -87,7 +86,7 @@ object LabExport {
 
   fun build(): Export {
     val scenarios = ScenarioCatalog.all.map {
-      ScenarioCard(it.id, it.title, it.level, it.topics, it.doc, fileOf(it.doc), it.cli.isNotEmpty())
+      ScenarioCard(it.id, it.title, it.level, it.topics, it.cli.isNotEmpty())
     }
     val numbers = Numbers.generators.map { it(Random(1)) }
     val concepts = Concepts.all

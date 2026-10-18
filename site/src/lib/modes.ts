@@ -11,7 +11,7 @@ export interface ModeInfo {
   doc: string | null;
 }
 
-const doc = (id: string) => lab.modes.find((m) => m.id === id)?.doc ?? null;
+const doc = (id: string) => lab.modes.find((m) => m.id === id)?.guide ?? null;
 const rampMinutes = Math.round((lab.defaults.ramp_rates.length * lab.defaults.ramp_step_seconds) / 60);
 const benchMinutes = Math.round(lab.defaults.bench_seconds / 60);
 

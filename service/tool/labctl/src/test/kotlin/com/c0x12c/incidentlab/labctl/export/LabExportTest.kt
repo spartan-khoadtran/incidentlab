@@ -39,7 +39,7 @@ class LabExportTest {
     val cards = json["scenarios"].toList()
     assertThat(cards.map { it["id"].asText() }).isEqualTo(ScenarioCatalog.all.map { it.id })
     for (card in cards) {
-      assertThat(card.fieldNames().asSequence().toSet()).containsOnly("id", "title", "level", "topics", "doc", "doc_file", "toolbox")
+      assertThat(card.fieldNames().asSequence().toSet()).containsOnly("id", "title", "level", "topics", "toolbox")
     }
   }
 
@@ -48,9 +48,21 @@ class LabExportTest {
     val (_, json) = export()
     val answerKeys = setOf(
       "answer", "nature", "location", "signal", "cause", "partial", "ticket", "hints", "steps", "explain", "evidence", "cli",
-      "faults", "params", "marker", "decoy"
+      "faults", "params", "marker", "decoy", "doc", "doc_file"
     )
     assertThat(keys(json).filter { it in answerKeys }).isEmpty()
+  }
+
+  /** The CLI prints a scenario's guide pointer only after the answer, and it names the cause. */
+  @Test
+  fun `no scenario's guide pointer appears, whole or in parts`() {
+    val (text, _) = export()
+    val leaked = ScenarioCatalog.all.flatMap { scenario ->
+      val parts = scenario.doc.split("; ")
+      val pointers = listOf(scenario.doc) + parts + parts.map { it.replace(NOTE, "").trim() }
+      pointers.distinct().filter { it in text }.map { "${scenario.id}: $it" }
+    }
+    assertThat(leaked).isEmpty()
   }
 
   @Test
@@ -77,13 +89,12 @@ class LabExportTest {
   }
 
   @Test
-  fun `quiz counts add up to every drill, and every pointer has a file`() {
+  fun `quiz counts add up to every drill, and every mode pointer has a file`() {
     val export = LabExport.build()
     assertThat(export.quiz.sumOf { it.numbers }).isEqualTo(Numbers.generators.size)
     assertThat(export.quiz.sumOf { it.concepts }).isEqualTo(Concepts.all.size)
     assertThat(export.quiz.map { it.file }.filter { it !in GuideIndex.fileOf.values }).isEmpty()
-    assertThat(export.scenarios.filter { it.docFile == null }.map { it.id }).isEmpty()
-    export.modes.forEach { assertThat(it.docFile).isNotNull() }
+    export.modes.forEach { assertThat(it.guideFile).isNotNull() }
   }
 
   @Test
@@ -95,5 +106,9 @@ class LabExportTest {
     node.isObject -> node.fields().asSequence().flatMap { (key, value) -> sequenceOf(key) + keys(value) }.toList()
     node.isArray -> node.flatMap { keys(it) }
     else -> emptyList()
+  }
+
+  private companion object {
+    val NOTE = Regex("""\s*\([^)]*\)$""")
   }
 }
