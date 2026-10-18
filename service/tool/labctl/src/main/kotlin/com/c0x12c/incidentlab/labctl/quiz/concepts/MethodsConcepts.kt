@@ -97,7 +97,7 @@ internal object MethodsConcepts {
     ),
     ChoiceQuestion(
       text = "A client times out at 1 s. The server answers that call in 1.2 s on average. Which method finds this before an incident, and what does it see?",
-      answer = "Static performance tuning: the two timeouts do not match, so every call is wasted work",
+      answer = "Static performance tuning: the client gives up before the server answers, so every call is wasted work",
       others = listOf(
         "Workload characterization: the client sends too much",
         "Off-CPU analysis: the server waits on a lock",

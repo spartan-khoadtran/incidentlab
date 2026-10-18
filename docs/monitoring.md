@@ -18,9 +18,9 @@ A histogram's buckets are cumulative: `le="0.5"` counts every request at or unde
 
 ### Summary since boot
 
-The first report of `vmstat` and `iostat` is the average since boot. Throw it away. A host up for 10 days with a disk at 100% for the last hour shows 100 / 240 = 0.4% in that first line. The second report is the first real sample. `iostat -y` skips the first report. `mpstat` with no interval, or an interval of 0, prints only the since-boot numbers, so always give it one: `mpstat -P ALL 1`.
+The first report of `vmstat` and `iostat` is the average since boot. Only vmstat's process and memory columns are live in it. Throw it away. A host up for 10 days with a disk at 100% for the last hour shows 100 / 240 = 0.4% in that first line. The second report is the first real sample. `iostat -y` skips the first report. `mpstat` with no interval, or an interval of 0, prints only the since-boot numbers, so always give it one: `mpstat -P ALL 1`.
 
-The same trap hides in every counter read once. `cat /proc/stat`, `cat /proc/net/dev`, `ss -s`, a `_total` metric without `rate()`: each one is a total since start. Read it twice and take the difference, or let `rate()` do it.
+The same trap hides in every counter read once. `cat /proc/stat`, `cat /proc/net/dev`, `netstat -s`, a `_total` metric without `rate()`: each one is a total since start. Read it twice and take the difference, or let `rate()` do it.
 
 The load average is already an average, over 1, 5 and 15 minutes. The 1-minute figure smooths a 10-second spike. The 15-minute figure hides it.
 
@@ -36,7 +36,7 @@ Shapes tell stories. A step at a round time is a deploy, a config push or a cron
 
 ### rate needs two samples
 
-`rate()` needs at least two samples inside the window. With one sample there is nothing to subtract, and the result is empty. This lab scrapes every 5 s, so `rate(x[5s])` holds zero or one sample most of the time, and the chart is full of gaps.
+`rate()` needs at least two samples inside the window. With one sample there is nothing to subtract, and the result is empty. This lab scrapes every 5 s, so `rate(x[5s])` holds only one sample most of the time, and the chart is full of gaps.
 
 The rule: the window should hold at least four scrapes. Grafana's `$__rate_interval` does exactly that. It is the larger of `$__interval + scrape interval` and `4 × scrape interval`. Grafana takes the scrape interval from the data source settings, not from Prometheus. If that setting is wrong, the window is wrong too. This lab sets it to 5 s, the real scrape, so the window is at least 20 s. Use `$__rate_interval` in panels. In alert rules, write the window yourself and keep the 4x rule.
 
@@ -46,13 +46,13 @@ The rule: the window should hold at least four scrapes. Grafana's `$__rate_inter
 
 Write `sum(rate(x[1m]))`, never `rate(sum(x)[1m:])`. `rate()` detects a counter reset by seeing the value go down. Inside a sum, one instance's reset only makes the total dip. `rate()` reads that dip as a reset of the whole sum.
 
-Worked example: two instances each at 1,000. The sum is 2,000. Instance B restarts and reports 5. The sum is now 1,005. `rate()` of the sum sees a drop from 2,000 to 1,005. It treats that as a reset to 0 and counts an increase of 1,005 instead of 5. The chart shows a spike of about 1,000 requests that never happened. The same holds for every `_over_time` function: rate first, then aggregate.
+Worked example: two instances each at 1,000. The sum is 2,000. Instance B restarts and reports 5. The sum is now 1,005. `rate()` of the sum sees a drop from 2,000 to 1,005. It treats that as a reset to 0 and counts an increase of 1,005 instead of 5. The chart shows a spike of about 1,000 requests that never happened. The same holds when you combine `rate()` with an `_over_time` function: rate first, then aggregate.
 
 ### increase is extrapolated
 
 `increase(x[1m])` is `rate(x[1m]) × 60`. Both stretch the slope to the window edges, so `increase()` returns non-integers for a counter that only ever grows by whole numbers. A counter that grew by 3 can show 3.2 or 2.8. That is normal.
 
-So never alert on `increase(x[5m]) == 1`, and never add up short-window increases to get an exact count. For an exact count over a long time, use a window many times the scrape interval. The edge stretch is a fixed-size error, so it shrinks as a share of a long window.
+So never alert on `increase(x[5m]) == 1`, and never add up short-window increases to get an exact count. For a count close to the truth, use a window many times the scrape interval. The edge stretch is a fixed-size error, so it shrinks as a share of a long window.
 
 ### histogram_quantile needs le
 
@@ -64,7 +64,7 @@ Never average p99 across instances. Add the buckets of all instances first, with
 
 ### irate against rate
 
-`irate()` uses only the last two samples in the window. `rate()` uses the first and the last. So `irate()` shows a spike at its real height, where `rate()` spreads it over the window. With a 15 s scrape, 600 events in one scrape and then nothing shows as 40/s in `irate()` and 10/s in `rate(x[1m])`.
+`irate()` uses only the last two samples in the window. `rate()` uses the first and the last. So `irate()` shows a spike at its real height, where `rate()` spreads it over the window. With a 15 s scrape, 600 events in one scrape and then nothing shows as 600 / 15 s = 40/s in `irate()`. `rate(x[1m])` shows about 13/s, not 10/s. The window holds 4 samples, 45 s from the first to the last, so the slope is 600 / 45 s. The stretch to the window edges keeps that slope.
 
 That makes `irate()` good to look at a fast-moving counter over a short range, and bad for everything else. In an alert, a brief change can reset the `for` clause, so the alert flaps. In a long range the window length does not matter: `irate(x[1h])` equals `irate(x[1m])` as long as both hold two samples. The Prometheus docs give the same advice. Use `irate` only to graph volatile, fast-moving counters. Use `rate` for alerts and slow-moving counters.
 

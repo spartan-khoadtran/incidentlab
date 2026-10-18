@@ -121,13 +121,13 @@ internal object CapacityConcepts {
     ),
     ChoiceQuestion(
       text = "A closed-loop benchmark reports a fine p99 at 267 requests/s. An open load at the same rate times out. What hides the problem in the benchmark?",
-      answer = "Coordinated omission: when the service stalls, the clients stop sending, so the requests users would have sent are never measured",
+      answer = "The closed clients wait instead of sending: the queue never passes N, and the requests users would have sent while the service was slow are never measured",
       others = listOf(
         "The benchmark used a shorter histogram bucket range",
         "The open load sends larger requests",
         "The benchmark ran on a faster machine"
       ),
-      explanation = "Real users keep arriving during a stall, and each one meets it. A closed client records one slow sample per stall.",
+      explanation = "Real users keep arriving, so their queue has no cap and each one meets every stall. A closed client keeps at most N requests inside and records one slow sample per stall. That is coordinated omission.",
       doc = "Closed-loop clients in this lab > Why the two p99 values differ"
     ),
     ChoiceQuestion(

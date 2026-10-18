@@ -48,7 +48,7 @@ internal object MonitoringConcepts {
         "Neither: iostat needs at least a minute to warm up",
         "The average of the two"
       ),
-      explanation = "vmstat, iostat and mpstat print since-boot averages first. iostat -y skips that line.",
+      explanation = "vmstat and iostat print the since-boot average first, and iostat -y skips that line. mpstat prints it only with no interval or an interval of 0.",
       doc = "Reading monitoring data > Summary since boot"
     ),
     ChoiceQuestion(
@@ -138,7 +138,7 @@ internal object MonitoringConcepts {
         "The scrape missed and duplicated a sample",
         "The counter is a float gauge"
       ),
-      explanation = "Do not alert on increase() == 1. For an exact count, use a window many times the scrape interval.",
+      explanation = "Do not alert on increase() == 1. For a count close to the truth, use a window many times the scrape interval.",
       doc = "PromQL traps > increase is extrapolated"
     ),
     ChoiceQuestion(

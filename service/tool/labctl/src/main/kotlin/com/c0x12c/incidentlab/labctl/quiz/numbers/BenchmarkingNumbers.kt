@@ -86,7 +86,7 @@ internal object BenchmarkingNumbers {
     return NumericQuestion(
       "A load test achieved $achievedRps requests/s, and $failedPercent% of them failed. What is the success throughput, in requests/s?",
       answer, Tolerance.Relative(0.01), "requests/s",
-      "$achievedRps × (1 − ${shown(failedPercent / PERCENT)}) = $achievedRps × ${shown(successShare)} = ${shown(answer)} requests/s. Errors are fast, so the run with errors also shows a better p99 than a healthy one. Report the success share next to the latency, always.",
+      "$achievedRps × (1 − ${shown(failedPercent / PERCENT)}) = $achievedRps × ${shown(successShare)} = ${shown(answer)} requests/s. When errors are fast, the run with errors can also show a better p99 than a healthy one. Report the success share next to the latency, always.",
       "Benchmarking mistakes > Ignoring errors"
     )
   }

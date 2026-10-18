@@ -56,7 +56,7 @@ How to read the table:
 | 6 | 200 | 196 | 420 ms | 0.2% | The knee: above 3x the baseline |
 | 7 | 250 | 203 | 1.9 s | 6% | Saturated: achieved is flat |
 
-Plan with the knee, not with the maximum. At the maximum the service has no room for a burst. The knee is also the denominator for a whole service's utilization: 150 rps against a knee at 200 rps is 75% busy.
+Plan with the knee, not with the maximum. At the maximum the service has no room for a burst. The knee is also the denominator for a whole service's utilization: 150 rps against a knee at 200 rps uses 75% of the usable capacity.
 
 ### Headroom and the next saturation
 
@@ -83,7 +83,7 @@ Raise the pool and the worker is next at about 377 rps. The worker is async, so 
 
 `make ramp` runs 8 steps: 50, 75, 100, 125, 150, 200, 250 and 300 rps. Each step lasts 60 s by default (`STEP=45` changes it, from 30 to 300 s). The ramp raises loadgen's `surge_multiplier`, so it needs the normal load: run `make load X=1` first. After the last step the load goes back to 50 rps.
 
-A hidden setup changes every run. It can shrink the DB pool, lower the api CPU limit, or change nothing. When the setup is not the pool, the pool is opened to 24, so it does not fill inside the range.
+A hidden setup changes every run. It can set a small DB pool, lower the api CPU limit, or add no limit. When the setup is not the pool, the pool is opened to 24, so it does not fill inside the range.
 
 What to watch, step by step:
 
