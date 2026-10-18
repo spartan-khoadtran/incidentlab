@@ -90,11 +90,12 @@ internal object MonitoringNumbers {
   private fun spikeRate(r: Random): NumericQuestion {
     val spike = listOf(300, 600, 1_200).random(r)
     val (window, label) = listOf(60 to "1m", 300 to "5m").random(r)
-    val answer = spike.toDouble() / window
+    val span = window - SCRAPE_SECONDS
+    val answer = spike.toDouble() / span
     return NumericQuestion(
-      "A counter jumps by $spike inside one 15 s scrape, then stays flat. irate() shows ${spike / SCRAPE_SECONDS} per second. About what does rate(x[$label]) show, per second?",
+      "Prometheus scrapes every 15 s. A counter at 50,000 jumps by $spike between two scrapes, then stays flat. irate() shows ${spike / SCRAPE_SECONDS} per second. While the jump is inside the window, what does rate(x[$label]) show, per second?",
       answer, Tolerance.Relative(0.03), "per second",
-      "rate() spreads the jump over the window: $spike / $window s = ${shown(answer)} per second, against irate's $spike / $SCRAPE_SECONDS = ${spike / SCRAPE_SECONDS}. irate shows a spike at its real height. That is why it is bad for alerts: a brief change can reset the for clause.",
+      "A $label window holds ${window / SCRAPE_SECONDS} samples, $span s from the first to the last. rate() takes the slope over that span, $spike / $span s = ${shown(answer)} per second, and the stretch to the window edges keeps that slope. $spike / $window = ${shown(spike.toDouble() / window)} is too low. irate shows $spike / $SCRAPE_SECONDS = ${spike / SCRAPE_SECONDS}, the spike at its real height. That is why irate is bad for alerts: a brief change can reset the for clause.",
       "PromQL traps > irate against rate"
     )
   }
