@@ -120,4 +120,13 @@ class DesiredStateTest {
     val ids = ScenarioCatalog.byId.keys
     assertThat(RampCatalog.ID in ids).isEqualTo(false)
   }
+
+  @Test
+  fun `a network exercise adds netem to the api container next to its cpus`() {
+    val state = LabState(active = ActiveExercise(id = "packet_loss", params = mapOf("loss" to 2.0), started = 0.0, n = 1))
+
+    val desired = DesiredState.of(state)
+
+    assertThat(desired.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0, "netem" to mapOf("target" to "pricing", "delay_ms" to 0, "loss_pct" to 2.0))))
+  }
 }

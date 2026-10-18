@@ -118,6 +118,27 @@ object UseBoard {
     b.timeseries("Messages waiting in worker memory", listOf("kafka_partition_queue" to "p{{partition}}"), "short")
     b.timeseries("Processing errors/s", listOf("sum by (source) (rate(kafka_consumed_total{outcome=\"error\"}[RI])) or vector(0)" to "{{source}}"), "short")
 
+    b.row("Network (per service)")
+    b.timeseries(
+      "TCP segments retransmitted/s",
+      listOf("rate(net_tcp_retrans_segs_total{$SERVICES}[RI])" to "{{job}}"),
+      "short",
+      "Counted by the kernel in each container's own network namespace. Near 0 on a healthy network."
+    )
+    b.timeseries(
+      "RTO timeouts and tail loss probes/s",
+      listOf("rate(net_tcp_timeouts_total{$SERVICES}[RI])" to "{{job}} RTO", "rate(net_tcp_loss_probes_total{$SERVICES}[RI])" to "{{job}} probe"),
+      "short",
+      "Each one is a sender that waited for a lost segment. On Linux an RTO waits at least 200 ms."
+    )
+    b.timeseries("TCP connections opened/s (active opens)", listOf("rate(net_tcp_active_opens_total{$SERVICES}[RI])" to "{{job}}"), "short")
+    b.timeseries(
+      "Sockets in TIME_WAIT",
+      listOf("net_tcp_time_wait{$SERVICES}" to "{{job}}"),
+      "short",
+      "The side that closes first keeps the socket for 60 s. About closes per second x 60."
+    )
+    b.timeseries("TCP connections established", listOf("net_tcp_current_established{$SERVICES}" to "{{job}}"), "short")
     b.row("CPU profiles (Pyroscope)")
     b.flamegraph(
       "api: where the CPU goes",

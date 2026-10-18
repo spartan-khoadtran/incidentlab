@@ -21,6 +21,7 @@ object CheckoutFaults {
   const val LOCK_MS = "lock_ms"
   const val PRICE_FALLBACK = "price_fallback"
   const val RENDER_MS = "render_ms"
+  const val PRICING_KEEPALIVE = "pricing_keepalive"
 
   val DEFAULTS: Map<String, Any?> = mapOf(
     // max concurrent requests the app accepts; the rest wait before the handler starts timing
@@ -55,6 +56,8 @@ object CheckoutFaults {
     // a failed pricing call is priced from the list prices and still answers 200
     PRICE_FALLBACK to false,
     // CPU work per request on the request's own thread: the receipt renderer
-    RENDER_MS to 0
+    RENDER_MS to 0,
+    // false: no connection reuse towards pricing; every call opens a TCP connection and closes it after the response
+    PRICING_KEEPALIVE to true
   )
 }

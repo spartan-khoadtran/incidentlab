@@ -11,6 +11,8 @@ import com.c0x12c.incidentlab.checkout.impl.events.OrderEvents
 import com.c0x12c.incidentlab.checkout.impl.inventory.InventoryCache
 import com.c0x12c.incidentlab.checkout.impl.leak.MemoryLeak
 import com.c0x12c.incidentlab.checkout.impl.manager.DefaultCheckoutManager
+import com.c0x12c.incidentlab.checkout.impl.pricing.ConnectionCounter
+import com.c0x12c.incidentlab.checkout.impl.pricing.KeepAliveSwitch
 import com.c0x12c.incidentlab.checkout.impl.pricing.PricingClient
 import com.c0x12c.incidentlab.checkout.impl.pricing.PricingTimeoutInterceptor
 import com.c0x12c.incidentlab.checkout.impl.render.ReceiptRenderer
@@ -72,10 +74,11 @@ class CheckoutFactory {
   fun productCache(redisson: RedissonClient, tracer: Tracer): ProductCache = ProductCache(redisson, tracer)
 
   @Singleton
-  fun pricingApi(config: CheckoutConfig, faults: Faults, openTelemetry: OpenTelemetry, objectMapper: ObjectMapper): PricingApi {
-    val httpClient = OkHttpClient.Builder()
+  fun pricingApi(config: CheckoutConfig, faults: Faults, openTelemetry: OpenTelemetry, objectMapper: ObjectMapper, registry: MeterRegistry): PricingApi {
+    val pooled = OkHttpClient.Builder()
       .addInterceptor(PricingTimeoutInterceptor(faults))
       .addInterceptor(TraceContextInterceptor(openTelemetry))
+      .eventListener(ConnectionCounter(registry, PRICING_TARGET))
       .connectionPool(ConnectionPool(POOL_CONNECTIONS, POOL_KEEP_ALIVE_MINUTES, TimeUnit.MINUTES))
       .dispatcher(
         Dispatcher().apply {
@@ -87,7 +90,7 @@ class CheckoutFactory {
       .build()
     return Retrofit.Builder()
       .baseUrl(config.pricingUrl.trimEnd('/') + "/")
-      .client(httpClient)
+      .callFactory(KeepAliveSwitch(faults, pooled))
       .addConverterFactory(JacksonConverterFactory.create(objectMapper))
       .build()
       .create(PricingApi::class.java)
@@ -149,6 +152,7 @@ class CheckoutFactory {
   private companion object {
     const val REDIS_TIMEOUT_MS = 2_000
     const val REDIS_RETRIES = 1
+    const val PRICING_TARGET = "pricing"
     const val POOL_CONNECTIONS = 512
     const val POOL_KEEP_ALIVE_MINUTES = 5L
     const val MAX_REQUESTS = 4_096

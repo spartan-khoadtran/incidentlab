@@ -124,6 +124,15 @@ object RedBoard {
     b.timeseries("Calls to pricing: p99 as seen from api", listOf(quantile(0.99, "http_client_duration_seconds", "route", "{job=\"api\"}") to "{{route}}"), "s")
     b.timeseries("Calls to pricing: outcomes/s", listOf("sum by (route, outcome) (rate(http_client_requests_total{job=\"api\"}[RI]))" to "{{route}} {{outcome}}"), "reqps")
     b.timeseries("Cache hit ratio", listOf("sum(rate(cache_requests_total{result=\"hit\"}[RI])) / sum(rate(cache_requests_total[RI]))" to "hit ratio"), "percentunit")
+    b.timeseries(
+      "Calls to pricing: new TCP connections/s vs calls/s",
+      listOf(
+        "sum(rate(http_client_connections_total{job=\"api\",target=\"pricing\"}[RI]))" to "connections opened/s",
+        "sum(rate(http_client_requests_total{job=\"api\",target=\"pricing\"}[RI]))" to "calls/s"
+      ),
+      "short",
+      "With connection reuse, opens stay near 0 while calls flow. One open per call means every call pays a handshake."
+    )
 
     b.row("5 · Downstream as seen by itself")
     b.timeseries("pricing: requests/s by route and status", listOf("sum by (route, status) (rate(http_server_requests_total{job=\"pricing\"}[RI]))" to "{{route}} {{status}}"), "reqps")

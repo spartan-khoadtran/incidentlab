@@ -12,4 +12,7 @@ object Services {
 
   /** Container settings the daemon owns even with no exercise running. */
   val BASE_DOCKER: Map<String, Map<String, Any?>> = mapOf("api" to mapOf("cpus" to 2.0))
+
+  /** Containers with NET_ADMIN, where the netem script may run. Each must also be in [BASE_DOCKER]. */
+  val NETEM_CONTAINERS: Set<String> = setOf("api")
 }

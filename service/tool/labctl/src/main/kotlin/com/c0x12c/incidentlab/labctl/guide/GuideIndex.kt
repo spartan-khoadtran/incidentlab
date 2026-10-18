@@ -49,6 +49,11 @@ object GuideIndex {
         "Metrics that lie"
       ).associateWith { "monitoring.md" } +
       listOf(
+        "Network math",
+        "TCP behaviour you feel in p99",
+        "Network panels in this lab"
+      ).associateWith { "network.md" } +
+      listOf(
         "CPU profiling",
         "Off-CPU profiling",
         "Profiles in this lab"

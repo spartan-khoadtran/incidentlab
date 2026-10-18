@@ -16,6 +16,7 @@ Everything in the repo is English: code, comments, log lines, learner-facing tex
 - `profiling.md`: CPU and off-CPU profiling, and the profiles in this lab.
 - `toolbox.md`: the 60-second checklist, crisis tools, and the toolbox mode.
 - `capacity.md`: capacity from a ramp test, and the closed-loop clients of `make bench`.
+- `network.md`: network math, TCP behaviour you feel in p99, and the network panels.
 
 Scenario and quiz `doc` fields point at their headings as `Section > Subsection (note)`. `GuideIndex` (`labctl/guide`) maps every `## ` section title to its file, so a section title must be unique across the docs files, and `GuideIndex.where(doc)` is what the "Read again in" line prints. `GuidePointersTest` reads every `docs/*.md`, checks the uniqueness, checks that the index matches the files, and checks that every pointer resolves, so a heading rename or a new section must update the pointers and the index too.
 
@@ -84,6 +85,7 @@ The runtime image downloads the Pyroscope Java agent (`io.pyroscope:agent`, pinn
 - `EventLoopRuntime`: `event_loop_lag_seconds` and `onEventLoop { }` to park CPU work on the single Netty event loop thread (`micronaut.netty.event-loops.default.num-threads: 1` in api and pricing).
 - `ProcessMetrics` (`process_cpu_seconds_total`, `process_resident_memory_bytes`, `process_start_time_seconds`) and `CgroupMetrics` (`cgroup_*`, read from `/sys/fs/cgroup`).
 - Tracing comes from `micronaut-tracing-opentelemetry-http` configured with `otel.*` keys in each `application.yml`; the OTLP exporter uses the JDK sender, not OkHttp. `otel.traces.exporter: otlp` must stay set: Micronaut's factory defaults the exporter to none, and then every span is silently dropped.
+- `NetstatMetrics` (`net_tcp_*`): the TCP counters of the service's own network namespace, read from `/proc/self/net/{snmp,netstat,sockstat}` at most once per scrape.
 
 `Faults` is a map of defaults plus overrides. Each deployable publishes one `Faults` bean with its own defaults (`CheckoutFaults`, `PricingFaults`, `OrdersFaults`, `LoadgenFaults`, `NoisyFaults`). A key only does something when the service reads it.
 
@@ -99,11 +101,15 @@ Step 2 asks the fault sources in `DesiredState.SOURCES` (`FaultSource`: an id an
 
 Steps 3 and 4 are `Applier`s (`ServiceFaultApplier` and `ContainerCpuApplier` in `control/Applier.kt`). `ControlDaemon` runs the list that `Main` wires; the CPU applier is only wired when the docker socket exists.
 
+`NetemApplier` (also wired only with the docker socket) runs `/run/netem.sh` inside api through the engine API exec endpoint. A scenario asks for it with `docker.api.netem = {target, delay_ms, loss_pct}` (or a list of them); no `netem` key means `netem.sh clear`. The applier skips a tick whose command did not change and runs it again once a minute, so a restarted api gets its shaping back. Only `Services.NETEM_CONTAINERS` (api) is touched, because only api has `cap_add: [NET_ADMIN]`.
+
+`service/docker/netem.sh` contract: `apply <host> <delay_ms> <loss_pct> [...]` resolves each host, builds a `prio` root qdisc on eth0 with one extra band per target from `1:4` up (bands 1 to 3 keep the default priomap, so other traffic is untouched), a netem leaf per band and a u32 filter on the target IP. It is idempotent through `/run/netem.state`. `clear` deletes the root qdisc. Shaping is on api's egress only: the other side never sees the fault.
+
 The daemon owns fault state. A manual PUT to `/admin/faults` is reverted within 3 seconds. To change behavior, change `state.json` through the `make` commands, or change the scenario.
 
 ### Scenario contract (`scenario/catalog/`)
 
-`ScenarioCatalog.all` joins one list per layer: `LoadScenarios`, `EdgeScenarios`, `AppScenarios`, `DatabaseScenarios`, `DownstreamScenarios`, `AsyncScenarios`, `ContainerHostScenarios` and `ProfilingScenarios`, each an `internal object` with `val all`. A new scenario goes into the file of its `answer.location`, except a scenario that only a profile can solve, which goes into `ProfilingScenarios`. `scenario/Baseline.kt` holds the numbers more than one scenario reads (the tenant mix, `BASE_RPS`, the checkout hold time, the worker capacity, the unit constants); a number only one scenario uses stays private in that file.
+`ScenarioCatalog.all` joins one list per layer: `LoadScenarios`, `EdgeScenarios`, `AppScenarios`, `DatabaseScenarios`, `DownstreamScenarios`, `AsyncScenarios`, `ContainerHostScenarios`, `ProfilingScenarios` and `NetworkScenarios`, each an `internal object` with `val all`. A new scenario goes into the file of its `answer.location`, except a scenario that only a profile can solve, which goes into `ProfilingScenarios`. `scenario/Baseline.kt` holds the numbers more than one scenario reads (the tenant mix, `BASE_RPS`, the checkout hold time, the worker capacity, the unit constants); a number only one scenario uses stays private in that file.
 
 Each `Scenario` has: `id`, `title`, `level` (1 to 3), `topics`; `params(random, context)` (context carries `cpuCount`, `productDetailSeconds`, the measured cost of one uncached product query, used to calibrate load, and `tenants`, loadgen's default rate per tenant); `faults(params) -> FaultSpec(services, docker)` runs every daemon tick and `Params.elapsedSeconds` is the time since the start, so a fault can change mid-exercise (`lag_after_fix` rolls the worker back after `fix_after`); `ticket(params)`, `hints` (3), `explain(params)`; `steps` (the investigation trace printed after the explanation); `answer` (`nature`, `location` and `signal` are sets of accepted keys from `Answers`, `cause` one key, `partial` the causes worth 1 point: a visible consequence one step before the root cause); `evidence` (PromQL), `cli` (shell commands that prove the cause without Grafana, run in `make shell`; each entry is one command line that ends with `   # what to read`, finds a process with `$(pgrep -f checkout-api)`, `pricing-api`, `orders-worker` or `/run/app/noisy`, reaches a cgroup with `cg PID`, Postgres with `PGPASSWORD=lab psql -h postgres -U lab lab -c`, and a counter with two `curl -s http://api:8000/metrics` readings; the explanation prints it after the PromQL in every mode), `doc`; optional `marker(params)` (real Grafana annotation 0 to 3 minutes before start) and `decoy` (probability of a fake annotation between 10 minutes before and 1 minute after start). `Answers.CAUSES` also holds `DISTRACTORS`, causes no scenario has, and some causes belong to two scenarios (`pool_exhausted`, `single_thread_cpu`, `client_timeout`), so the cause list is not a copy of the catalog.
 
@@ -119,6 +125,7 @@ The quiz data sits next to the docs file it drills: `quiz/numbers/InvestigationN
 - `kafka_*`: produce (api) and consume, lag, retries (worker). `client_*`: loadgen. Prometheus job names equal compose service names.
 - `app_lock_wait_seconds`, `app_lock_waiting`, `app_lock_held_seconds_total` (rate() is utilization): api's inventory lock. `app_price_fallback_total`: checkouts priced without pricing. `orders_value_total{tenant}`: sum of order totals, so `orders_value_total / orders_total` is the mean order value. `noisy_forks_total`: short processes noisy started.
 - `client_closed_clients`: the closed-loop clients loadgen runs. 0 means the open model.
+- `net_tcp_*`: per-service TCP counters from `NetstatMetrics` (`out_segs`, `retrans_segs`, `active_opens`, `passive_opens`, `attempt_fails`, `estab_resets`, `timeouts`, `loss_probes`, `lost_retransmit`, `syn_retrans`, `listen_overflows` as counters, `current_established` and `time_wait` as gauges). Each container has its own network namespace, so node-exporter cannot give these. `http_client_connections_total{target}`: TCP connections api opens to pricing (OkHttp `connectStart`).
 
 ### Design choices the exercises depend on
 
@@ -144,6 +151,9 @@ Changing one of these breaks the scenario named in brackets:
 - The `toolbox` service (`config/toolbox`, its own Ubuntu 24.04 image) runs with `pid: host`, `cgroup: host`, `privileged: true`, `/sys/fs/cgroup` read-only and the docker socket, on the compose network. Every `cli` entry relies on that: host PIDs from `pgrep`, absolute paths in `/proc/PID/cgroup` (read by `cg`), `dmesg`, `nsenter`, and service names. It is root on the VM, so it stays a local lab tool. `perf` is a wrapper that runs the installed build whatever `uname -r` says, and tracefs is mounted at start for bpftrace; both depend on the VM kernel and may fail on Docker Desktop (`kernel-check`). [every scenario with `cli`]
 - The ramp drives `surge_multiplier`, so its steps are only right with `rate_multiplier` at 1. Each hidden limit fills inside 50 to 300 rps (pool 2, 3 or 4, api at 0.2 or 0.3 cores, using `API_CORES_AT_BASE`). The other setups open the pool to 24, because the default pool of 4 fills at about 267 rps. [`ramp`]
 - loadgen's `closed_clients` above 0 stops every open arrival, crawler included, and runs that many clients with no think time. A client that is no longer wanted finishes its request first. [`bench`]
+- netem drops are silent to TCP, and a /price request usually fits in one segment, so a lost request waits for the tail loss probe or the RTO (200 ms floor on Linux). pricing never sees the lost copy, so its p99 stays flat while api's retransmit counters rise. [`packet_loss`]
+- A healthy checkout makes 1 price query plus 3 round trips for the order (INSERT order, INSERT items, COMMIT). `rtt_amplified` adds a 3 to 8 ms delay towards Postgres and picks `n_plus_one` from the delay so the pool lands about 60 to 85% busy. Changing `price_work_ms`, the pool size or the order writes moves that range. [`rtt_amplified`]
+- `pricing_keepalive: false` sends pricing calls through a copy of the OkHttp client whose pool keeps no idle connection, so api closes each connection first and keeps the TIME_WAIT socket (`KeepAliveSwitchTest` proves both). A `Connection: close` request header would make pricing close first instead, and the TIME_WAIT would move to pricing. [`no_keepalive`]
 
 ### Data and state
 

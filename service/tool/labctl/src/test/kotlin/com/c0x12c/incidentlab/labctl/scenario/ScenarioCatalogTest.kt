@@ -18,6 +18,7 @@ import com.c0x12c.incidentlab.labctl.scenario.catalog.DownstreamScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.EdgeScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.LoadScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.ProfilingScenarios
+import com.c0x12c.incidentlab.labctl.scenario.catalog.NetworkScenarios
 import kotlin.random.Random
 import org.junit.jupiter.api.Test
 
@@ -29,7 +30,8 @@ class ScenarioCatalogTest {
   private val causes = Answers.CAUSES.map { it.first }.toSet()
   private val layers = listOf(
     LoadScenarios.all, EdgeScenarios.all, AppScenarios.all, DatabaseScenarios.all, DownstreamScenarios.all, AsyncScenarios.all, ContainerHostScenarios.all,
-    ProfilingScenarios.all
+    ProfilingScenarios.all,
+    NetworkScenarios.all
   )
 
   @Test
@@ -271,6 +273,39 @@ class ScenarioCatalogTest {
     }
     assertThat(scenario.answer).isEqualTo(ScenarioCatalog.byId.getValue("cache_miss").answer)
     assertThat(scenario.decoy).isEqualTo(0.5)
+  }
+
+  @Test
+  fun `the network scenarios shape api's traffic to the right target and keep the pool busy but not full`() {
+    val random = Random(9)
+    val targets = mapOf("packet_loss" to "pricing", "rtt_amplified" to "postgres", "no_keepalive" to "pricing")
+    for ((id, target) in targets) {
+      val scenario = ScenarioCatalog.byId.getValue(id)
+      repeat(20) {
+        val params = Params(scenario.params(random, ExerciseContext()), "14:05")
+        val netem = scenario.faults(params).docker.getValue("api").getValue("netem") as Map<*, *>
+        assertThat(netem["target"]).isEqualTo(target)
+        assertThat(scenario.cli).isNotEmpty()
+      }
+    }
+    val rtt = ScenarioCatalog.byId.getValue("rtt_amplified")
+    repeat(50) {
+      val params = Params(rtt.params(random, ExerciseContext()), "14:05")
+      assertThat(NetworkScenarios.inUse(params)).isBetween(2.3, 3.4)
+    }
+    val keepalive = ScenarioCatalog.byId.getValue("no_keepalive")
+    assertThat(keepalive.faults(Params(mapOf("delay" to 7), "14:05")).services).isEqualTo(mapOf("api" to mapOf<String, Any?>("pricing_keepalive" to false)))
+  }
+
+  @Test
+  fun `the round trip arithmetic of rtt_amplified matches a hand computation`() {
+    val params = Params(mapOf("delay" to 5, "k" to 8), "14:05")
+    // 15/s x (50 + (2.5 x 8 + 3) x 5) ms = 15 x 0.165 s = 2.475 connections
+    assertThat(NetworkScenarios.inUse(params)).isEqualTo(2.475)
+    val explain = ScenarioCatalog.byId.getValue("rtt_amplified").explain(params)
+    assertThat(explain.contains("23 x 5 ms = 115 ms")).isTrue()
+    assertThat(explain.contains("175 ms for a basket of 4")).isTrue()
+    assertThat(explain.contains("about 2.5 of 4")).isTrue()
   }
 
   private companion object {

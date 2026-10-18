@@ -23,10 +23,12 @@ RUN --mount=type=cache,target=/root/.gradle \
 
 FROM eclipse-temurin:21-jre-jammy
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl procps && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl procps iproute2 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /run
 COPY --from=build /out /run/app
+# The controller runs it through docker exec in the api container, which has NET_ADMIN.
+COPY --chmod=755 docker/netem.sh /run/netem.sh
 
 # The Pyroscope Java agent (async-profiler inside). api, pricing and worker load it through JAVA_TOOL_OPTIONS.
 ARG PYROSCOPE_AGENT_VERSION=2.9.2

@@ -7,6 +7,7 @@ import com.c0x12c.incidentlab.labctl.quiz.concepts.FoundationsConcepts
 import com.c0x12c.incidentlab.labctl.quiz.concepts.InvestigationConcepts
 import com.c0x12c.incidentlab.labctl.quiz.concepts.MethodsConcepts
 import com.c0x12c.incidentlab.labctl.quiz.concepts.MonitoringConcepts
+import com.c0x12c.incidentlab.labctl.quiz.concepts.NetworkConcepts
 import com.c0x12c.incidentlab.labctl.quiz.concepts.ProfilingConcepts
 import com.c0x12c.incidentlab.labctl.quiz.concepts.ToolboxConcepts
 
@@ -20,6 +21,7 @@ object Concepts {
     FoundationsConcepts.all,
     MethodsConcepts.all,
     MonitoringConcepts.all,
+    NetworkConcepts.all,
     ProfilingConcepts.all,
     ToolboxConcepts.all
   ).flatten()
