@@ -51,8 +51,10 @@ Development (Gradle lives in `service/`, needs a JDK on the host; Gradle downloa
 - `make dashboards` regenerates the Grafana JSON from `service/tool/dashboards` through the built image. Grafana reads the bind-mounted folder, so no restart is needed. Do not edit the JSON by hand.
 - `docker compose up -d --build api` rebuilds after a code change. All services share one image (`incidentlab-svc:latest`); other services keep the old code until you restart them too.
 - `make logs S=api` (empty `S` means all services), `make ps`.
+- `make site` opens the handbook (http://localhost:4000, the `site` service).
+- The handbook alone: `cd site && npm ci && npm run dev` (Node 22). `npm run build`, `npm run lint`, `npm test`, `npm run check:data`.
 
-Host ports: Envoy 8080 (admin 9901), Grafana 3000, Prometheus 9090, Pyroscope 4040. Tempo has no host port: traces are read in Grafana. Service ports (api 8000, pricing 8001, worker 8002, loadgen 8003, pgobserver 8004, noisy 8005) are only reachable inside the compose network.
+Host ports: Envoy 8080 (admin 9901), Grafana 3000, Prometheus 9090, Pyroscope 4040, handbook 4000. Tempo has no host port: traces are read in Grafana. Service ports (api 8000, pricing 8001, worker 8002, loadgen 8003, pgobserver 8004, noisy 8005) are only reachable inside the compose network.
 
 ## Architecture
 
@@ -164,6 +166,15 @@ Changing one of these breaks the scenario named in brackets:
 - noisy's fsync writer (`fsync_mb_per_s`) writes to the `noisyio` volume, which sits on the same disk as `pgdata`. About 30 commits/s (one per checkout, one per order the worker marks processed) each wait for a WAL flush, so its fsyncs show up as commit latency, while `/products` reads from Redis and does not move. [`wal_fsync_contention`]
 - Postgres runs with the stock checkpoint settings and pgobserver applies the scenario's values with a reload. The lab's own writes dirty too few pages for a checkpoint to matter, so the scenario also turns on the `review_stats` writer: about 2,500 pages dirtied per 30 s interval give each checkpoint about 20 MB to write in 3 s. [`checkpoint_bursts`]
 - The IOPS limit is a cgroup `io.max` line on the postgres container, written by `CgroupApplier`. The kernel holds throttled I/O before the device, so node-exporter shows a low await and busy share while Postgres waits on `IO / WALSync`. [`iops_limit`]
+
+### The handbook site (`site/`)
+
+- Vite, React 19, TypeScript, React Router with browser routes. `site/Dockerfile` builds it with the repo root as context (`site/Dockerfile.dockerignore` lets in only `docs/`, the Makefile, docker-compose.yml, README, CLAUDE.md, the Gradle files and Answers.kt), and nginx serves it with an SPA fallback. The `site` service maps it to host port 4000.
+- Nothing on the site is copied by hand. `scripts/prebuild.ts` runs before `npm run dev` and `npm run build`. It reads `docs/*.md` (GitHub slugs for the heading ids, so a `Section > Subsection` pointer links to `/guide/<file>#<slug>`), the Makefile (the `target: ## help` lines, the `# -----` groups, the URLs `wait` prints), docker-compose.yml, README, CLAUDE.md, `service/settings.gradle` and the header comment of each `build.gradle`. It writes `site/src/generated/`, which git ignores.
+- The catalog, the quiz counts, the scoring and the defaults come from `labctl export`, committed as `site/src/data/lab.json`. Regenerate it after any change to the catalog, the drills, `GuideIndex`, the scoring or a default: `cd site && npm run export:lab` (it runs `./gradlew :tool:labctl:run --args="export <absolute path>"`, so Gradle picks JDK 21). `npm run check:data` fails when the committed file differs from a fresh export.
+- No spoilers. Per scenario the export holds only id, title, level, topics, the doc pointer, its file and the toolbox flag. `LabExportTest` checks the keys and scans for cause and signal keys, answer labels, tickets, hints, steps, explanations, evidence and cli lines. `npm run build` ends with `scripts/check-bundle.ts`, which reads the keys from Answers.kt and fails if one is in `dist/` (a key that is also a scenario id, or that the docs print, counts as public). Never add a field or a page that shows a cause, signal, location, nature, ticket, hint, explanation, evidence or cli command.
+- The request path diagram places its nodes in `src/lib/topology.ts`. Their facts come from docker-compose.yml, and `test/compose.test.ts` checks that every node is a compose service and that each hop named by a compose variable matches it.
+- `scripts/lib/groups.ts` groups the guide files. A new docs file shows up by itself under "More" until it gets a group.
 
 ### Data and state
 
