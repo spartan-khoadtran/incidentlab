@@ -136,7 +136,7 @@ The toolbox adds a few helpers:
 - `containers` lists the containers with their main PID.
 - `kernel-check` says which kernel features work on this VM. Run it first.
 
-OrbStack gives the toolbox everything. Docker Desktop runs a different VM kernel. There `bpftrace` and `perf` may fail, and `kernel-check` says so. The checklist, the cgroup files, `psql` and `curl` work on both.
+On OrbStack every tool works, but the kernel has PSI turned off, so the `*.pressure` files are missing. Docker Desktop runs a different VM kernel. There `bpftrace` and `perf` may fail, and `kernel-check` says so. The checklist, the cgroup files, `psql` and `curl` work on both.
 
 `make toolbox` starts an exercise like `make new`, with the same `LEVEL`, `TOPIC`, `ID` and `FORCE`. It only picks scenarios tagged `[toolbox]` in `make list`. The rule is CLI only: no Grafana. You answer the same four questions with `make answer` and get the same score. After the answer, the explanation lists the commands that prove the cause.
 
