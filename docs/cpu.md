@@ -88,7 +88,7 @@ A request is either on a CPU or waiting for something: a CPU, a lock, I/O, a dow
 | Runnable, waiting for a CPU | Ready, but no core is free or the quota is spent | Run queue above the core count, PSI cpu, throttled periods, steal time | `vmstat 1` column r, `/proc/pressure/cpu`, `cpu.stat` in the cgroup |
 | Blocked on a lock | Waits for another thread to release something | Lock wait time, threads waiting | A thread dump (`jstack`), lock profiling, a wall-clock profiler |
 | Blocked on I/O | Waits for the disk or the network | Disk: `iowait` and `procs_blocked`. Network: the client span of the downstream call | `iostat -xz 1`, traces, off-CPU analysis |
-| Sleeping | A timer, or a blocking poll with a timeout | Nothing. The thread uses no CPU | A thread dump shows a sleep as TIMED_WAITING. A thread parked in a socket read or a selector shows RUNNABLE, though it uses no CPU |
+| Sleeping | A timer, or a blocking poll with a timeout | Nothing. The thread uses no CPU | A thread dump shows a sleep as TIMED_WAITING. A thread blocked in a socket read or a selector shows RUNNABLE, though it uses no CPU |
 
 - A thread dump from `jstack` lists platform threads only. JDK 21 virtual threads show up in `jcmd <pid> Thread.dump_to_file <file>`.
 - The first question for a slow request: in which state does its thread spend the time? On CPU means profile the CPU. Runnable means a CPU limit or a noisy neighbour. Blocked on a lock means USE for the lock. Blocked on I/O means RED of the downstream or USE of the disk. Sleeping means a timeout or a delay in the code.
