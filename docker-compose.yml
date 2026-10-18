@@ -66,7 +66,7 @@ services:
       PRICING_URL: http://pricing:8001
       REDIS_HOST: redis
       PYROSCOPE_APPLICATION_NAME: api
-      # A fixed 256 MB heap. The profiler agent, JFR, metaspace and threads take about 410 MB outside it.
+      # A 256 MB heap cap (-Xmx256m). The profiler agent, JFR, metaspace and threads take about 410 MB outside it.
       JAVA_OPTS: "-Xms128m -Xmx256m -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+UseSerialGC -Xss512k"
     cpus: "2.0"
     mem_limit: 768m
@@ -207,6 +207,9 @@ services:
     command: ["/run/app/labctl/bin/labctl", "daemon"]
     mem_limit: 256m
     memswap_limit: 256m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "2" }
     environment:
       <<: *svc-env
       SERVICE_NAME: control
@@ -276,6 +279,7 @@ services:
       - -config.file=/etc/pyroscope/config.yaml
       - -usage-stats.enabled=false
       - -self-profiling.disable-push=true
+      - -compactor.blocks-retention-period=24h
     volumes:
       - pyroscopedata:/data
     mem_limit: 768m
@@ -318,6 +322,9 @@ services:
     image: incidentlab-site:latest
     restart: unless-stopped
     mem_limit: 64m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "2" }
     ports:
       - "127.0.0.1:4000:80"
 
