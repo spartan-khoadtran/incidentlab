@@ -1,6 +1,8 @@
 import { Link } from "react-router";
 import { PageHead, Stat } from "../components/Bits";
 import { Cmd } from "../components/Copy";
+import { LabGate } from "../components/LabUi";
+import { QuizRunner } from "./quiz/QuizRunner";
 import { docByFile, lab, target } from "../lib/data";
 
 export function Quiz() {
@@ -14,14 +16,26 @@ export function Quiz() {
 
   return (
     <div className="page">
-      <PageHead kicker="Quiz" title="Drills from the guide, in the terminal">
-        <p>{quiz?.help}.</p>
+      <PageHead kicker="Quiz" title="Drills from the guide">
+        <p>{quiz?.help}. Answer them here, one at a time, or in a terminal.</p>
       </PageHead>
 
       <section className="stats-band" aria-label="Quiz size">
         <Stat value={lab.counts.numbers} label="number drills, new values every run" />
         <Stat value={lab.counts.concepts} label="multiple choice questions" />
         <Stat value={n} label="questions by default" />
+      </section>
+
+      <section className="block" aria-labelledby="quiz-here">
+        <div className="block-head">
+          <p className="kicker">Answer here</p>
+          <h2 id="quiz-here">Try it now</h2>
+        </div>
+        <div className="quiz-runner">
+          <LabGate what="The questions come from the lab's controller. Or run make quiz in a terminal: it needs no running lab.">
+            <QuizRunner />
+          </LabGate>
+        </div>
       </section>
 
       <section className="block split">
