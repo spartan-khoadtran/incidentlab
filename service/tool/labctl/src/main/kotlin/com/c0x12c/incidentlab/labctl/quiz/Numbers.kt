@@ -1,10 +1,11 @@
 package com.c0x12c.incidentlab.labctl.quiz
 
+import com.c0x12c.incidentlab.labctl.quiz.numbers.BenchmarkingNumbers
 import com.c0x12c.incidentlab.labctl.quiz.numbers.InvestigationNumbers
 import com.c0x12c.incidentlab.labctl.quiz.numbers.MethodsNumbers
 import kotlin.random.Random
 
 /** Every numeric drill, one list per guide file. */
 object Numbers {
-  val generators: List<(Random) -> NumericQuestion> = InvestigationNumbers.generators + MethodsNumbers.generators
+  val generators: List<(Random) -> NumericQuestion> = InvestigationNumbers.generators + MethodsNumbers.generators + BenchmarkingNumbers.generators
 }

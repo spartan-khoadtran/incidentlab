@@ -20,7 +20,8 @@ object GuideIndex {
     "Cheat sheet",
     "References"
   ).associateWith { "investigation-guide.md" } +
-    listOf("Methods for the root cause", "Working an incident").associateWith { "methods.md" }
+    listOf("Methods for the root cause", "Working an incident").associateWith { "methods.md" } +
+    listOf("Benchmarking mistakes", "Open and closed load models").associateWith { "benchmarking.md" }
 
   /** The pointer with its file in front of each part, or one file in front of the whole pointer when every part shares it. */
   fun where(doc: String): String {
