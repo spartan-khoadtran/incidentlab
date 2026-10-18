@@ -34,7 +34,7 @@ internal object DiskScenarios {
     hints = listOf(
       "Which routes slowed down, and what does each one do in Postgres: read or write?",
       "Postgres row: which wait event grew? Compare the mean WAL sync time with exec time by query.",
-      "Host disk row: await and busy share. Postgres sends the same traffic as before, so who else writes to that disk?"
+      "Host disk row: bytes written per second. Postgres sends the same traffic as before, so who else writes to that disk, and how often does it fsync?"
     ),
     answer = Answer(nature = setOf("arch"), location = setOf("disk"), signal = setOf("disk_io"), cause = "disk_io_contention"),
     explain = { p ->
@@ -44,7 +44,8 @@ internal object DiskScenarios {
         "and each commit waits for its WAL flush. Those small flushes now queue behind the export's megabytes, so the mean WAL sync time and IO / WALSync grow. " +
         "/checkout commits, so it slows down. /products reads from Redis and never waits for WAL, so it stays fast. " +
         "No query plan changed and no lock is held, which is why the DBA saw nothing in the query view. " +
-        "The host disk row shows the busy share and the await up while Postgres's own traffic is flat. " +
+        "The host disk row shows the bytes written per second jump while Postgres's own traffic is flat. On a fast SSD the host await moves only a little, " +
+        "so the clear signals are the mean WAL sync time and the export's fsync rate. " +
         "Fix: move the export to another disk, or limit its I/O (ionice, a cgroup io.max), or run it outside peak hours."
     },
     steps = listOf(
@@ -52,7 +53,7 @@ internal object DiskScenarios {
       "RED: the rate is flat, so suspect architecture. Only the route that writes slowed down.",
       "Postgres: exec time by query is flat and pg_lock_waiters stays at 0. Postgres times each statement, not the WAL flush at its commit.",
       "Wait events: IO / WALSync grew, and the mean WAL sync time is many times its baseline. Commits wait for the disk.",
-      "Host disk row: busy share and await up, while Postgres sends the same work as before. Someone else uses the disk.",
+      "Host disk row: bytes written per second jump while Postgres sends the same work as before. Someone else uses the disk. The await may barely move on a fast SSD.",
       "Throughput by device and the noisy job's fsync rate: the nightly export makes most of the disk's write traffic.",
       "The cause: another process saturates the disk under the WAL. Commits pay for it, cached reads do not."
     ),
@@ -66,7 +67,7 @@ internal object DiskScenarios {
       "rate(noisy_fsync_total[1m])"
     ),
     cli = listOf(
-      "iostat -xz 1 5   # %util and w_await of the disk under the volumes climb while the export runs",
+      "iostat -xz 1 5   # wkB/s of the disk under the volumes jumps by tens of MB/s while the export runs, w_await moves only a little",
       "pidstat -d -l 1 5   # the noisy java process writes tens of MB/s (kB_wr/s), postgres writes little",
       "PGPASSWORD=lab psql -h postgres -U lab lab -c \"SELECT wait_event_type, wait_event, count(*) FROM pg_stat_activity WHERE wait_event IS NOT NULL GROUP BY 1, 2 ORDER BY 3 DESC\"   # IO WALSync shows up again and again, no Lock rows",
       "PGPASSWORD=lab psql -h postgres -U lab lab -c 'SELECT wal_sync, wal_sync_time FROM pg_stat_wal'   # run it twice a minute apart: sync time grows much faster than the sync count"
