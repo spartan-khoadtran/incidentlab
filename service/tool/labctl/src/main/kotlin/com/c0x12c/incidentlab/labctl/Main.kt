@@ -9,6 +9,7 @@ import com.c0x12c.incidentlab.labctl.control.JsonHttp
 import com.c0x12c.incidentlab.labctl.control.ServiceFaultApplier
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
 import com.c0x12c.incidentlab.labctl.quiz.Quiz
+import com.c0x12c.incidentlab.labctl.ramp.RampExercise
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import com.c0x12c.logging.Logging
 import com.c0x12c.logging.info
@@ -18,6 +19,7 @@ import kotlin.system.exitProcess
 // Lab controller.
 //   labctl daemon            keeps every service in the desired fault state (runs in the control container)
 //   labctl new|hint|answer|reveal|clear|status|list|history|load|quiz
+//   labctl ramp              a capacity ramp on the live lab (its own mode of make answer)
 object Main : Logging {
 
   @JvmStatic
@@ -30,7 +32,10 @@ object Main : Logging {
     val store = StateStore(Path.of(System.getenv("LAB_STATE") ?: "/state/state.json"))
     val http = JsonHttp()
     val terminal = ConsoleTerminal
-    val exercises = Exercises(store, HttpLabProbe(http), GrafanaAnnotator(http, terminal), terminal)
+    val probe = HttpLabProbe(http)
+    val annotator = GrafanaAnnotator(http, terminal)
+    val ramp = RampExercise(store, probe, annotator, terminal)
+    val exercises = Exercises(store, probe, annotator, terminal, modes = listOf(ramp))
     return try {
       when (command) {
         "daemon" -> {
@@ -51,6 +56,7 @@ object Main : Logging {
         "list" -> exercises.list()
         "history" -> exercises.history()
         "load" -> exercises.load(CommandLine.loadMultiplier(args.getOrNull(1)))
+        "ramp" -> ramp.start(CommandLine.rampOptions(args.drop(1)))
         "quiz" -> {
           val options = CommandLine.quizOptions(args.drop(1), DEFAULT_QUIZ_QUESTIONS)
           terminal.out("Drills from the guide. A number question takes a number (a comma or a dot both work as the decimal separator). A concept question takes the number of one option.")
@@ -66,7 +72,10 @@ object Main : Logging {
   }
 
   private fun usage(): Int {
-    println("usage: labctl daemon | new [--level N] [--topic T] [--id ID] [--force] | hint | answer | reveal | clear | status | list | history | load X | quiz [-n N] [--kind numbers|concepts|all]")
+    println(
+      "usage: labctl daemon | new [--level N] [--topic T] [--id ID] [--force] | hint | answer | reveal | clear | status | list | history | load X | " +
+        "quiz [-n N] [--kind numbers|concepts|all] | ramp [--every S]"
+    )
     return USAGE_EXIT
   }
 

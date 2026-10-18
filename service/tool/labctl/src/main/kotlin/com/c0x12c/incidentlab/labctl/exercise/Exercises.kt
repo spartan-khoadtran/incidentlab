@@ -37,8 +37,12 @@ class Exercises(
   private val catalog: ScenarioCatalog = ScenarioCatalog,
   private val random: Random = Random.Default,
   private val now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
-  private val zone: ZoneId = ZoneId.systemDefault()
+  private val zone: ZoneId = ZoneId.systemDefault(),
+  /** The other exercise kinds; each owns the commands while its mode is active. */
+  private val modes: List<ExerciseMode> = emptyList()
 ) {
+
+  private fun modeOf(state: LabState): ExerciseMode? = state.active?.let { active -> modes.firstOrNull { it.mode == active.mode } }
 
   fun newExercise(options: NewOptions): Int {
     val state = store.load()
@@ -71,6 +75,7 @@ class Exercises(
 
   fun hint(): Int {
     val state = store.load()
+    modeOf(state)?.let { return it.hint(state) }
     val active = requireActive(state) ?: return 1
     val scenario = catalog.byId.getValue(active.id)
     if (active.answered) {
@@ -89,6 +94,7 @@ class Exercises(
 
   fun answer(): Int {
     val state = store.load()
+    modeOf(state)?.let { return it.answer(state) }
     val active = requireActive(state) ?: return 1
     if (active.answered) {
       terminal.out("This exercise was already submitted. Use `make clear`, then `make new`.")
@@ -138,6 +144,7 @@ class Exercises(
 
   fun reveal(): Int {
     val state = store.load()
+    modeOf(state)?.let { return it.reveal(state) }
     val active = requireActive(state) ?: return 1
     val scenario = catalog.byId.getValue(active.id)
     if (active.answered) {
@@ -165,7 +172,10 @@ class Exercises(
   fun status(): Int {
     val state = store.load()
     val active = state.active
-    if (active == null) {
+    val mode = modeOf(state)
+    if (mode != null) {
+      mode.status(state)
+    } else if (active == null) {
       terminal.out("No exercise is running.")
     } else if (resumable(active)) {
       val scenario = catalog.byId.getValue(active.id)
@@ -205,11 +215,13 @@ class Exercises(
       return 0
     }
     val scored = history.filter { it.score != null }
+    val mixed = history.map { it.mode }.distinct().size > 1
     for (entry in history) {
       val score = entry.score?.let { "${plain(it)}/${plain(MAX_POINTS)}" } ?: "-"
       val at = Instant.ofEpochSecond(entry.at.toLong()).atZone(zone).format(DAY_TIME)
       val missed = if (entry.missed.isEmpty()) "" else "  missed: ${entry.missed.joinToString(", ")}"
-      terminal.out("#${entry.n.toString().padEnd(3)} $at  ${score.padEnd(SCORE_COLUMN)} ${plain(entry.minutes).padStart(MINUTES_COLUMN)} min  ${entry.hints} hint(s)  ${entry.title}$missed")
+      val mode = if (mixed) "${entry.mode.padEnd(MODE_COLUMN)} " else ""
+      terminal.out("#${entry.n.toString().padEnd(3)} $at  ${score.padEnd(SCORE_COLUMN)} ${plain(entry.minutes).padStart(MINUTES_COLUMN)} min  ${entry.hints} hint(s)  $mode${entry.title}$missed")
       if (entry.note.isNotEmpty()) {
         terminal.out("     note: ${entry.note}")
       }
@@ -393,6 +405,7 @@ class Exercises(
     private const val ID_COLUMN = 18
     const val TITLE_COLUMN = 48
     private const val SCORE_COLUMN = 6
+    private const val MODE_COLUMN = 8
     private const val MINUTES_COLUMN = 5
     private const val MILLIS_PER_SECOND = 1_000.0
     private const val SECONDS_PER_MINUTE = 60.0

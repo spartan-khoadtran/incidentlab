@@ -3,6 +3,8 @@ package com.c0x12c.incidentlab.labctl.scenario
 import assertk.assertThat
 import assertk.assertions.isEqualTo
 import com.c0x12c.incidentlab.labctl.control.DesiredState
+import com.c0x12c.incidentlab.labctl.ramp.RampCatalog
+import com.c0x12c.incidentlab.labctl.ramp.RampExercise
 import com.c0x12c.incidentlab.labctl.scenario.catalog.LoadScenarios
 import com.c0x12c.incidentlab.labctl.state.ActiveExercise
 import com.c0x12c.incidentlab.labctl.state.LabState
@@ -77,5 +79,26 @@ class DesiredStateTest {
 
     assertThat(desired.faults.getValue("api")).isEqualTo(emptyMap<String, Any?>())
     assertThat(desired.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0)))
+  }
+
+  @Test
+  fun `a ramp drives the surge and the pool from the state file, then gives the lab back`() {
+    val params = mapOf("setup" to RampCatalog.CPU, "pool_max" to 24, "cpus" to 0.3, "every" to 60)
+    val state = LabState(active = ActiveExercise(id = RampCatalog.ID, mode = RampExercise.MODE, params = params, started = 1_000.0, n = 1))
+
+    val during = DesiredState.of(state, now = 1_250.0)
+    val after = DesiredState.of(state, now = 1_000.0 + 8 * 60)
+
+    assertThat(during.faults.getValue("loadgen")).isEqualTo(mapOf<String, Any?>("surge_multiplier" to 3.0))
+    assertThat(during.faults.getValue("api")).isEqualTo(mapOf<String, Any?>("pool_max" to 24))
+    assertThat(during.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 0.3)))
+    assertThat(after.faults.values.all { it.isEmpty() }).isEqualTo(true)
+    assertThat(after.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0)))
+  }
+
+  @Test
+  fun `no incident id is also the id of another mode`() {
+    val ids = ScenarioCatalog.byId.keys
+    assertThat(RampCatalog.ID in ids).isEqualTo(false)
   }
 }

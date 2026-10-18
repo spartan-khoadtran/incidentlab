@@ -1,5 +1,6 @@
 package com.c0x12c.incidentlab.labctl.control
 
+import com.c0x12c.incidentlab.labctl.ramp.RampCatalog
 import com.c0x12c.incidentlab.labctl.scenario.FaultSource
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Params
@@ -16,7 +17,7 @@ data class Desired(
 object DesiredState {
 
   /** The first source that owns the active id wins, so an id must be unique across them. */
-  val SOURCES: List<FaultSource> = listOf(ScenarioCatalog)
+  val SOURCES: List<FaultSource> = listOf(ScenarioCatalog, RampCatalog)
 
   fun of(state: LabState, sources: List<FaultSource> = SOURCES, now: Double = System.currentTimeMillis() / MILLIS_PER_SECOND): Desired {
     val faults = Services.ENDPOINTS.keys.associateWith { mutableMapOf<String, Any?>() }.toMutableMap()

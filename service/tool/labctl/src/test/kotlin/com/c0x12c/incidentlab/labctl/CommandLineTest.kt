@@ -7,6 +7,7 @@ import assertk.assertions.isEqualTo
 import assertk.assertions.isInstanceOf
 import com.c0x12c.incidentlab.labctl.exercise.NewOptions
 import com.c0x12c.incidentlab.labctl.quiz.QuizKind
+import com.c0x12c.incidentlab.labctl.ramp.RampOptions
 import org.junit.jupiter.api.Test
 
 class CommandLineTest {
@@ -44,5 +45,16 @@ class CommandLineTest {
     assertFailure { CommandLine.quizOptions(listOf("-n", "x"), 5) }.isInstanceOf(UsageError::class)
     assertFailure { CommandLine.quizOptions(listOf("--kind", "riddles"), 5) }.hasMessage("KIND must be one of numbers, concepts, all, for example `make quiz KIND=concepts`.")
     assertFailure { CommandLine.quizOptions(listOf("--bogus"), 5) }.isInstanceOf(UsageError::class)
+  }
+
+  @Test
+  fun `ramp takes a step length in seconds within bounds`() {
+    assertThat(CommandLine.rampOptions(emptyList())).isEqualTo(RampOptions(every = 60))
+    assertThat(CommandLine.rampOptions(listOf("--every", "45"))).isEqualTo(RampOptions(every = 45))
+    assertFailure { CommandLine.rampOptions(listOf("--every", "5")) }.hasMessage(
+      "STEP must be a whole number of seconds between 30 and 300, for example `make ramp STEP=45`."
+    )
+    assertFailure { CommandLine.rampOptions(listOf("--every")) }.isInstanceOf(UsageError::class)
+    assertFailure { CommandLine.rampOptions(listOf("--steps", "3")) }.isInstanceOf(UsageError::class)
   }
 }
