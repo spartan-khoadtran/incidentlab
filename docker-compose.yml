@@ -56,6 +56,10 @@ services:
     cpus: "2.0"
     mem_limit: 512m
     memswap_limit: 512m
+    # The verbose-logging exercise writes a few MB of log per second; rotation caps it at 60 MB.
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_started }

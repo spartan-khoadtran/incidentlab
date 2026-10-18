@@ -15,6 +15,9 @@ import com.c0x12c.incidentlab.checkout.impl.events.OrderEvents
 import com.c0x12c.incidentlab.checkout.impl.leak.MemoryLeak
 import com.c0x12c.incidentlab.checkout.impl.pricing.DownstreamException
 import com.c0x12c.incidentlab.checkout.impl.pricing.PricingClient
+import com.c0x12c.incidentlab.checkout.impl.runtime.HeapPressure
+import com.c0x12c.incidentlab.checkout.impl.runtime.LegacyOrderCache
+import com.c0x12c.incidentlab.checkout.impl.runtime.SupportTrace
 import com.c0x12c.incidentlab.client.dto.checkout.CheckoutReceipt
 import com.c0x12c.incidentlab.client.dto.checkout.OrderEvent
 import com.c0x12c.incidentlab.client.dto.checkout.ProductDetail
@@ -48,6 +51,9 @@ class DefaultCheckoutManager(
   private val cache: ProductCache,
   private val events: OrderEvents,
   private val leak: MemoryLeak,
+  private val heap: HeapPressure,
+  private val legacyCache: LegacyOrderCache,
+  private val supportTrace: SupportTrace,
   private val runtime: EventLoopRuntime,
   private val tracer: Tracer,
   private val objectMapper: ObjectMapper,
@@ -59,6 +65,7 @@ class DefaultCheckoutManager(
 
   override fun product(id: Int): Either<ClientException, ProductDetail> {
     leak.leak(faults.int(CheckoutFaults.LEAK_KB))
+    runtimeFaults("/products/{id}", id)
     val burn = faults.double(CheckoutFaults.CPU_BURN_MS)
     if (burn > 0) {
       tracer.span("render.product_page") {
@@ -87,6 +94,7 @@ class DefaultCheckoutManager(
   override fun checkout(tenant: String, items: List<Int>): Either<ClientException, CheckoutReceipt> {
     val basket = items.take(MAX_ITEMS).ifEmpty { listOf(Random.nextInt(1, CATALOG_TAIL + 1)) }
     leak.leak(faults.int(CheckoutFaults.LEAK_KB))
+    runtimeFaults("/checkout", tenant)
     val receipt = try {
       if (faults.bool(CheckoutFaults.RECOMMEND_IN_TXN)) {
         checkoutHoldingTheConnection(tenant, basket)
@@ -111,12 +119,32 @@ class DefaultCheckoutManager(
   }
 
   private fun checkoutWithShortSessions(tenant: String, items: List<Int>): CheckoutReceipt {
-    val prices = sessions.session("load_prices") { connection -> loadPrices(connection, items) }
+    val pinned = faults.bool(CheckoutFaults.PIN_DB)
+    val prices = legacy(pinned) {
+      sessions.session("load_prices") { connection -> loadPrices(connection, items) }
+    }
     val total = pricing.price(items, prices).total
-    val orderId = sessions.session("place_order") { connection ->
-      connection.transaction { writeOrder(connection, tenant, items, total) }
+    val orderId = legacy(pinned) {
+      val id = sessions.session("place_order") { connection ->
+        connection.transaction { writeOrder(connection, tenant, items, total) }
+      }
+      if (pinned) {
+        val hold = jitter(faults.double(CheckoutFaults.PIN_HOLD_MS), PIN_HOLD_JITTER)
+        tracer.span("order_cache.put (synchronized)") { legacyCache.put(hold) }
+      }
+      id
     }
     return CheckoutReceipt(orderId = orderId, total = total)
+  }
+
+  private fun <T> legacy(pinned: Boolean, block: () -> T): T = if (pinned) legacyCache.locked(block) else block()
+
+  private fun runtimeFaults(route: String, key: Any) {
+    heap.write(faults.int(CheckoutFaults.RETAIN_MB), faults.int(CheckoutFaults.CHURN_KB))
+    val lines = faults.int(CheckoutFaults.DEBUG_LOG_LINES)
+    if (lines > 0) {
+      supportTrace.write(lines, route, key)
+    }
   }
 
   // v2.31: product suggestions added to checkout, inside the same session and transaction.
@@ -178,5 +206,6 @@ class DefaultCheckoutManager(
     const val RENDER_JITTER = 0.2
     const val LOCK_HOLD_JITTER = 0.3
     const val PRICE_WORK_JITTER = 0.3
+    const val PIN_HOLD_JITTER = 0.3
   }
 }
