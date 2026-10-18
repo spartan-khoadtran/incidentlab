@@ -41,7 +41,7 @@ internal object CpuConcepts {
       doc = "CPU shares and quotas > Shares only matter under contention"
     ),
     ChoiceQuestion(
-      text = "A service moved to a burstable VM a few hours ago. Now p99 is up on every route, the rate is flat and nobody deployed. What happened?",
+      text = "A service moved to a burstable VM in standard mode a few hours ago. Now p99 is up on every route, the rate is flat and nobody deployed. What happened?",
       answer = "The VM spent its CPU credits and fell to its baseline CPU",
       others = listOf(
         "A memory leak reached the limit",

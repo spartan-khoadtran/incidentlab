@@ -37,7 +37,7 @@ internal object ToolboxConcepts {
         "About 3080 MiB: free plus available",
         "Nothing: a free value that low means the host is swapping"
       ),
-      explanation = "free counts page cache as used. available estimates what a new program can get without swapping, so it is the column to read.",
+      explanation = "The free column leaves out the page cache, which the kernel can drop. available estimates what a new program can get without swapping, so it is the column to read.",
       doc = "The 60-second checklist > The ten commands (free)"
     ),
     ChoiceQuestion(

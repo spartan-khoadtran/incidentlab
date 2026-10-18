@@ -66,7 +66,7 @@ internal object CpuNumbers {
     val answer = minutesUntilCreditsGone(balance, vcpus, utilization, baseline)
     val net = vcpus * (utilization - baseline) / PERCENT
     return NumericQuestion(
-      "A burstable VM has $vcpus vCPU(s), a baseline of $baseline% and $balance credits in the bank. A job pins it at $utilization% on every vCPU. In how many minutes is the balance gone?",
+      "A burstable VM in standard mode has $vcpus vCPU(s), a baseline of $baseline% and $balance credits in the bank. A job pins it at $utilization% on every vCPU. In how many minutes is the balance gone?",
       answer, Tolerance.Relative(0.02), "minutes",
       "Net spend per minute = $vcpus × (${shown(utilization / PERCENT)} − ${shown(baseline / PERCENT)}) = ${shown(net)} credits. $balance / ${shown(net)} = ${shown(answer)} minutes. Then the VM drops to $baseline% and stays there until it earns credits again.",
       "CPU shares and quotas > CPU credits on burstable instances"

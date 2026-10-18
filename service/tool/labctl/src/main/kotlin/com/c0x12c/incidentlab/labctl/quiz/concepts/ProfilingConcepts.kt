@@ -177,7 +177,7 @@ internal object ProfilingConcepts {
       doc = "Profiles in this lab > A good first query"
     ),
     ChoiceQuestion(
-      text = "top -H on api shows two carrier threads (ForkJoinPool-...-worker-...) at about 70% each, and every other thread near 0%. What does it point at?",
+      text = "top -H on api shows two carrier threads (ForkJoinPool-...) at about 70% each, and every other thread near 0%. What does it point at?",
       answer = "CPU work on the request threads, spread over the carriers: take a CPU profile to name the code",
       others = listOf(
         "A saturated single-threaded event loop",
