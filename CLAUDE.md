@@ -15,6 +15,7 @@ Everything in the repo is English: code, comments, log lines, learner-facing tex
 - `cpu.md`: CPU shares and quotas, CPU busy with no work, off-CPU time.
 - `profiling.md`: CPU and off-CPU profiling, and the profiles in this lab.
 - `toolbox.md`: the 60-second checklist, crisis tools, and the toolbox mode.
+- `capacity.md`: capacity from a ramp test, and the closed-loop clients of `make bench`.
 
 Scenario and quiz `doc` fields point at their headings as `Section > Subsection (note)`. `GuideIndex` (`labctl/guide`) maps every `## ` section title to its file, so a section title must be unique across the docs files, and `GuideIndex.where(doc)` is what the "Read again in" line prints. `GuidePointersTest` reads every `docs/*.md`, checks the uniqueness, checks that the index matches the files, and checks that every pointer resolves, so a heading rename or a new section must update the pointers and the index too.
 
@@ -38,6 +39,8 @@ Exercises (each one runs the `labctl` CLI inside the `control` container):
 - `make load X=1.5`: multiply the background load (default 50 rps).
 - `make toolbox` with the same options as `make new`: a CLI-only exercise (`labctl new --mode toolbox`). It picks only scenarios with a non-empty `cli`; `make list` tags them `[toolbox]`.
 - `make shell`: starts the `toolbox` container if needed and opens `bash -l` in it, which prints `toolbox-help`.
+- `make ramp STEP=60`: a capacity ramp (mode `ramp`). The load rises through 50 to 300 rps, `STEP` seconds per step, under a hidden limit. `make answer` then asks the knee, the highest throughput and the limiting resource, scored from Prometheus. Refused unless `make load` is 1.
+- `make bench CLIENTS=20 SECONDS=120`: closed-loop clients for a while (mode `bench`, not scored). `make answer` or `make bench` after it prints the 2 minutes before against the bench window.
 
 Development (Gradle lives in `service/`, needs a JDK on the host; Gradle downloads JDK 21 itself):
 - `make build` (`./gradlew installDist`), `make test`, `make lint` (ktlint), `make format`.
@@ -92,6 +95,8 @@ The runtime image downloads the Pyroscope Java agent (`io.pyroscope:agent`, pinn
 3. PUTs that dict to each service's `/admin/faults`. A service not named by the scenario gets `{}`, which resets it.
 4. Sets the api container's CPU limit through the Docker socket (`DockerControl`, raw engine API over `docker-java-transport-zerodep`). Base is 2.0 cores; a scenario's `docker` map overrides it.
 
+Step 2 asks the fault sources in `DesiredState.SOURCES` (`FaultSource`: an id and params in, a `FaultSpec` or null out). `ScenarioCatalog`, `RampCatalog` and `BenchCatalog` are the sources, so an id must be unique across them, and `make new` only picks from `ScenarioCatalog`. A mode other than `incident` implements `ExerciseMode` (answer, reveal, hint, status), and `Exercises` hands those commands to it while it is the active mode.
+
 Steps 3 and 4 are `Applier`s (`ServiceFaultApplier` and `ContainerCpuApplier` in `control/Applier.kt`). `ControlDaemon` runs the list that `Main` wires; the CPU applier is only wired when the docker socket exists.
 
 The daemon owns fault state. A manual PUT to `/admin/faults` is reverted within 3 seconds. To change behavior, change `state.json` through the `make` commands, or change the scenario.
@@ -113,6 +118,7 @@ The quiz data sits next to the docs file it drills: `quiz/numbers/InvestigationN
 - `pg_*` come from pgobserver, which names queries from the `/* q=name */` comment at the start of each SQL string in `module-repository`. A new statement must carry that comment or it will not show up.
 - `kafka_*`: produce (api) and consume, lag, retries (worker). `client_*`: loadgen. Prometheus job names equal compose service names.
 - `app_lock_wait_seconds`, `app_lock_waiting`, `app_lock_held_seconds_total` (rate() is utilization): api's inventory lock. `app_price_fallback_total`: checkouts priced without pricing. `orders_value_total{tenant}`: sum of order totals, so `orders_value_total / orders_total` is the mean order value. `noisy_forks_total`: short processes noisy started.
+- `client_closed_clients`: the closed-loop clients loadgen runs. 0 means the open model.
 
 ### Design choices the exercises depend on
 
@@ -136,9 +142,11 @@ Changing one of these breaks the scenario named in brackets:
 - `fork_rps` (default 0, cap 200) makes noisy start and reap `/usr/bin/true` that many times a second. [`fork_decoy`]
 - `render_ms` (default 0) runs `ReceiptRenderer` on every /products and /checkout: Jackson re-serialises the response until the budget is spent, on the request's own virtual thread, never on the event loop. The budget is thread CPU time on a platform thread and wall time on a virtual thread (the JDK reports no CPU time there, and a computing virtual thread is not preempted). There is no span around it, so a trace shows only self time in api and the CPU profile names the code. Virtual threads share one carrier per core of api's 2-core limit, so the drawn 24 to 30 ms makes 1.2 to 1.5 cores at 50 rps and p99 rises on every route. [`hot_code_path`]
 - The `toolbox` service (`config/toolbox`, its own Ubuntu 24.04 image) runs with `pid: host`, `cgroup: host`, `privileged: true`, `/sys/fs/cgroup` read-only and the docker socket, on the compose network. Every `cli` entry relies on that: host PIDs from `pgrep`, absolute paths in `/proc/PID/cgroup` (read by `cg`), `dmesg`, `nsenter`, and service names. It is root on the VM, so it stays a local lab tool. `perf` is a wrapper that runs the installed build whatever `uname -r` says, and tracefs is mounted at start for bpftrace; both depend on the VM kernel and may fail on Docker Desktop (`kernel-check`). [every scenario with `cli`]
+- The ramp drives `surge_multiplier`, so its steps are only right with `rate_multiplier` at 1. Each hidden limit fills inside 50 to 300 rps (pool 2, 3 or 4, api at 0.2 or 0.3 cores, using `API_CORES_AT_BASE`). The other setups open the pool to 24, because the default pool of 4 fills at about 267 rps. [`ramp`]
+- loadgen's `closed_clients` above 0 stops every open arrival, crawler included, and runs that many clients with no think time. A client that is no longer wanted finishes its request first. [`bench`]
 
 ### Data and state
 
 - `config/postgres/init.sql` runs only when the `pgdata` volume is created. Schema changes need `make down` first.
-- Exercise state and history live in `state.json` on the `labstate` volume. `make down` deletes it. `ActiveExercise` and `HistoryEntry` carry `mode` (`incident`, the default, or another mode such as `toolbox`); a file written before the field existed still loads.
+- Exercise state and history live in `state.json` on the `labstate` volume. `make down` deletes it. `ActiveExercise` and `HistoryEntry` carry `mode` (`incident`, the default, `toolbox`, `ramp` or `bench`); a file written before the field existed still loads.
 - Grafana runs as anonymous Admin. Datasources are provisioned (Prometheus uid `prometheus`, Tempo uid `tempo`, Pyroscope uid `pyroscope`). Profiles are read in Explore > Pyroscope or at http://localhost:4040, and the USE board ends with CPU flame graphs of api and pricing. Prometheus exemplars link to Tempo by `trace_id`. Dashboards come from `config/grafana/dashboards/`, generated by `tool/dashboards`.

@@ -1,6 +1,14 @@
 package com.c0x12c.incidentlab.labctl.control
 
 import com.c0x12c.incidentlab.labctl.Terminal
+import java.net.URLEncoder
+import java.util.Locale
+
+/** One evaluation of a PromQL expression. */
+data class Sample(
+  val at: Double,
+  val value: Double
+)
 
 /** What an exercise reads from the running lab before it starts, and the marks it leaves on the dashboards. */
 interface LabProbe {
@@ -13,6 +21,12 @@ interface LabProbe {
   fun tenants(): Map<String, Int>?
 
   fun serviceStatus(): Map<String, String?>
+
+  /** The first series of `expr` every `step` seconds from `start` to `end`, NaN points left out. Null when Prometheus does not answer. */
+  fun rangeQuery(expr: String, start: Double, end: Double, step: Double): List<Sample>? = null
+
+  /** The first series of `expr` at `at` (now when null). Null when Prometheus does not answer or has no data. */
+  fun instantQuery(expr: String, at: Double? = null): Double? = null
 }
 
 fun interface Annotator {
@@ -25,12 +39,26 @@ class HttpLabProbe(private val http: JsonHttp) : LabProbe {
     runCatching { http.get("${Services.ENDPOINTS.getValue("noisy")}/health").path("cpu_count").asInt() }.getOrNull()
 
   override fun productDetailSeconds(): Double? =
+    instantQuery("sum(rate(pg_query_exec_seconds_total{query=\"product_detail\"}[10m])) / sum(rate(pg_query_calls_total{query=\"product_detail\"}[10m]))")
+      ?.takeIf { it > MIN_PLAUSIBLE && it < MAX_PLAUSIBLE }
+
+  override fun rangeQuery(expr: String, start: Double, end: Double, step: Double): List<Sample>? =
     runCatching {
-      val expr = "sum(rate(pg_query_exec_seconds_total{query=\"product_detail\"}[10m])) / sum(rate(pg_query_calls_total{query=\"product_detail\"}[10m]))"
-      val value = http.get(PROMETHEUS + "/api/v1/query?query=" + java.net.URLEncoder.encode(expr, Charsets.UTF_8))
-        .path("data").path("result").get(0).path("value").get(1).asText().toDouble()
-      value.takeIf { it > MIN_PLAUSIBLE && it < MAX_PLAUSIBLE }
+      val url = "$PROMETHEUS/api/v1/query_range?query=${encode(expr)}&start=${seconds(start)}&end=${seconds(end)}&step=${seconds(step)}"
+      http.get(url).path("data").path("result").path(0).path("values").mapNotNull { point ->
+        point.path(1).asText().toDoubleOrNull()?.takeIf { it.isFinite() }?.let { Sample(point.path(0).asDouble(), it) }
+      }
     }.getOrNull()
+
+  override fun instantQuery(expr: String, at: Double?): Double? =
+    runCatching {
+      val url = "$PROMETHEUS/api/v1/query?query=${encode(expr)}" + (at?.let { "&time=${seconds(it)}" } ?: "")
+      http.get(url).path("data").path("result").path(0).path("value").path(1).asText().toDoubleOrNull()?.takeIf { it.isFinite() }
+    }.getOrNull()
+
+  private fun encode(expr: String): String = URLEncoder.encode(expr, Charsets.UTF_8)
+
+  private fun seconds(value: Double): String = String.format(Locale.ROOT, "%.3f", value)
 
   override fun tenants(): Map<String, Int>? =
     runCatching {

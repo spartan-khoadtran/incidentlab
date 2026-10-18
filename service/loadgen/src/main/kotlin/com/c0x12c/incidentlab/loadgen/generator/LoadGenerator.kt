@@ -30,6 +30,7 @@ import kotlin.math.ln
 import kotlin.random.Random
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -54,6 +55,9 @@ import kotlin.coroutines.resumeWithException
  * slow the arrivals down. Each logical user request may send several attempts when the retry fault
  * is on; the metrics keep the two apart, which is the retry-storm exercise. The root span of every
  * trace starts here, so this service makes the sampling decision for the whole system.
+ *
+ * With `closed_clients` above 0 the open arrivals stop and that many closed-loop clients run
+ * instead: each one waits for its answer before it sends the next request. Same mix, same metrics.
  */
 @Singleton
 class LoadGenerator(
@@ -75,6 +79,14 @@ class LoadGenerator(
     Gauge.builder("client_inflight", counter) { it.get().toDouble() }.description("Requests waiting for an answer").register(registry)
   }
 
+  private val closedClients = AtomicInteger().also { counter ->
+    Gauge.builder("client_closed_clients", counter) { it.get().toDouble() }
+      .description("Closed-loop clients asked for; 0 means the open model with Poisson arrivals")
+      .register(registry)
+  }
+
+  private val closedLoop = ClosedLoop(scope) { closedRequest() }
+
   private val crawlCursor = AtomicInteger()
 
   private val http = OkHttpClient.Builder()
@@ -89,12 +101,15 @@ class LoadGenerator(
     .build()
 
   override fun onApplicationEvent(event: StartupEvent) {
+    start()
+  }
+
+  fun start(): Job =
     scope.launch {
       delay(config.startDelay.toMillis())
       info { "load generator started [target=${config.targetUrl}]" }
       generate()
     }
-  }
 
   @PreDestroy
   fun stop() {
@@ -106,7 +121,10 @@ class LoadGenerator(
     val nextAt = mutableMapOf<Arrival, Double>()
     while (scope.isActive) {
       val now = System.nanoTime() / NANOS_PER_SECOND
-      val rates = currentRates()
+      val closed = faults.int(LoadgenFaults.CLOSED_CLIENTS).coerceIn(0, MAX_CLOSED_CLIENTS)
+      closedClients.set(closed)
+      closedLoop.resize(closed)
+      val rates = currentRates().mapValues { (_, rate) -> if (closed > 0) 0.0 else rate }
       for (tenant in rates.keys.map { it.tenant }.toSet()) {
         targetRps.set(rates.filterKeys { it.tenant == tenant }.values.sum(), tenant)
       }
@@ -147,6 +165,27 @@ class LoadGenerator(
       out[Arrival(tenant, crawl = true)] = (rate as? Number)?.toDouble() ?: 0.0
     }
     return out
+  }
+
+  private suspend fun closedRequest() {
+    val share = faults.double(LoadgenFaults.CHECKOUT_SHARE)
+    val endpoint = if (Random.nextDouble() < share) "checkout" else "products"
+    logicalRequest(endpoint, pickTenant(), crawl = false)
+  }
+
+  private fun pickTenant(): String {
+    val outage = faults.string(LoadgenFaults.TENANT_OUTAGE)
+    val weights = faults.map(LoadgenFaults.TENANTS)
+      .mapValues { (tenant, rate) -> if (tenant == outage) 0.0 else (rate as? Number)?.toDouble() ?: 0.0 }
+      .filterValues { it > 0 }
+    var draw = Random.nextDouble() * weights.values.sum()
+    for ((tenant, weight) in weights) {
+      draw -= weight
+      if (draw < 0) {
+        return tenant
+      }
+    }
+    return weights.keys.lastOrNull() ?: DEFAULT_TENANT
   }
 
   private suspend fun logicalRequest(endpoint: String, tenant: String, crawl: Boolean) {
@@ -235,6 +274,8 @@ class LoadGenerator(
 
   private companion object {
     const val MAX_INFLIGHT = 4_000
+    const val MAX_CLOSED_CLIENTS = 500
+    const val DEFAULT_TENANT = "web"
     const val POOL_CONNECTIONS = 1_000
     const val POOL_KEEP_ALIVE_MINUTES = 5L
     const val TICK_MILLIS = 5L

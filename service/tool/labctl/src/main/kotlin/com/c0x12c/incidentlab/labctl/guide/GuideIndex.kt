@@ -26,6 +26,10 @@ object GuideIndex {
         "Open and closed load models"
       ).associateWith { "benchmarking.md" } +
       listOf(
+        "Capacity from a ramp test",
+        "Closed-loop clients in this lab"
+      ).associateWith { "capacity.md" } +
+      listOf(
         "CPU shares and quotas",
         "CPU busy with no work",
         "Off-CPU time"

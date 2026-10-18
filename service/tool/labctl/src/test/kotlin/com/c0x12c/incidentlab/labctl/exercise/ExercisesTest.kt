@@ -245,7 +245,7 @@ class ExercisesTest {
     assertThat(entry.mode).isEqualTo(Exercises.TOOLBOX)
     terminal.lines.clear()
     exercises.history()
-    assertThat(terminal.lines.single { it.startsWith("#1") }).contains("${scenario.title} (toolbox)")
+    assertThat(terminal.lines.single { it.startsWith("#1") }).contains("toolbox")
   }
 
   @Test

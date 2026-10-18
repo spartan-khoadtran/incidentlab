@@ -5,7 +5,7 @@ CTL      = $(COMPOSE) exec control $(LABCTL)
 GRADLE   = cd service && ./gradlew
 
 .DEFAULT_GOAL := help
-.PHONY: help up up-datadog wait new hint answer reveal clear status list history quiz load \
+.PHONY: help up up-datadog wait new hint answer reveal clear status list history quiz load ramp bench \
         toolbox shell open logs ps stop down nuke check build test lint format dashboards
 
 help: ## List the commands
@@ -85,6 +85,12 @@ toolbox: ## New CLI-only exercise: prove the cause from `make shell`, no Grafana
 shell: ## Root shell on the Docker VM with the Linux tools (vmstat, pidstat, psql, bpftrace...)
 	@$(COMPOSE) up -d --no-deps toolbox
 	@$(COMPOSE) exec toolbox bash -l
+
+ramp: ## Capacity ramp on the live lab: the load rises in steps, find the knee. Option: STEP=60 (seconds per step)
+	@$(CTL) ramp $(if $(STEP),--every $(STEP))
+
+bench: ## Closed-loop bench on the live lab, not scored, then a before/after report. Options: CLIENTS=20 SECONDS=120
+	@$(CTL) bench $(if $(CLIENTS),--clients $(CLIENTS)) $(if $(SECONDS),--seconds $(SECONDS))
 
 # ----------------------------------------------------------------------------- tools
 open: ## Open Grafana in the browser (macOS)

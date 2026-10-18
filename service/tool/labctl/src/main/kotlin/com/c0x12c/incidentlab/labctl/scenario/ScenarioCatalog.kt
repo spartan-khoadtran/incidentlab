@@ -16,11 +16,13 @@ import com.c0x12c.incidentlab.labctl.scenario.catalog.ProfilingScenarios
  * Each scenario draws random parameters, turns them into fault overrides per service, and carries
  * the ticket, the hints, the accepted answer and the explanation with its PromQL evidence.
  */
-object ScenarioCatalog {
+object ScenarioCatalog : FaultSource {
 
   val all: List<Scenario> =
     LoadScenarios.all + EdgeScenarios.all + AppScenarios.all + DatabaseScenarios.all + DownstreamScenarios.all + AsyncScenarios.all + ContainerHostScenarios.all +
       ProfilingScenarios.all
 
   val byId: Map<String, Scenario> = all.associateBy { it.id }
+
+  override fun faults(id: String, params: Params): FaultSpec? = byId[id]?.faults(params)
 }

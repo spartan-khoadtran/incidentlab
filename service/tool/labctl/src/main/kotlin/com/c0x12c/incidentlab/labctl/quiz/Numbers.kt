@@ -1,6 +1,7 @@
 package com.c0x12c.incidentlab.labctl.quiz
 
 import com.c0x12c.incidentlab.labctl.quiz.numbers.BenchmarkingNumbers
+import com.c0x12c.incidentlab.labctl.quiz.numbers.CapacityNumbers
 import com.c0x12c.incidentlab.labctl.quiz.numbers.CpuNumbers
 import com.c0x12c.incidentlab.labctl.quiz.numbers.FoundationsNumbers
 import com.c0x12c.incidentlab.labctl.quiz.numbers.InvestigationNumbers
@@ -15,6 +16,7 @@ object Numbers {
   val generators: List<(Random) -> NumericQuestion> = listOf(
     InvestigationNumbers.generators,
     BenchmarkingNumbers.generators,
+    CapacityNumbers.generators,
     CpuNumbers.generators,
     FoundationsNumbers.generators,
     MethodsNumbers.generators,
