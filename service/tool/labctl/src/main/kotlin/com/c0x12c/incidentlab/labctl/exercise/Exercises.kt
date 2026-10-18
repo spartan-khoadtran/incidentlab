@@ -2,10 +2,12 @@ package com.c0x12c.incidentlab.labctl.exercise
 
 import com.c0x12c.incidentlab.labctl.Terminal
 import com.c0x12c.incidentlab.labctl.control.Annotator
+import com.c0x12c.incidentlab.labctl.control.Capabilities
 import com.c0x12c.incidentlab.labctl.control.LabProbe
 import com.c0x12c.incidentlab.labctl.exercise.Outcome.Done
 import com.c0x12c.incidentlab.labctl.exercise.Outcome.Refused
 import com.c0x12c.incidentlab.labctl.guide.GuideIndex
+import com.c0x12c.incidentlab.labctl.ramp.RampMath
 import com.c0x12c.incidentlab.labctl.scenario.Answers
 import com.c0x12c.incidentlab.labctl.scenario.Baseline
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
@@ -30,10 +32,11 @@ class Exercises(
   now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
   private val zone: ZoneId = ZoneId.systemDefault(),
   /** The other exercise kinds; each owns the commands while its mode is active. */
-  private val modes: List<ExerciseMode> = emptyList()
+  private val modes: List<ExerciseMode> = emptyList(),
+  capabilities: Capabilities = Capabilities.ALL
 ) {
 
-  private val engine = ExerciseEngine(store, probe, annotator, catalog, random, now, zone)
+  private val engine = ExerciseEngine(store, probe, annotator, catalog, random, now, zone, capabilities = capabilities)
 
   private fun modeOf(state: LabState): ExerciseMode? = state.active?.let { active -> modes.firstOrNull { it.mode == active.mode } }
 
@@ -180,11 +183,14 @@ class Exercises(
         terminal.out("     note: ${entry.note}")
       }
     }
-    val average = view.average ?: return 0
+    if (view.average == null && view.rampAverage == null) return 0
     terminal.out()
-    terminal.out("Average score: ${String.format(Locale.ROOT, "%.2f", average)}/${plain(MAX_POINTS)} over ${view.entries.count { it.score != null }} exercise(s)")
-    terminal.out("By topic: " + view.byTopic.joinToString(" · ") { "${it.topic} ${String.format(Locale.ROOT, "%.1f", it.average)} (${it.count})" })
-    view.mostMissedCause?.let { terminal.out("Most missed cause: ${it.label} (${it.count} time(s))") }
+    view.average?.let { average ->
+      terminal.out("Average score: ${String.format(Locale.ROOT, "%.2f", average)}/${plain(MAX_POINTS)} over ${view.scoredCount} exercise(s)")
+      terminal.out("By topic: " + view.byTopic.joinToString(" · ") { "${it.topic} ${String.format(Locale.ROOT, "%.1f", it.average)} (${it.count})" })
+      view.mostMissedCause?.let { terminal.out("Most missed cause: ${it.label} (${it.count} time(s))") }
+    }
+    view.rampAverage?.let { terminal.out("Ramp average: ${String.format(Locale.ROOT, "%.2f", it)}/${plain(RampMath.TOTAL_POINTS)} over ${view.rampCount} ramp(s)") }
     return 0
   }
 
@@ -204,12 +210,20 @@ class Exercises(
       is Refusal.UnknownId -> "No exercise '${refusal.id}'. See `make list`." to 1
       is Refusal.NoCli -> "'${refusal.id}' has no CLI proof yet, so it cannot run with `make toolbox`. `make list` tags the ones that can ($TOOLBOX_TAG)." to 1
       Refusal.NoMatch -> "No exercise matches the LEVEL/TOPIC you chose. See `make list`." to 1
+      is Refusal.Unsupported -> unsupported(refusal) to 1
+      is Refusal.LoadNotOne -> "Background load is ${plain(refusal.multiplier)} x. This exercise is tuned for the default load, so run `make load X=1` first." to 1
       Refusal.AlreadyAnswered -> alreadyAnswered to 0
       Refusal.NoHintsLeft -> "No hints left. Use `make answer` to submit or `make reveal` to see the answer." to 0
       else -> error("an incident command cannot be refused with $refusal")
     }
     terminal.out(line)
     return code
+  }
+
+  private fun unsupported(refusal: Refusal.Unsupported): String {
+    val what = refusal.id?.let { "'$it' needs" } ?: "Every exercise that matches needs"
+    return "$what container settings this lab's controller cannot apply (${refusal.missing.joinToString()}). " +
+      "The control container needs the docker socket and the /host mounts: see `make logs S=control`."
   }
 
   private fun stale(n: Int): String = "Exercise #$n was started by an older version of the lab and cannot be resumed. Use `make clear`, then `make new`."

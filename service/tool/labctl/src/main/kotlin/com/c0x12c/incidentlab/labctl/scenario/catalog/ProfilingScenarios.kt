@@ -74,7 +74,8 @@ internal object ProfilingScenarios {
     cli = listOf(
       "top -H -b -n 1 -p $(pid api) | head -20   # two threads busy at once, the virtual-thread carriers: CPU work on every request, not one event loop thread"
     ),
-    doc = "CPU profiling > Reading a flame graph; Profiles in this lab > A good first query"
+    doc = "CPU profiling > Reading a flame graph; Profiles in this lab > A good first query",
+    baseLoad = true
   )
 
   private const val MIN_RENDER_MS = 24

@@ -124,11 +124,15 @@ data class MissedCause(
 
 data class HistoryView(
   val entries: List<HistoryEntry>,
-  /** Over scored entries only; null when none is scored. */
+  /** Over scored incident and toolbox entries only; null when none is scored. */
   val average: Double?,
+  val scoredCount: Int,
   /** Weakest topic first. */
   val byTopic: List<TopicAverage>,
-  val mostMissedCause: MissedCause?
+  val mostMissedCause: MissedCause?,
+  /** A ramp scores the knee, the throughput and the resource, so it gets its own average. */
+  val rampAverage: Double?,
+  val rampCount: Int
 )
 
 data class LoadView(

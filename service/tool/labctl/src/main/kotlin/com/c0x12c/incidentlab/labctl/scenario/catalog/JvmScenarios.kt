@@ -115,7 +115,8 @@ internal object JvmScenarios {
       "curl -s http://api:8000/metrics | grep ^jvm_gc_pause_seconds_count   # the MarkSweepCompact count climbs every few dozen seconds",
       "curl -s http://api:8000/metrics | grep -E '^jvm_gc_(live|max)_data_size_bytes'   # live data after GC close to the old gen max"
     ),
-    doc = "Garbage collection > GC pauses and tail latency"
+    doc = "Garbage collection > GC pauses and tail latency",
+    baseLoad = true
   )
 
   private fun vthreadPinning() = Scenario(
@@ -178,7 +179,8 @@ internal object JvmScenarios {
       "curl -s http://api:8000/metrics | grep ^jvm_virtual_thread_pinned_seconds_total; sleep 10; curl -s http://api:8000/metrics | grep ^jvm_virtual_thread_pinned_seconds_total   # grows about 13 to 16 s in 10 s: the 2 carriers are pinned most of the time",
       "top -H -b -n 1 -p $(pid api) | head -15   # CPU low on every thread: the carriers sleep, they do not compute"
     ),
-    doc = "Virtual threads > Pinning"
+    doc = "Virtual threads > Pinning",
+    baseLoad = true
   )
 
   private fun syncLogging() = Scenario(
@@ -241,7 +243,8 @@ internal object JvmScenarios {
       "grep -E '^(user|system)_usec' $(cg $(pid api))/cpu.stat; sleep 10; grep -E '^(user|system)_usec' $(cg $(pid api))/cpu.stat   # system_usec grows about as fast as user_usec: time spent in syscalls",
       "grep ^syscw /proc/$(pid api)/io; sleep 10; grep ^syscw /proc/$(pid api)/io   # write syscalls: the rise / 10 / 50 is about the lines per request"
     ),
-    doc = "System time > Logging costs"
+    doc = "System time > Logging costs",
+    baseLoad = true
   )
 
   private const val BYTES_PER_MB = 1_048_576

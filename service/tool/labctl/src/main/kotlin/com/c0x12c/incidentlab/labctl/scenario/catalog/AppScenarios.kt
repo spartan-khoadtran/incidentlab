@@ -189,7 +189,7 @@ internal object AppScenarios {
       "v2.40 refreshes an inventory cache on every checkout under one global lock. Each refresh holds it about ${hold.roundToInt()} ms on average. " +
         "At about $CHECKOUTS_PER_SECOND checkouts/s the lock is busy $CHECKOUTS_PER_SECOND × ${p.fixed(hold / MILLIS_PER_SECOND, 3)} s = " +
         "${(rho * PERCENT).roundToInt()}% of the time: that is its utilization. Arrivals and hold times are both random, so the lock is an M/M/1 queue. " +
-        "The mean wait is ρ / (1 − ρ) × hold = ${p.fixed(rho, 2)} / ${p.fixed(1 - rho, 2)} × ${hold.roundToInt()} ms ≈ ${wait.roundToInt()} ms. " +
+        "The mean wait is ρ / (1 − ρ) × hold = ${p.fixed(rho, 3)} / ${p.fixed(1 - rho, 3)} × ${hold.roundToInt()} ms ≈ ${wait.roundToInt()} ms. " +
         "Wait plus hold is hold / (1 − ρ) ≈ ${atLock.roundToInt()} ms. In M/M/1 that time has an exponential spread, so its p99 is about " +
         "${p.fixed(P99_OF_EXPONENTIAL, 1)} times the mean: about ${p.fixed(atLock * P99_OF_EXPONENTIAL / MILLIS_PER_SECOND, 1)} s on top of the normal checkout. " +
         "Little's Law gives the threads waiting: $CHECKOUTS_PER_SECOND/s × ${p.fixed(wait / MILLIS_PER_SECOND, 3)} s ≈ ${p.fixed(waiting, 1)}. " +
@@ -212,7 +212,8 @@ internal object AppScenarios {
       "rate(process_cpu_seconds_total{job=\"api\"}[1m])",
       "histogram_quantile(0.99, sum by (le, route) (rate(http_server_duration_seconds_bucket{job=\"api\"}[1m])))"
     ),
-    doc = "USE method in detail > Software resources (mutex, lock); Off-CPU time > Waiting on a lock"
+    doc = "USE method in detail > Software resources (mutex, lock); Off-CPU time > Waiting on a lock",
+    baseLoad = true
   )
 
   private fun forkDecoy() = Scenario(

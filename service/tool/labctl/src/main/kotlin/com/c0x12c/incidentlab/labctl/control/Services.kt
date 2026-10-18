@@ -13,7 +13,7 @@ object Services {
 
   /** Container settings the daemon owns even with no exercise running. */
   val BASE_DOCKER: Map<String, Map<String, Any?>> = mapOf(
-    "api" to mapOf("cpus" to 2.0),
+    "api" to mapOf(ContainerCpuApplier.CPUS to 2.0),
     "postgres" to mapOf(CgroupApplier.WRITE_IOPS to CgroupApplier.UNLIMITED)
   )
 

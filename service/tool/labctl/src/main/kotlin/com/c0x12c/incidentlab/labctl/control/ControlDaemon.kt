@@ -14,8 +14,16 @@ import java.time.Duration
 class ControlDaemon(
   private val store: StateStore,
   private val appliers: List<Applier>,
+  private val capabilities: CapabilitiesFile? = null,
   private val interval: Duration = TICK
 ) : Logging {
+
+  /** Tells the CLI and the API which container settings this daemon applies, so they never start an exercise it cannot run. */
+  fun publishCapabilities() {
+    val keys = appliers.flatMap { it.dockerKeys }.toSet()
+    capabilities?.write(keys)
+    info { "container settings applied: ${keys.sorted().joinToString().ifEmpty { "none" }}" }
+  }
 
   fun run() {
     info { "lab controller started" }

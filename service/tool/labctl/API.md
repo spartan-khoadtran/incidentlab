@@ -13,10 +13,10 @@ An error is an HTTP status plus `{"error": "<code>", "message": "<one plain sent
 | Status | Codes |
 |---|---|
 | 400 | `bad_json`, `missing_field`, `bad_mode`, `bad_level`, `bad_topic`, `unknown_id`, `no_cli`, `no_match`, `unknown_key`, `bad_multiplier`, `bad_every`, `bad_clients`, `bad_seconds`, `bad_count`, `bad_kind`, `bad_answer` |
-| 403 | `forbidden` |
+| 403 | `forbidden`, `forbidden_host` |
 | 404 | `not_found` (no such path), `no_exercise`, `no_session`, `no_question` |
 | 405 | `method_not_allowed` |
-| 409 | `exercise_open`, `already_answered`, `no_hints_left`, `wrong_mode`, `stale_exercise`, `load_not_one`, `too_early` (with `seconds_left`) |
+| 409 | `exercise_open`, `already_answered`, `no_hints_left`, `wrong_mode`, `stale_exercise`, `load_not_one`, `unsupported` (with `missing`), `too_early` (with `seconds_left`) |
 | 413 | `too_large` (the body limit is 64 KB) |
 | 425 | `still_running` (with `seconds_left`) |
 | 500 | `internal` |
@@ -27,7 +27,7 @@ An error is an HTTP status plus `{"error": "<code>", "message": "<one plain sent
 
 ## Write calls
 
-Every POST must send `Content-Type: application/json` and `X-Lab-Client: web`. Without both: 403 `forbidden`. No CORS header is ever sent, and OPTIONS returns 403, so a page on another origin cannot call the API. A POST with no body counts as `{}`. No GET changes the state.
+Every POST must send `Content-Type: application/json` and `X-Lab-Client: web`. Without both: 403 `forbidden`. No CORS header is ever sent, and OPTIONS returns 403, so a page on another origin cannot call the API. A request whose `Host` is not `localhost`, `127.0.0.1`, `[::1]` or `control` gets 403 `forbidden_host`, so a page that rebinds its DNS name to 127.0.0.1 cannot call it either. `labctl api` listens on the loopback address only. A POST with no body counts as `{}`. No GET changes the state.
 
 ## No-spoiler rule
 
@@ -69,11 +69,11 @@ HistoryEntry = { n, id, mode, title, level, score: number|null, hints, minutes, 
 - `GET /api/status` -> `{ services: { api: null|"<error>", pricing, worker, loadgen, noisy, pgobserver }, active: ActiveView|null, load_multiplier: number, base_rps: number, links: { grafana, prometheus, pyroscope } }`. A service is `null` when it answers. `active` is null for a stale exercise too.
 - `GET /api/options` -> `{ natures: [Option], locations: [Option], signals: [Option], causes: [Option with group], levels: [int], topics: [string], modes: ["incident", "toolbox"] }`
 - `POST /api/load` body `{ multiplier: number }` (0.1 to 6) -> `{ multiplier, rps }`. 400 `bad_multiplier` outside the range.
-- `GET /api/history` -> `{ entries: [HistoryEntry], average: number|null, by_topic: [{ topic, average, count }], most_missed_cause: { key, label, group, count }|null }`. `average` and `by_topic` count scored entries only. `by_topic` lists the weakest topic first.
+- `GET /api/history` -> `{ entries: [HistoryEntry], average: number|null, scored_count: int, by_topic: [{ topic, average, count }], most_missed_cause: { key, label, group, count }|null, ramp_average: number|null, ramp_count: int }`. `average`, `scored_count`, `by_topic` and `most_missed_cause` count scored incident and toolbox entries only. A ramp is scored on other questions, so `ramp_average` and `ramp_count` count scored ramps on their own. `by_topic` lists the weakest topic first.
 
 ### Incident and toolbox
 
-- `POST /api/exercises` body `{ mode?: "incident"|"toolbox", level?: int, topic?: string, id?: string, force?: bool }` -> 201 `ActiveView`. 409 `exercise_open` when one is open and `force` is not true. 400 for a bad mode, level, topic or id, or `no_cli` for an id without CLI proof in toolbox mode. Writes the same Grafana annotations as `make new`.
+- `POST /api/exercises` body `{ mode?: "incident"|"toolbox", level?: int, topic?: string, id?: string, force?: bool }` -> 201 `ActiveView`. 409 `exercise_open` when one is open and `force` is not true. 400 for a bad mode, level, topic or id, or `no_cli` for an id without CLI proof in toolbox mode. 409 `unsupported` (with `missing`, the container settings keys) when the controller cannot apply what the scenario needs, for example with no docker socket; a random pick skips such scenarios and gives this error only when none is left. 409 `load_not_one` when the load multiplier is not 1 and the id is a scenario tuned for the default load; a random pick skips those. Writes the same Grafana annotations as `make new`.
 - `GET /api/exercise` -> the open exercise in any mode, so a page reload can rebuild itself: `ActiveView`, plus
   - `plan: { steps: [rps], every, total_seconds }` for a ramp, and `ends_at` (epoch seconds) for a bench, from the start;
   - `reveal: Reveal` once an incident is answered or revealed;
@@ -89,7 +89,7 @@ HistoryEntry = { n, id, mode, title, level, score: number|null, hints, minutes, 
 
 - `GET /api/ramp/options` -> `{ resources: [Option] }`: the resources the third question offers.
 - `POST /api/ramp` body `{ every?: int }` (30 to 300 s, default 60) -> 201 `ActiveView` (mode ramp) plus `plan: { steps: [rps], every, total_seconds }`. 409 `exercise_open`, or `load_not_one` when the load multiplier is not 1.
-- `POST /api/ramp/answer` body `{ knee_rps: number, max_rps: number, resource: string, note?: string }` -> `RampResult`. `knee_rps` is 0 when there was no knee. 409 `too_early` before the first step ends, `already_answered`. 400 `unknown_key` for a resource. 503 `prometheus_down`. Keeps the history entry. Does not stop the ramp.
+- `POST /api/ramp/answer` body `{ knee_rps: number, max_rps: number, resource: string, note?: string }` -> `RampResult`. `knee_rps` is 0 when there was no knee. 409 `too_early` (with `seconds_left`) before the last step ends, `already_answered`. 400 `unknown_key` for a resource. 503 `prometheus_down`. Keeps the history entry. Does not stop the ramp.
 - `POST /api/ramp/reveal` -> `RampResult` with `score`, `given` and `verdicts` null. The table is empty and `prometheus_down` is true when Prometheus does not answer.
 
 ```
@@ -118,14 +118,14 @@ BenchReport = { n, clients, seconds, before: Window, during: Window, explanation
 
 ### Quiz
 
-- `POST /api/quiz` body `{ count?: int (1 to 300, default 20), kind?: "numbers"|"concepts"|"all" }` -> 201 `{ session: string, questions: [{ index, kind: "number"|"choice", text, unit?: string, options?: [string] }] }`. The options are already shuffled. No answer is in it.
+- `POST /api/quiz` body `{ count?: int (1 to 300, default 50, the same as `make quiz`), kind?: "numbers"|"concepts"|"all" }` -> 201 `{ session: string, questions: [{ index, kind: "number"|"choice", text, unit?: string, options?: [string] }] }`. The options are already shuffled. No answer is in it.
 - `POST /api/quiz/{session}/{index}` body `{ answer: number|string }` -> `{ correct: bool, answer: string, explanation: string, guide: [GuidePointer] }`. A number question takes a number, or a string typed the way the CLI reads it (`"12,5"`). A choice question takes the text of one option. The tolerance is the CLI's. The first answer to a question stands: posting again returns the same grade. 400 `bad_answer`, 404 `no_session` or `no_question`.
 
 Sessions live in the daemon's memory, at most 50, each dropped after 2 hours without an answer. A daemon restart drops them all.
 
 ## Try it
 
-From the host, through the site's nginx, with the lab up:
+From the host, through the site's nginx, with the lab up. The site's nginx answers only when the Host is `localhost` or `127.0.0.1`, and closes the connection for any other name:
 
 ```
 curl -s localhost:4000/api/status

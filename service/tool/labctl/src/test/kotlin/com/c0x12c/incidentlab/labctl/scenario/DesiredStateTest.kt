@@ -102,17 +102,19 @@ class DesiredStateTest {
   }
 
   @Test
-  fun `a ramp drives the surge and the pool from the state file, then gives the lab back`() {
+  fun `a ramp drives the surge and the pool from the state file, holds the load at 1, then gives the lab back`() {
     val params = mapOf("setup" to RampCatalog.CPU, "pool_max" to 24, "cpus" to 0.3, "every" to 60)
-    val state = LabState(active = ActiveExercise(id = RampCatalog.ID, mode = RampExercise.MODE, params = params, started = 1_000.0, n = 1))
+    val base = mapOf("loadgen" to mapOf<String, Any?>("rate_multiplier" to 2.0))
+    val state = LabState(active = ActiveExercise(id = RampCatalog.ID, mode = RampExercise.MODE, params = params, started = 1_000.0, n = 1), base = base)
 
     val during = DesiredState.of(state, now = 1_250.0)
     val after = DesiredState.of(state, now = 1_000.0 + 8 * 60)
 
-    assertThat(during.faults.getValue("loadgen")).isEqualTo(mapOf<String, Any?>("surge_multiplier" to 3.0))
+    assertThat(during.faults.getValue("loadgen")).isEqualTo(mapOf<String, Any?>("rate_multiplier" to 1.0, "surge_multiplier" to 3.0))
     assertThat(during.faults.getValue("api")).isEqualTo(mapOf<String, Any?>("pool_max" to 24))
     assertThat(during.docker.getValue("api")).isEqualTo(mapOf("cpus" to 0.3))
-    assertThat(after.faults.values.all { it.isEmpty() }).isEqualTo(true)
+    assertThat(after.faults.getValue("loadgen")).isEqualTo(mapOf<String, Any?>("rate_multiplier" to 2.0))
+    assertThat(after.faults.filterKeys { it != "loadgen" }.values.all { it.isEmpty() }).isEqualTo(true)
     assertThat(after.docker.getValue("api")).isEqualTo(mapOf("cpus" to 2.0))
   }
 

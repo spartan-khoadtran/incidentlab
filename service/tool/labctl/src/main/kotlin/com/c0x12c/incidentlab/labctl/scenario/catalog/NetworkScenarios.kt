@@ -149,7 +149,8 @@ internal object NetworkScenarios {
       "nsenter -t $(pid api) -n ss -tin '( dport = :5432 )'   # rtt: a few ms on every connection to Postgres, where the compose network alone is well under 1 ms",
       "nsenter -t $(pid api) -n tc qdisc show dev eth0   # the netem leaf with a delay towards Postgres"
     ),
-    doc = "Network math > Round trips add up"
+    doc = "Network math > Round trips add up",
+    baseLoad = true
   )
 
   private fun noKeepalive() = Scenario(

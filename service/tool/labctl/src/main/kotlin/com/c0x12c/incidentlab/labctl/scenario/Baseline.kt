@@ -21,8 +21,8 @@ object Baseline {
   // Measured: 25 ms of work plus about 1.5 ms of overhead per message.
   const val MEASURED_WORKER_CAPACITY = 113
 
-  // Measured: what api burns at BASE_RPS with 2 cores available.
-  const val API_CORES_AT_BASE = 0.06
+  // Measured: what api burns at BASE_RPS with 2 cores available, with the profiler agent and JFR (p95 per minute 0.079).
+  const val API_CORES_AT_BASE = 0.073
 
   const val DEFAULT_CPU_COUNT = 4
   const val DEFAULT_PRODUCT_DETAIL_SECONDS = 0.012

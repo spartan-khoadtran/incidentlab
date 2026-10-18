@@ -90,14 +90,19 @@ class RampExerciseTest {
   }
 
   @Test
-  fun `an answer before the first step ends is refused`(@TempDir dir: Path) {
-    val terminal = ScriptedTerminal()
+  fun `an answer before the last step ends is refused, so an early none cannot score`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal("0", "50", "none")
     val ramp = ramp(dir, terminal)
     ramp.start(RampOptions(every = EVERY))
-    clock = START + 20
+    pinPoolOfThree(dir)
+    clock = START + EVERY + 1
 
     assertThat(exercises(dir, terminal, ramp).answer()).isEqualTo(1)
-    assertThat(terminal.lines.last()).contains("40 s to go")
+    assertThat(terminal.lines.last()).contains("419 s to go")
+    clock = START + RampPlan.totalSeconds(EVERY) - 1
+    assertThat(exercises(dir, terminal, ramp).answer()).isEqualTo(1)
+    assertThat(terminal.lines.last()).contains("1 s to go")
+    assertThat(store(dir).load().history).hasSize(0)
   }
 
   @Test

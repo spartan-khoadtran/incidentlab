@@ -239,7 +239,7 @@ class ScenarioCatalogTest {
       val values = scenario.params(random, ExerciseContext())
       val credit = (values["credit_seconds"] as Int)
       assertThat(credit).isBetween(120, 240)
-      assertThat(values["cpus"] as Double).isBetween(0.07, 0.1)
+      assertThat(values["cpus"] as Double).isBetween(0.1, 0.14)
       val before = scenario.faults(Params(values, "14:05", elapsedSeconds = credit - 1.0))
       val after = scenario.faults(Params(values, "14:05", elapsedSeconds = credit.toDouble()))
       assertThat(before).isEqualTo(FaultSpec())
@@ -317,7 +317,7 @@ class ScenarioCatalogTest {
       assertThat(after.services.getValue("api")).isEqualTo(mapOf<String, Any?>("price_fallback" to true, "pricing_timeout_s" to 0.15))
     }
     assertThat(scenario.answer.cause).isEqualTo("downstream_slow")
-    assertThat(scenario.answer.partial).containsOnly("downstream_errors")
+    assertThat(scenario.answer.partial).containsOnly("downstream_errors", "client_timeout")
     assertThat(scenario.marker == null).isTrue()
     // 50 + 300 = 350 ms before, 50 + 150 = 200 ms after: 150 ms faster
     val explain = scenario.explain(Params(mapOf("base" to 300), "14:05"))

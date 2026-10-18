@@ -20,12 +20,14 @@ class NetemApplier(
   private val containers: Set<String> = Services.NETEM_CONTAINERS
 ) : Applier, Logging {
 
+  override val dockerKeys: Set<String> = setOf(NETEM)
+
   private val applied = mutableMapOf<String, Applied>()
   private val lastError = mutableMapOf<String, String?>()
 
   override fun apply(desired: Desired) {
     for (container in containers) {
-      val command = command(desired.docker[container]?.get("netem"))
+      val command = command(desired.docker[container]?.get(NETEM))
       val now = clock.millis()
       val last = applied[container]
       if (last != null && last.command == command && now - last.at < resync.toMillis()) {
@@ -48,6 +50,7 @@ class NetemApplier(
 
   companion object {
     const val SCRIPT = "/run/netem.sh"
+    const val NETEM = "netem"
 
     /** `netem.sh apply host delay loss [host delay loss]...`, or `netem.sh clear` when nothing is asked for. */
     fun command(netem: Any?): List<String> {

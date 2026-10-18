@@ -1,7 +1,6 @@
 package com.c0x12c.incidentlab.labctl.export
 
 import com.c0x12c.incidentlab.labctl.LabJson
-import com.c0x12c.incidentlab.labctl.Main
 import com.c0x12c.incidentlab.labctl.bench.BenchCatalog
 import com.c0x12c.incidentlab.labctl.bench.BenchExercise
 import com.c0x12c.incidentlab.labctl.control.ControlDaemon
@@ -10,6 +9,7 @@ import com.c0x12c.incidentlab.labctl.guide.GuideIndex
 import com.c0x12c.incidentlab.labctl.quiz.Concepts
 import com.c0x12c.incidentlab.labctl.quiz.Drill
 import com.c0x12c.incidentlab.labctl.quiz.Numbers
+import com.c0x12c.incidentlab.labctl.quiz.QuizSessions
 import com.c0x12c.incidentlab.labctl.ramp.RampExercise
 import com.c0x12c.incidentlab.labctl.ramp.RampPlan
 import com.c0x12c.incidentlab.labctl.scenario.Answers
@@ -129,7 +129,7 @@ object LabExport {
         rampStepSeconds = RampPlan.DEFAULT_STEP_SECONDS,
         benchClients = BenchCatalog.DEFAULT_CLIENTS,
         benchSeconds = BenchCatalog.DEFAULT_SECONDS,
-        quizQuestions = Main.DEFAULT_QUIZ_QUESTIONS
+        quizQuestions = QuizSessions.DEFAULT_COUNT
       ),
       limits = Limits(
         loadMultiplier = Range(Exercises.MIN_LOAD, Exercises.MAX_LOAD),

@@ -5,6 +5,8 @@ import com.c0x12c.incidentlab.labctl.api.LabApi
 import com.c0x12c.incidentlab.labctl.bench.BenchEngine
 import com.c0x12c.incidentlab.labctl.bench.BenchExercise
 import com.c0x12c.incidentlab.labctl.control.Annotator
+import com.c0x12c.incidentlab.labctl.control.Capabilities
+import com.c0x12c.incidentlab.labctl.control.CapabilitiesFile
 import com.c0x12c.incidentlab.labctl.control.CgroupApplier
 import com.c0x12c.incidentlab.labctl.control.ContainerCpuApplier
 import com.c0x12c.incidentlab.labctl.control.ControlDaemon
@@ -45,14 +47,16 @@ object Main : Logging {
 
   fun run(args: List<String>): Int {
     val command = args.firstOrNull() ?: return usage()
-    val store = StateStore(Path.of(System.getenv("LAB_STATE") ?: "/state/state.json"))
+    val stateFile = Path.of(System.getenv("LAB_STATE") ?: "/state/state.json")
+    val store = StateStore(stateFile)
+    val capabilities = CapabilitiesFile.beside(stateFile)
     val http = JsonHttp()
     val terminal = ConsoleTerminal
     val probe = HttpLabProbe(http)
     val annotator = GrafanaAnnotator(http) { terminal.out(it) }
     val ramp = RampExercise(store, probe, annotator, terminal)
     val bench = BenchExercise(store, probe, annotator, terminal)
-    val exercises = Exercises(store, probe, annotator, terminal, modes = listOf(ramp, bench))
+    val exercises = Exercises(store, probe, annotator, terminal, modes = listOf(ramp, bench), capabilities = capabilities)
     return try {
       when (command) {
         "daemon" -> {
@@ -62,12 +66,14 @@ object Main : Logging {
           }
           val cgroups = docker?.let { CgroupApplier.ifAvailable(it::containerId, hostPath("CGROUP_ROOT", "/host/cgroup"), hostPath("HOST_VOLUMES", "/host/volumes"), hostPath("HOST_SYS", "/host/sys")) }
           val appliers = listOfNotNull(ServiceFaultApplier(http), docker?.let { ContainerCpuApplier(it) }, docker?.let { NetemApplier(it) }, cgroups)
-          serveApi(store, probe, http)
-          ControlDaemon(store, appliers).run()
+          val daemon = ControlDaemon(store, appliers, capabilities)
+          daemon.publishCapabilities()
+          serveApi(store, probe, http, capabilities, loopbackOnly = false)
+          daemon.run()
           0
         }
         "api" -> {
-          serveApi(store, probe, http)
+          serveApi(store, probe, http, capabilities, loopbackOnly = true)
           info { "no control loop: faults in the state file are not applied" }
           Thread.currentThread().join()
           0
@@ -88,7 +94,7 @@ object Main : Logging {
           0
         }
         "quiz" -> {
-          val options = CommandLine.quizOptions(args.drop(1), DEFAULT_QUIZ_QUESTIONS)
+          val options = CommandLine.quizOptions(args.drop(1), QuizSessions.DEFAULT_COUNT)
           terminal.out("Drills from the guide. A number question takes a number (a comma or a dot both work as the decimal separator). A concept question takes the number of one option.")
           Quiz.run(options.count, options.kind, terminal)
           0
@@ -101,16 +107,16 @@ object Main : Logging {
     }
   }
 
-  private fun serveApi(store: StateStore, probe: LabProbe, http: JsonHttp) {
+  private fun serveApi(store: StateStore, probe: LabProbe, http: JsonHttp, capabilities: Capabilities, loopbackOnly: Boolean) {
     val port = System.getenv("LAB_API_PORT")?.toIntOrNull() ?: ApiServer.DEFAULT_PORT
-    labApi(store, probe, GrafanaAnnotator(http) { warn { it } }).start(port)
+    labApi(store, probe, GrafanaAnnotator(http) { warn { it } }, capabilities).start(port, loopbackOnly)
     info { "lab API listening on port $port" }
   }
 
-  fun labApi(store: StateStore, probe: LabProbe, annotator: Annotator): LabApi {
+  fun labApi(store: StateStore, probe: LabProbe, annotator: Annotator, capabilities: Capabilities = Capabilities.ALL): LabApi {
     val ramp = RampEngine(store, probe, annotator)
     val bench = BenchEngine(store, probe, annotator)
-    return LabApi(ExerciseEngine(store, probe, annotator, modes = listOf(ramp, bench)), ramp, bench, QuizSessions())
+    return LabApi(ExerciseEngine(store, probe, annotator, modes = listOf(ramp, bench), capabilities = capabilities), ramp, bench, QuizSessions())
   }
 
   private fun hostPath(variable: String, default: String): Path = Path.of(System.getenv(variable) ?: default)
@@ -124,5 +130,4 @@ object Main : Logging {
   }
 
   private const val USAGE_EXIT = 2
-  const val DEFAULT_QUIZ_QUESTIONS = 50
 }

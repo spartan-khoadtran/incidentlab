@@ -18,6 +18,8 @@ class CgroupApplier(
   private val disk: String
 ) : Applier, Logging {
 
+  override val dockerKeys: Set<String> = setOf(WRITE_IOPS)
+
   private var lastProblem: String? = null
 
   override fun apply(desired: Desired) {

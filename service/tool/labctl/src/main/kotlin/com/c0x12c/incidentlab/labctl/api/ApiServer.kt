@@ -56,15 +56,16 @@ class Route(
  * A small JSON server on the JDK's HttpServer. Every POST needs `Content-Type: application/json`
  * and `X-Lab-Client: web`, which a cross-origin form or image cannot send without a preflight, and
  * no CORS header is ever sent, so the preflight fails. That keeps other origins from driving the lab.
+ * A request whose Host is not this machine or `control` is refused, so a rebound DNS name cannot reach it.
  */
 class ApiServer(
   private val routes: List<Route>,
-  port: Int,
+  address: InetSocketAddress,
   threads: Int = THREADS
 ) : AutoCloseable, Logging {
 
   private val executor: ExecutorService = Executors.newFixedThreadPool(threads, daemonThreads())
-  private val server: HttpServer = HttpServer.create(InetSocketAddress(port), 0).apply {
+  private val server: HttpServer = HttpServer.create(address, 0).apply {
     createContext("/") { exchange -> exchange.use(::handle) }
     executor = this@ApiServer.executor
     start()
@@ -102,6 +103,9 @@ class ApiServer(
 
   private fun dispatch(exchange: HttpExchange): Reply {
     val method = exchange.requestMethod
+    if (hostName(exchange.requestHeaders.getFirst("Host")) !in ALLOWED_HOSTS) {
+      throw ApiError(HTTP_FORBIDDEN, "forbidden_host", "The lab API answers only on localhost.")
+    }
     if (method == "OPTIONS") throw forbidden()
     val path = exchange.requestURI.path
     val matching = routes.mapNotNull { route -> route.pattern.matchEntire(path)?.let { route to it.groupValues.drop(1) } }
@@ -135,6 +139,11 @@ class ApiServer(
 
   private fun tooLarge() = ApiError(HTTP_TOO_LARGE, "too_large", "The body is larger than ${MAX_BODY_BYTES / KIB} KB.")
 
+  private fun hostName(header: String?): String {
+    val host = header?.trim()?.lowercase().orEmpty()
+    return if (host.startsWith("[")) host.substringBefore("]") + "]" else host.substringBefore(":")
+  }
+
   private fun daemonThreads(): ThreadFactory {
     val count = AtomicInteger()
     return ThreadFactory { task -> Thread(task, "lab-api-${count.incrementAndGet()}").apply { isDaemon = true } }
@@ -146,6 +155,7 @@ class ApiServer(
     const val MAX_BODY_BYTES = 64 * 1024
     const val CLIENT_HEADER = "X-Lab-Client"
     const val CLIENT = "web"
+    val ALLOWED_HOSTS = setOf("localhost", "127.0.0.1", "[::1]", "control")
     private const val JSON = "application/json"
     private const val KIB = 1024
     private const val NANOS_PER_MILLI = 1_000_000

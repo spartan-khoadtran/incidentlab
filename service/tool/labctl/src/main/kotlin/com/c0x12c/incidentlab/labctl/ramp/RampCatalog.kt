@@ -55,7 +55,7 @@ object RampCatalog : FaultSource {
     val step = RampPlan.stepAt(params.elapsedSeconds, params.int("every")) ?: return FaultSpec()
     return FaultSpec(
       services = mapOf(
-        "loadgen" to mapOf("surge_multiplier" to RampPlan.MULTIPLIERS[step]),
+        "loadgen" to mapOf("surge_multiplier" to RampPlan.MULTIPLIERS[step], "rate_multiplier" to 1.0),
         "api" to mapOf("pool_max" to params.int("pool_max"))
       ),
       docker = mapOf("api" to mapOf("cpus" to params.double("cpus")))

@@ -1,6 +1,7 @@
 package com.c0x12c.incidentlab.labctl.exercise
 
 import com.c0x12c.incidentlab.labctl.control.Annotator
+import com.c0x12c.incidentlab.labctl.control.Capabilities
 import com.c0x12c.incidentlab.labctl.control.LabProbe
 import com.c0x12c.incidentlab.labctl.exercise.Outcome.Done
 import com.c0x12c.incidentlab.labctl.exercise.Outcome.Refused
@@ -18,6 +19,7 @@ import com.c0x12c.incidentlab.labctl.state.LabState
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import com.c0x12c.incidentlab.labctl.state.withNote
 import java.time.ZoneId
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
@@ -62,8 +64,11 @@ class ExerciseEngine(
   private val random: Random = Random.Default,
   private val now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
   private val zone: ZoneId = ZoneId.systemDefault(),
-  private val modes: List<ModeEngine> = emptyList()
+  private val modes: List<ModeEngine> = emptyList(),
+  private val capabilities: Capabilities = Capabilities.ALL
 ) {
+
+  private val dockerNeeds = ConcurrentHashMap<String, Set<String>>()
 
   private data class Found(val active: ActiveExercise, val scenario: Scenario)
 
@@ -199,11 +204,12 @@ class ExerciseEngine(
 
   fun history(): HistoryView {
     val history = store.load().history
-    val scored = history.filter { it.score != null }
+    val scored = history.filter { it.score != null && it.mode in NEW_MODES }
+    val ramps = history.filter { it.score != null && it.mode == RAMP }
     val missed = mostMissedCause(scored)?.let { (cause, count) ->
       MissedCause(cause, Answers.label(Answers.CAUSES, cause), Answers.CAUSE_GROUPS[cause], count)
     }
-    return HistoryView(history, scored.mapNotNull { it.score }.takeIf { it.isNotEmpty() }?.average(), byTopic(scored), missed)
+    return HistoryView(history, average(scored), scored.size, byTopic(scored), missed, average(ramps), ramps.size)
   }
 
   fun load(multiplier: Double): LoadView {
@@ -228,6 +234,8 @@ class ExerciseEngine(
 
   fun levels(): List<Int> = catalog.all.map { it.level }.distinct().sorted()
 
+  private fun average(entries: List<HistoryEntry>): Double? = entries.mapNotNull { it.score }.takeIf { it.isNotEmpty() }?.average()
+
   private fun byTopic(scored: List<HistoryEntry>): List<TopicAverage> =
     scored.flatMap { entry -> catalog.byId[entry.id]?.topics.orEmpty().map { topic -> topic to entry.score!! } }
       .groupBy({ it.first }, { it.second })
@@ -242,19 +250,31 @@ class ExerciseEngine(
 
   private fun pick(state: LabState, options: NewOptions): Outcome<Scenario> {
     val toolbox = options.mode == TOOLBOX
+    val supported = capabilities.dockerKeys()
+    val load = loadMultiplier(state)
     if (options.id.isNotEmpty()) {
       val scenario = catalog.byId[options.id] ?: return Refused(Refusal.UnknownId(options.id))
       if (toolbox && scenario.cli.isEmpty()) return Refused(Refusal.NoCli(options.id))
+      val missing = missing(scenario, supported)
+      if (missing.isNotEmpty()) return Refused(Refusal.Unsupported(scenario.id, missing))
+      if (scenario.baseLoad && load != 1.0) return Refused(Refusal.LoadNotOne(load))
       return Done(scenario)
     }
-    val pool = catalog.all.filter {
+    val matching = catalog.all.filter {
       (options.level == 0 || it.level == options.level) && (options.topic.isEmpty() || options.topic in it.topics) && (!toolbox || it.cli.isNotEmpty())
     }
-    if (pool.isEmpty()) return Refused(Refusal.NoMatch)
+    if (matching.isEmpty()) return Refused(Refusal.NoMatch)
+    val runnable = matching.filter { missing(it, supported).isEmpty() }
+    if (runnable.isEmpty()) return Refused(Refusal.Unsupported(null, matching.flatMap { missing(it, supported) }.toSortedSet()))
+    val pool = runnable.filter { !it.baseLoad || load == 1.0 }
+    if (pool.isEmpty()) return Refused(Refusal.LoadNotOne(load))
     val recent = state.history.takeLast(RECENT_WINDOW).map { it.id }
     val fresh = pool.filter { it.id !in recent }
     return Done((fresh.ifEmpty { pool }).random(random))
   }
+
+  private fun missing(scenario: Scenario, supported: Set<String>?): Set<String> =
+    if (supported == null) emptySet() else dockerNeeds.computeIfAbsent(scenario.id) { dockerKeys(scenario) } - supported
 
   /** The open incident or toolbox exercise, if it still renders with this catalog. */
   private fun incident(state: LabState): Outcome<Found> {
@@ -392,12 +412,24 @@ class ExerciseEngine(
       "prometheus" to "http://localhost:9090",
       "pyroscope" to "http://localhost:4040"
     )
+    private const val NEEDS_SEED = 1
+    private const val NEEDS_ELAPSED_SECONDS = 3_600.0
     private const val DECOY_MAX_LEAD_SECONDS = 600
     private const val DECOY_MAX_LAG_SECONDS = 60
     private const val MARKER_MAX_LEAD_SECONDS = 180
     private const val MILLIS_PER_SECOND = 1_000.0
     private const val SECONDS_PER_MINUTE = 60.0
     private const val TENTHS = 10.0
+
+    /**
+     * The container settings keys a scenario sets, from one render with fixed draws. The render is
+     * an hour in, so a fault that starts late (`cpu_credits`) counts too.
+     */
+    fun dockerKeys(scenario: Scenario): Set<String> =
+      runCatching {
+        val params = Params(scenario.params(Random(NEEDS_SEED), ExerciseContext()), startedAt = "", elapsedSeconds = NEEDS_ELAPSED_SECONDS)
+        scenario.faults(params).docker.values.flatMap { it.keys }.toSet()
+      }.getOrDefault(emptySet())
 
     fun loadMultiplier(state: LabState): Double = (state.base["loadgen"]?.get("rate_multiplier") as? Number)?.toDouble() ?: 1.0
 

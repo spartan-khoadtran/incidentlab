@@ -39,10 +39,10 @@ class RampPlanTest {
     val values = mapOf<String, Any?>("setup" to RampCatalog.POOL, "pool_max" to 3, "cpus" to 2.0, "every" to 45)
     fun at(seconds: Double): FaultSpec? = RampCatalog.faults(RampCatalog.ID, Params(values, "", seconds))
 
-    assertThat(at(10.0)!!.services.getValue("loadgen")).isEqualTo(mapOf<String, Any?>("surge_multiplier" to 1.0))
-    assertThat(at(100.0)!!.services.getValue("loadgen")).isEqualTo(mapOf<String, Any?>("surge_multiplier" to 2.0))
+    assertThat(at(10.0)!!.services.getValue("loadgen")).isEqualTo(mapOf<String, Any?>("surge_multiplier" to 1.0, "rate_multiplier" to 1.0))
+    assertThat(at(100.0)!!.services.getValue("loadgen")).isEqualTo(mapOf<String, Any?>("surge_multiplier" to 2.0, "rate_multiplier" to 1.0))
     assertThat(at(100.0)!!.services.getValue("api")).isEqualTo(mapOf<String, Any?>("pool_max" to 3))
-    assertThat(at(359.0)!!.services.getValue("loadgen")).isEqualTo(mapOf<String, Any?>("surge_multiplier" to 6.0))
+    assertThat(at(359.0)!!.services.getValue("loadgen")).isEqualTo(mapOf<String, Any?>("surge_multiplier" to 6.0, "rate_multiplier" to 1.0))
     assertThat(at(100.0)!!.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0)))
     assertThat(at(360.0)).isEqualTo(FaultSpec())
     assertThat(RampCatalog.faults("pool_hold", Params(values, "", 10.0))).isNull()

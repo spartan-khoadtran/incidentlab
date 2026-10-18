@@ -13,6 +13,7 @@ import com.c0x12c.incidentlab.labctl.LabJson
 import com.c0x12c.incidentlab.labctl.ScriptedTerminal
 import com.c0x12c.incidentlab.labctl.bench.BenchEngine
 import com.c0x12c.incidentlab.labctl.control.Annotator
+import com.c0x12c.incidentlab.labctl.control.Capabilities
 import com.c0x12c.incidentlab.labctl.exercise.ExerciseEngine
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
 import com.c0x12c.incidentlab.labctl.exercise.NewOptions
@@ -24,6 +25,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Answers
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import com.fasterxml.jackson.databind.JsonNode
+import java.net.Socket
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -66,11 +68,11 @@ class LabApiTest {
 
   private fun store(name: String = "state.json") = StateStore(dir.resolve(name))
 
-  private fun server(probe: FakePrometheus = prometheus, store: StateStore = store()): String {
+  private fun server(probe: FakePrometheus = prometheus, store: StateStore = store(), capabilities: Capabilities = Capabilities.ALL): String {
     val zone = ZoneId.of("UTC")
     val ramp = RampEngine(store, probe, annotator, Random(1), { clock }, zone)
     val bench = BenchEngine(store, probe, annotator, { clock }, zone)
-    val exercises = ExerciseEngine(store, probe, annotator, random = Random(1), now = { clock }, zone = zone, modes = listOf(ramp, bench))
+    val exercises = ExerciseEngine(store, probe, annotator, random = Random(1), now = { clock }, zone = zone, modes = listOf(ramp, bench), capabilities = capabilities)
     val quiz = QuizSessions(Random(2))
     val server = LabApi(exercises, ramp, bench, quiz).start(0)
     servers += server
@@ -127,6 +129,24 @@ class LabApiTest {
   }
 
   @Test
+  fun `a request for another host name is refused, so a rebound DNS name cannot drive the lab`() {
+    val port = URI.create(server()).port
+
+    assertThat(statusFor(port, "evil.example:4000")).isEqualTo(403)
+    assertThat(statusFor(port, "192.168.1.20:4000")).isEqualTo(403)
+    assertThat(statusFor(port, "localhost:4000")).isEqualTo(200)
+    assertThat(statusFor(port, "127.0.0.1")).isEqualTo(200)
+    assertThat(statusFor(port, "[::1]:4000")).isEqualTo(200)
+    assertThat(statusFor(port, "control:8090")).isEqualTo(200)
+  }
+
+  private fun statusFor(port: Int, host: String): Int =
+    Socket("127.0.0.1", port).use { socket ->
+      socket.getOutputStream().write("GET /api/health HTTP/1.1\r\nHost: $host\r\nConnection: close\r\n\r\n".toByteArray())
+      socket.getInputStream().bufferedReader().readLine().split(" ")[1].toInt()
+    }
+
+  @Test
   fun `unknown paths, wrong methods, broken JSON and big bodies get a JSON error`() {
     val base = server()
 
@@ -173,6 +193,30 @@ class LabApiTest {
     val toolbox = post(base, "/api/exercises", mapOf("id" to noCli, "mode" to "toolbox"))
     assertThat(toolbox.status).isEqualTo(400)
     assertThat(toolbox.json["error"].asText()).isEqualTo("no_cli")
+    assertThat(store().load().active).isNull()
+  }
+
+  @Test
+  fun `an id the controller cannot run is a 409 that names the missing settings`() {
+    val base = server(capabilities = Capabilities { setOf("cpus") })
+
+    val refused = post(base, "/api/exercises", mapOf("id" to "packet_loss"))
+    assertThat(refused.status).isEqualTo(409)
+    assertThat(refused.json["error"].asText()).isEqualTo("unsupported")
+    assertThat(refused.json["missing"].map { it.asText() }).containsExactly("netem")
+    assertThat(store().load().active).isNull()
+    assertThat(post(base, "/api/exercises", mapOf("id" to "cpu_throttle")).status).isEqualTo(201)
+  }
+
+  @Test
+  fun `away from load 1 an id tuned for the base load is a 409`() {
+    val base = server()
+    val baseLoad = ScenarioCatalog.all.first { it.baseLoad }.id
+    post(base, "/api/load", mapOf("multiplier" to 1.5))
+
+    val refused = post(base, "/api/exercises", mapOf("id" to baseLoad))
+    assertThat(refused.status).isEqualTo(409)
+    assertThat(refused.json["error"].asText()).isEqualTo("load_not_one")
     assertThat(store().load().active).isNull()
   }
 
@@ -355,10 +399,10 @@ class LabApiTest {
     assertThat(post(base, "/api/exercise/hint").json["error"].asText()).isEqualTo("no_hints_left")
     assertThat(post(base, "/api/exercise/answer", choices("arch", "api_db", "pool", "pool_exhausted")).json["error"].asText()).isEqualTo("wrong_mode")
 
-    clock = START + 20
-    val early = post(base, "/api/ramp/answer", rampAnswer(200, 205, "pool"))
+    clock = START + 3 * EVERY + 20
+    val early = post(base, "/api/ramp/answer", rampAnswer(0, 100, "none"))
     assertThat(early.json["error"].asText()).isEqualTo("too_early")
-    assertThat(early.json["seconds_left"].asInt()).isEqualTo(40)
+    assertThat(early.json["seconds_left"].asInt()).isEqualTo(RampPlan.totalSeconds(EVERY) - 3 * EVERY - 20)
 
     clock = START + RampPlan.totalSeconds(EVERY) + 30
     assertThat(post(base, "/api/ramp/answer", rampAnswer(200, 205, "disk")).json["error"].asText()).isEqualTo("unknown_key")
@@ -385,7 +429,7 @@ class LabApiTest {
   fun `a ramp answer with Prometheus down is a 503, and the reveal still shows the hidden limit`() {
     val base = server(FakePrometheus(up = false) { _, _ -> 1.0 })
     post(base, "/api/ramp", mapOf("every" to EVERY))
-    clock = START + 3 * EVERY
+    clock = START + RampPlan.totalSeconds(EVERY)
 
     val down = post(base, "/api/ramp/answer", rampAnswer(100, 100, "cpu"))
     assertThat(down.status).isEqualTo(503)

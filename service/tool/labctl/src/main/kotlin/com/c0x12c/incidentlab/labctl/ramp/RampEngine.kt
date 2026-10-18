@@ -155,7 +155,7 @@ class RampEngine(
     return result(active.n, params, given.stepsRun, readings, answer, RampMath.verdict(answer, readings, RampCatalog.resource(params)))
   }
 
-  /** The finished steps, read from Prometheus, once the first step is over. */
+  /** Every step, read from Prometheus, once the last one is over. The knee and the limit only exist over the whole range, so an early "none" cannot score. */
   fun steps(): Outcome<RampSteps> {
     val active = store.load().active ?: return Refused(Refusal.NoExercise)
     if (active.mode != MODE) return Refused(Refusal.WrongMode(active.mode, active.n))
@@ -163,7 +163,7 @@ class RampEngine(
     val params = params(active)
     val every = params.int("every")
     val stepsRun = RampPlan.stepsRun(params.elapsedSeconds, every)
-    if (stepsRun == 0) return Refused(Refusal.TooEarly(ceil(every - params.elapsedSeconds).toInt()))
+    if (stepsRun < RampPlan.size) return Refused(Refusal.TooEarly(ceil(RampPlan.totalSeconds(every) - params.elapsedSeconds).toInt()))
     val readings = RampMeasure(probe).read(active.started, every, stepsRun) ?: return Refused(Refusal.PrometheusDown)
     return Done(RampSteps(active.n, params, stepsRun, readings))
   }

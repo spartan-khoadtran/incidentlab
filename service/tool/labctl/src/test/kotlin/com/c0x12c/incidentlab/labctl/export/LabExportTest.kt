@@ -5,6 +5,7 @@ import assertk.assertions.containsOnly
 import assertk.assertions.isEmpty
 import assertk.assertions.isEqualTo
 import assertk.assertions.isNotNull
+import assertk.assertions.isNull
 import com.c0x12c.incidentlab.labctl.LabJson
 import com.c0x12c.incidentlab.labctl.Main
 import com.c0x12c.incidentlab.labctl.guide.GuideIndex
@@ -98,6 +99,23 @@ class LabExportTest {
   }
 
   @Test
+  fun `the committed site data matches a fresh export byte for byte`() {
+    val (fresh, _) = export()
+    val committed = Files.readString(COMMITTED)
+    val stale = if (fresh == committed) {
+      null
+    } else {
+      val a = committed.lines()
+      val b = fresh.lines()
+      val line = (0 until maxOf(a.size, b.size)).first { a.getOrNull(it) != b.getOrNull(it) }
+      "site/src/data/lab.json differs from a fresh export at line ${line + 1}: " +
+        "committed '${a.getOrNull(line) ?: "(end of file)"}', fresh '${b.getOrNull(line) ?: "(end of file)"}'. " +
+        "Run `cd site && npm run export:lab` and commit the result."
+    }
+    assertThat(stale).isNull()
+  }
+
+  @Test
   fun `export without a path prints the usage`() {
     assertThat(Main.run(listOf("export"))).isEqualTo(2)
   }
@@ -110,5 +128,6 @@ class LabExportTest {
 
   private companion object {
     val NOTE = Regex("""\s*\([^)]*\)$""")
+    val COMMITTED: Path = Path.of("../../..", "site/src/data/lab.json")
   }
 }

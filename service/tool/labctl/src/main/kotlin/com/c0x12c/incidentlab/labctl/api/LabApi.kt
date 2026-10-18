@@ -15,6 +15,8 @@ import com.c0x12c.incidentlab.labctl.ramp.RampEngine
 import com.c0x12c.incidentlab.labctl.ramp.RampPlan
 import com.c0x12c.incidentlab.labctl.scenario.Answers
 import com.c0x12c.incidentlab.labctl.state.Choices
+import java.net.InetAddress
+import java.net.InetSocketAddress
 
 data class NewRequest(
   val mode: String? = null,
@@ -135,7 +137,8 @@ class LabApi(
     }
   )
 
-  fun start(port: Int): ApiServer = ApiServer(routes, port)
+  fun start(port: Int, loopbackOnly: Boolean = true): ApiServer =
+    ApiServer(routes, if (loopbackOnly) InetSocketAddress(InetAddress.getLoopbackAddress(), port) else InetSocketAddress(port))
 
   private fun newOptions(request: NewRequest): NewOptions {
     val mode = request.mode ?: ExerciseEngine.INCIDENT
@@ -163,9 +166,14 @@ class LabApi(
       is Refusal.UnknownId -> badRequest("unknown_id", "No exercise '${refusal.id}'. The catalog lists the ids.")
       is Refusal.NoCli -> badRequest("no_cli", "'${refusal.id}' has no CLI proof yet, so it cannot run in toolbox mode.")
       Refusal.NoMatch -> badRequest("no_match", "No exercise matches this level and topic.")
+      is Refusal.Unsupported -> conflict(
+        "unsupported",
+        "${refusal.id?.let { "'$it' needs" } ?: "Every exercise that matches needs"} container settings the lab's controller cannot apply here (${refusal.missing.joinToString()}).",
+        mapOf("missing" to refusal.missing.sorted())
+      )
       is Refusal.UnknownKey -> badRequest("unknown_key", "'${refusal.key}' is not a ${refusal.question} key. The options endpoint lists them.")
-      is Refusal.LoadNotOne -> conflict("load_not_one", "Background load is ${Format.plain(refusal.multiplier)} x. Set it back to 1 first: the ramp steps start from the default load.")
-      is Refusal.TooEarly -> conflict("too_early", "The first step is not over yet: ${refusal.secondsLeft} s to go.", mapOf("seconds_left" to refusal.secondsLeft))
+      is Refusal.LoadNotOne -> conflict("load_not_one", "Background load is ${Format.plain(refusal.multiplier)} x. This exercise is tuned for the default load: set the load back to 1 first.")
+      is Refusal.TooEarly -> conflict("too_early", "The ramp is not over yet: ${refusal.secondsLeft} s to go. Answer after the last step.", mapOf("seconds_left" to refusal.secondsLeft))
       Refusal.PrometheusDown -> ApiError(UNAVAILABLE, "prometheus_down", "Prometheus did not answer. Check that the lab is up, then try again.")
       is Refusal.StillRunning -> ApiError(TOO_EARLY, "still_running", "The bench is still running: ${refusal.secondsLeft} s left.", mapOf("seconds_left" to refusal.secondsLeft))
       Refusal.UnknownSession -> ApiError(NOT_FOUND, "no_session", "This quiz is over or has expired. Start a new one.")

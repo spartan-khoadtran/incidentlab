@@ -74,7 +74,7 @@ class RampExercise(
     terminal.out()
     terminal.out(Exercises.LINKS)
     terminal.out()
-    terminal.out("Commands: make status (the current step) · make answer (after the last step; earlier, it scores the steps that ran) · make clear (stop the ramp)")
+    terminal.out("Commands: make status (the current step) · make answer (after the last step) · make clear (stop the ramp)")
     return 0
   }
 
@@ -85,7 +85,7 @@ class RampExercise(
     }
     terminal.out("Three questions. Ctrl-C quits without scoring. Rates are in rps.")
     terminal.out()
-    val knee = askRate("1) At which offered rate did the service saturate (the knee)? Type 0 if it did not within ${RampPlan.rps(steps.stepsRun - 1)} rps. ") ?: return inputClosed()
+    val knee = askRate("1) At which offered rate did the service saturate (the knee)? Type 0 if it did not within ${RampPlan.rates.last()} rps. ") ?: return inputClosed()
     val max = askRate("2) What was the highest successful throughput? ") ?: return inputClosed()
     val resource = choose("3) Which resource limited it?", RampCatalog.RESOURCES) ?: return inputClosed()
     val result = when (val outcome = engine.submit(steps, RampAnswer(knee, max, resource))) {
@@ -145,7 +145,7 @@ class RampExercise(
         0
       }
       is Refusal.TooEarly -> {
-        terminal.out("The first step (${RampPlan.rps(0)} rps) is not over yet: ${refusal.secondsLeft} s to go. Answer after at least one step.")
+        terminal.out("The ramp is not over yet: ${refusal.secondsLeft} s to go. Answer after the last step (${RampPlan.rates.last()} rps).")
         1
       }
       Refusal.PrometheusDown -> {

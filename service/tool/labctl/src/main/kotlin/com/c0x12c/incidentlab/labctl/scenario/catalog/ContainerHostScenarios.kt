@@ -60,12 +60,13 @@ internal object ContainerHostScenarios {
       "sum(rate(node_cpu_seconds_total{mode!=\"idle\"}[1m])) / count(node_cpu_seconds_total{mode=\"idle\"})"
     ),
     cli = listOf(
-      "cat $(cg $(pid api))/cpu.max   # quota and period in microseconds: 8000 100000 is 0.08 cores",
+      "cat $(cg $(pid api))/cpu.max   # quota and period in microseconds: 12000 100000 is 0.12 cores",
       "grep -E 'nr_periods|nr_throttled' $(cg $(pid api))/cpu.stat; sleep 10; grep -E 'nr_periods|nr_throttled' $(cg $(pid api))/cpu.stat   # nr_throttled grows with nr_periods",
-      "pidstat -p $(pid api) 1 5   # %CPU sits at the quota, under 10% of one core",
+      "pidstat -p $(pid api) 1 5   # %CPU stays under 15% of one core, yet every route is slow",
       "mpstat 1 5   # %idle stays high: the VM has CPU to spare"
     ),
-    doc = "USE at many layers > One layer hides another"
+    doc = "USE at many layers > One layer hides another",
+    baseLoad = true
   )
 
   private fun oom() = Scenario(
@@ -245,12 +246,13 @@ internal object ContainerHostScenarios {
       "rate(cgroup_cpu_throttled_periods_total{job=\"api\"}[1m]) / rate(cgroup_cpu_periods_total{job=\"api\"}[1m])",
       "histogram_quantile(0.99, sum by (le, route) (rate(http_server_duration_seconds_bucket{job=\"api\"}[1m])))"
     ),
-    doc = "CPU shares and quotas > CPU credits on burstable instances"
+    doc = "CPU shares and quotas > CPU credits on burstable instances",
+    baseLoad = true
   )
 
-  // api averages about 0.06 cores at 50 rps, so only a limit this low runs out inside single 100 ms periods.
-  private const val MIN_THROTTLE_CPUS = 0.07
-  private const val MAX_THROTTLE_CPUS = 0.1
+  // Measured with the profiler: 0.10 cores used 73% of the quota (45% of periods throttled), 0.14 used 53% (16%). Below 0.09 the quota saturates.
+  private const val MIN_THROTTLE_CPUS = 0.1
+  private const val MAX_THROTTLE_CPUS = 0.14
   private const val CFS_PERIOD_MS = 100
 
   // api idles at 450 to 500 of its 768 MB, so at 50 requests/s this leak fills the rest in 35 to 50 s.

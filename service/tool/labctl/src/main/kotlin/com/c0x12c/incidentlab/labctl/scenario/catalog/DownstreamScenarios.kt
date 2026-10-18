@@ -318,7 +318,7 @@ internal object DownstreamScenarios {
       location = setOf("pricing"),
       signal = setOf("api_vs_downstream"),
       cause = "downstream_slow",
-      partial = setOf("downstream_errors")
+      partial = setOf("downstream_errors", "client_timeout")
     ),
     explain = { p ->
       val base = p.int("base")

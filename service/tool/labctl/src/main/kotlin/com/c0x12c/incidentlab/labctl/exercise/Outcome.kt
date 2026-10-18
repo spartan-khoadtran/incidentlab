@@ -30,12 +30,18 @@ sealed interface Refusal {
   /** No scenario matches the level and topic. */
   data object NoMatch : Refusal
 
+  /**
+   * The controller cannot apply container settings the scenario needs. [id] is null when every
+   * scenario that matched was left out, so a random pick names no scenario.
+   */
+  data class Unsupported(val id: String?, val missing: Set<String>) : Refusal
+
   data class UnknownKey(val question: String, val key: String) : Refusal
 
-  /** The ramp's steps assume the default load. */
+  /** The ramp's steps, and the draws of a `baseLoad` scenario, assume the default load. */
   data class LoadNotOne(val multiplier: Double) : Refusal
 
-  /** The ramp's first step has not ended. */
+  /** The ramp's last step has not ended. */
   data class TooEarly(val secondsLeft: Int) : Refusal
 
   data object PrometheusDown : Refusal
