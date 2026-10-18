@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { findLeaks, forbiddenStrings, readAnswers } from "../scripts/lib/spoilers.ts";
+import { findLeaks, forbiddenStrings, guideChunkPattern, pointerLeaks, readAnswers, scenarioPointers } from "../scripts/lib/spoilers.ts";
 import { ANSWERS_KT, ROOT, SITE, repoFile, siteFile } from "./paths.ts";
 
 const lab = JSON.parse(siteFile("src/data/lab.json")) as { scenarios: Record<string, unknown>[] };
@@ -13,18 +13,13 @@ const docsText = readdirSync(join(ROOT, "docs"))
 const forbidden = forbiddenStrings(repoFile(ANSWERS_KT), ids, docsText);
 
 const CATALOG = "service/tool/labctl/src/main/kotlin/com/c0x12c/incidentlab/labctl/scenario/catalog";
-const scenarioDocs = readdirSync(join(ROOT, CATALOG))
-  .filter((f) => f.endsWith(".kt"))
-  .flatMap((f) => [...repoFile(`${CATALOG}/${f}`).matchAll(/^\s+doc = "([^"]+)"/gm)].map((m) => m[1]));
-const NOTE = /\s*\([^)]*\)$/;
-/** The pointer as the CLI prints it, and each part with its note. */
-const withNotes = [...new Set(scenarioDocs.flatMap((d) => [d, ...d.split("; ")]).filter((p) => NOTE.test(p) || p.includes("; ")))];
-/**
- * Each part without its note. The guide prints the same `Section > Subsection` line under every
- * heading, and a bare section title is a guide nav entry, so in the bundle those two are public.
- */
-const plainParts = [...new Set(scenarioDocs.flatMap((d) => d.split("; ").map((p) => p.replace(NOTE, "").trim())))];
-const guideChunk = new RegExp(`/assets/(${readdirSync(join(ROOT, "docs")).filter((f) => f.endsWith(".md")).map((f) => f.replace(/\.md$/, "")).join("|")})-[\\w-]+\\.js$`);
+const pointers = scenarioPointers(
+  readdirSync(join(ROOT, CATALOG))
+    .filter((f) => f.endsWith(".kt"))
+    .map((f) => repoFile(`${CATALOG}/${f}`)),
+);
+const { docs: scenarioDocs, withNotes, plainParts } = pointers;
+const guideChunk = guideChunkPattern(readdirSync(join(ROOT, "docs")).filter((f) => f.endsWith(".md")).map((f) => f.replace(/\.md$/, "")));
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -80,12 +75,7 @@ describe("no spoilers", () => {
   it.runIf(existsSync(join(SITE, "dist")))("keeps every scenario's guide pointer out of the built bundle", () => {
     const leaks = files(join(SITE, "dist"))
       .filter((f) => /\.(js|html|css|json)$/.test(f))
-      .flatMap((f) => {
-        const text = readFileSync(f, "utf8");
-        const subsectionParts = plainParts.filter((p) => p.includes(" > "));
-        const pointers = guideChunk.test(f) ? withNotes : [...withNotes, ...subsectionParts];
-        return pointers.filter((p) => text.includes(p)).map((p) => `${f}: ${p}`);
-      });
+      .flatMap((f) => pointerLeaks(readFileSync(f, "utf8"), guideChunk.test(f), pointers).map((p) => `${f}: ${p}`));
     expect(leaks).toEqual([]);
   });
 

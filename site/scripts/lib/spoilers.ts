@@ -40,3 +40,30 @@ export function findLeaks(text: string, forbidden: string[]): string[] {
     return text.includes(s);
   });
 }
+
+const NOTE = /\s*\([^)]*\)$/;
+
+/**
+ * The `doc` pointers of the catalog sources. `withNotes` is the pointer as the CLI prints it and
+ * each part with its note. `plainParts` is each part without its note.
+ */
+export function scenarioPointers(catalogSources: string[]): { docs: string[]; withNotes: string[]; plainParts: string[] } {
+  const docs = catalogSources.flatMap((text) => [...text.matchAll(/^\s+doc = "([^"]+)"/gm)].map((m) => m[1]));
+  const withNotes = [...new Set(docs.flatMap((d) => [d, ...d.split("; ")]).filter((p) => NOTE.test(p) || p.includes("; ")))];
+  const plainParts = [...new Set(docs.flatMap((d) => d.split("; ").map((p) => p.replace(NOTE, "").trim())))];
+  return { docs, withNotes, plainParts };
+}
+
+/**
+ * The scenario pointers found in one built file. The guide prints the same `Section > Subsection`
+ * line under every heading, so in a guide chunk only the pointers with a note count.
+ */
+export function pointerLeaks(text: string, guideChunk: boolean, pointers: { withNotes: string[]; plainParts: string[] }): string[] {
+  const subsectionParts = pointers.plainParts.filter((p) => p.includes(" > "));
+  return (guideChunk ? pointers.withNotes : [...pointers.withNotes, ...subsectionParts]).filter((p) => text.includes(p));
+}
+
+/** Matches the chunk Vite builds for one docs file, like `/assets/capacity-AbC123.js`. */
+export function guideChunkPattern(docNames: string[]): RegExp {
+  return new RegExp(`/assets/(${docNames.join("|")})-[\\w-]+\\.js$`);
+}

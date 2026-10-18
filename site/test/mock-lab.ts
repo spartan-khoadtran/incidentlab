@@ -39,17 +39,31 @@ export const MOCK_REVEAL = {
 
 const MOCK_HINTS = ["Mock hint one, broad.", "Mock hint two.", "Mock hint three, specific."];
 
+interface MockActive {
+  n: number;
+  mode: string;
+  level: number | null;
+  started_at: number;
+  hints_used: number;
+  answered: boolean;
+  revealed: boolean;
+  result: unknown;
+}
+
 export class MockLab {
   online = true;
-  active: null | { n: number; mode: string; level: number | null; started_at: number; hints_used: number; answered: boolean; revealed: boolean } = null;
+  active: MockActive | null = null;
   n = 0;
-  history: unknown[] = [];
+  history: { n: number; id: string; title: string; level: number | null; mode: string; score: number | null; hints: number; minutes: number; at: number; missed: string[]; note: string }[] = [];
   load = 1;
   quiz = new Map<string, { kind: string; answer: string }[]>();
-  lastResult: unknown = null;
   plan = { steps: [50, 75, 100, 125, 150, 200, 250, 300], every: 60, total_seconds: 480 };
   endsAt = 0;
   rampNote: string | null = null;
+  /** How long ago a new ramp started. By default it is in its second step. */
+  rampStartedAgo: number | null = null;
+  /** One error to send on the next call to a route such as `POST /bench/report`. */
+  failNext = new Map<string, { status: number; error: string; message: string }>();
 
   view() {
     const a = this.active!;
@@ -66,8 +80,8 @@ export class MockLab {
       hints: MOCK_HINTS.slice(0, a.hints_used),
       answered: a.answered,
       rules: a.mode === "toolbox" ? "Mock rules: no Grafana, prove it from make shell." : null,
-      ...(a.answered || a.revealed ? { reveal: MOCK_REVEAL } : {}),
-      ...(a.answered && this.lastResult ? { result: this.lastResult } : {}),
+      ...((a.answered || a.revealed) && (a.mode === "incident" || a.mode === "toolbox") ? { reveal: MOCK_REVEAL } : {}),
+      ...(a.answered && a.result ? { result: a.result } : {}),
       ...(a.mode === "ramp" ? { plan: this.plan } : {}),
       ...(a.mode === "bench" ? { ends_at: this.endsAt } : {}),
     };
@@ -77,6 +91,17 @@ export class MockLab {
     const err = (status: number, error: string, message: string, extra: Record<string, unknown> = {}) => ({ status, body: { error, message, ...extra } });
     if (method === "POST" && (headers["content-type"] !== "application/json" || headers["x-lab-client"] !== "web")) return err(403, "forbidden", "Forbidden.");
     const route = `${method} ${path.replace(/^\/api/, "")}`;
+    const failure = this.failNext.get(route);
+    if (failure) {
+      this.failNext.delete(route);
+      return err(failure.status, failure.error, failure.message);
+    }
+    const incident = () => {
+      if (!this.active) return err(404, "no_exercise", "No exercise is open.");
+      if (this.active.mode !== "incident" && this.active.mode !== "toolbox") return err(409, "wrong_mode", `The open exercise is a ${this.active.mode}.`);
+      return null;
+    };
+    const fresh = (mode: string, started_at: number, level: number | null = null): MockActive => ({ n: this.n, mode, level, started_at, hints_used: 0, answered: false, revealed: false, result: null });
     switch (true) {
       case route === "GET /health":
         return { status: 200, body: { ok: true } };
@@ -96,22 +121,30 @@ export class MockLab {
       case route === "POST /exercises": {
         if (this.active && !body.force) return err(409, "exercise_open", "An exercise is open. Answer, reveal or clear it first.");
         this.n += 1;
-        this.active = { n: this.n, mode: String(body.mode ?? "incident"), level: (body.level as number) ?? 2, started_at: Date.now() / 1000 - 125, hints_used: 0, answered: false, revealed: false };
+        this.active = fresh(String(body.mode ?? "incident"), Date.now() / 1000 - 125, (body.level as number) ?? 2);
         return { status: 201, body: this.view() };
       }
       case route === "GET /exercise":
         return this.active ? { status: 200, body: this.view() } : err(404, "no_exercise", "No exercise is open.");
-      case route === "POST /exercise/hint":
-        if (!this.active) return err(404, "no_exercise", "No exercise is open.");
-        if (this.active.hints_used >= MOCK_HINTS.length) return err(409, "no_hints_left", "No hint left.");
-        this.active.hints_used += 1;
+      case route === "POST /exercise/hint": {
+        if (this.active && (this.active.mode === "ramp" || this.active.mode === "bench")) return err(409, "no_hints_left", `A ${this.active.mode} has no hints.`);
+        const refused = incident();
+        if (refused) return refused;
+        if (this.active!.answered) return err(409, "already_answered", "This exercise was already submitted.");
+        if (this.active!.hints_used >= MOCK_HINTS.length) return err(409, "no_hints_left", "No hint left.");
+        this.active!.hints_used += 1;
         return { status: 200, body: this.view() };
+      }
       case route === "POST /exercise/answer": {
-        if (!this.active) return err(404, "no_exercise", "No exercise is open.");
-        if (this.active.answered) return err(409, "already_answered", "Already answered.");
         const keys = ["nature", "location", "signal", "cause"] as const;
         const lists = { nature: OPTIONS.natures, location: OPTIONS.locations, signal: OPTIONS.signals, cause: OPTIONS.causes };
-        if (keys.some((k) => !lists[k].some((o) => o.key === body[k]))) return err(400, "bad_answer", "Unknown answer key.");
+        const missing = keys.find((k) => typeof body[k] !== "string");
+        if (missing) return err(400, "missing_field", `The field '${missing}' is needed.`);
+        const unknown = keys.find((k) => !lists[k].some((o) => o.key === body[k]));
+        if (unknown) return err(400, "unknown_key", `'${String(body[unknown])}' is not a ${unknown} key.`);
+        const refused = incident();
+        if (refused) return refused;
+        if (this.active!.answered) return err(409, "already_answered", "This exercise was already submitted.");
         const verdicts = {
           nature: body.nature === "mock_arch" ? "correct" : "wrong",
           location: body.location === "mock_lb" ? "correct" : "wrong",
@@ -119,29 +152,40 @@ export class MockLab {
           cause: body.cause === "mock_queue" ? "correct" : body.cause === "mock_retry" ? "partial" : "wrong",
         };
         const raw = (verdicts.nature === "correct" ? 1 : 0) + (verdicts.location === "correct" ? 1 : 0) + (verdicts.signal === "correct" ? 1 : 0) + (verdicts.cause === "correct" ? 2 : verdicts.cause === "partial" ? 1 : 0);
-        const score = Math.max(0, raw - 0.5 * this.active.hints_used);
-        this.active.answered = true;
+        const active = this.active!;
+        const score = Math.max(0, raw - 0.5 * active.hints_used);
         const missed = keys.filter((k) => verdicts[k] !== "correct");
-        this.history.push({ n: this.active.n, id: MOCK_REVEAL.id, title: MOCK_REVEAL.title, level: 2, mode: this.active.mode, score, hints: this.active.hints_used, minutes: 4.2, at: Date.now() / 1000, missed, note: String(body.note ?? "") });
-        this.lastResult = { n: this.active.n, score, raw, max: 5, hints_used: this.active.hints_used, verdicts, missed, reveal: MOCK_REVEAL };
-        return { status: 200, body: this.lastResult };
+        this.history.push({ n: active.n, id: MOCK_REVEAL.id, title: MOCK_REVEAL.title, level: 2, mode: active.mode, score, hints: active.hints_used, minutes: 4.2, at: Date.now() / 1000, missed, note: String(body.note ?? "") });
+        active.answered = true;
+        active.result = { n: active.n, score, raw, max: 5, hints_used: active.hints_used, verdicts, missed, reveal: MOCK_REVEAL };
+        return { status: 200, body: active.result };
       }
-      case route === "POST /exercise/reveal":
-        if (!this.active) return err(404, "no_exercise", "No exercise is open.");
-        this.active.revealed = true;
+      case route === "POST /exercise/reveal": {
+        const refused = incident();
+        if (refused) return refused;
+        const active = this.active!;
+        if (!active.answered) this.history.push({ n: active.n, id: MOCK_REVEAL.id, title: MOCK_REVEAL.title, level: 2, mode: active.mode, score: null, hints: active.hints_used, minutes: 4.2, at: Date.now() / 1000, missed: [], note: "" });
+        active.answered = true;
+        active.revealed = true;
         return { status: 200, body: MOCK_REVEAL };
+      }
       case route === "POST /exercise/clear":
         this.active = null;
         return { status: 200, body: { cleared: true } };
       case route === "GET /history": {
-        const scored = (this.history as { score: number | null }[]).filter((e) => e.score !== null);
+        const scored = this.history.filter((e) => e.score !== null && (e.mode === "incident" || e.mode === "toolbox"));
+        const ramps = this.history.filter((e) => e.score !== null && e.mode === "ramp");
+        const mean = (list: { score: number | null }[]) => (list.length ? list.reduce((s, e) => s + (e.score ?? 0), 0) / list.length : null);
         return {
           status: 200,
           body: {
             entries: this.history,
-            average: scored.length ? scored.reduce((s, e) => s + (e.score ?? 0), 0) / scored.length : null,
+            average: mean(scored),
+            scored_count: scored.length,
             by_topic: scored.length ? [{ topic: "red", average: 3.5, count: scored.length }] : [],
             most_missed_cause: scored.length ? { ...OPTIONS.causes[2], count: 1 } : null,
+            ramp_average: mean(ramps),
+            ramp_count: ramps.length,
           },
         };
       }
@@ -156,7 +200,7 @@ export class MockLab {
         if (this.load !== 1) return err(409, "load_not_one", "Set the load back to 1 first.");
         this.n += 1;
         const every = Number(body.every ?? 60);
-        this.active = { n: this.n, mode: "ramp", level: null, started_at: Date.now() / 1000 - every - 5, hints_used: 0, answered: false, revealed: false };
+        this.active = fresh("ramp", Date.now() / 1000 - (this.rampStartedAgo ?? every + 5));
         this.plan = { ...this.plan, every, total_seconds: this.plan.steps.length * every };
         return { status: 201, body: this.view() };
       }
@@ -165,12 +209,26 @@ export class MockLab {
       case route === "POST /ramp/answer":
       case route === "POST /ramp/reveal": {
         const answered = route.endsWith("answer");
-        if (answered) this.rampNote = typeof body.note === "string" ? body.note : null;
-        const body2 = {
-          n: this.active?.n ?? 0,
+        const resources = ["mock_pool", "mock_cores"];
+        if (answered) {
+          const missing = ["knee_rps", "max_rps", "resource"].find((k) => body[k] === undefined || body[k] === null);
+          if (missing) return err(400, "missing_field", `The field '${missing}' is needed.`);
+        }
+        if (!this.active) return err(404, "no_exercise", "No exercise is open.");
+        const active = this.active;
+        if (active.mode !== "ramp") return err(409, "wrong_mode", `The open exercise is a ${active.mode}.`);
+        if (answered) {
+          if (active.answered) return err(409, "already_answered", "This ramp was already submitted.");
+          const left = Math.ceil(active.started_at + this.plan.total_seconds - Date.now() / 1000);
+          if (left > 0) return err(409, "too_early", `The last step is not over yet: ${left} s to go.`, { seconds_left: left });
+          if (!resources.includes(String(body.resource))) return err(400, "unknown_key", `'${String(body.resource)}' is not a resource key.`);
+          this.rampNote = typeof body.note === "string" ? body.note : null;
+        }
+        const result = {
+          n: active.n,
           title: "Capacity ramp",
-          score: answered ? 2 : null,
-          max: 3,
+          score: answered ? 4 : null,
+          max: 5,
           steps_run: 2,
           steps_total: 8,
           table: [
@@ -185,19 +243,27 @@ export class MockLab {
           explanation: "Mock ramp explanation.",
           guide: [{ pointer: "Capacity from a ramp test > Finding the knee", file: "capacity.md" }],
         };
-        return { status: 200, body: body2 };
+        if (!active.answered) this.history.push({ n: active.n, id: "ramp", title: result.title, level: null, mode: "ramp", score: result.score, hints: 0, minutes: 8, at: Date.now() / 1000, missed: result.missed, note: this.rampNote ?? "" });
+        active.answered = true;
+        if (answered) active.result = result;
+        return { status: 200, body: result };
       }
       case route === "POST /bench": {
         if (this.active) return err(409, "exercise_open", "An exercise is open.");
         this.n += 1;
-        this.active = { n: this.n, mode: "bench", level: null, started_at: Date.now() / 1000, hints_used: 0, answered: false, revealed: false };
+        this.active = fresh("bench", Date.now() / 1000);
         this.endsAt = Date.now() / 1000 - 1;
         return { status: 201, body: this.view() };
       }
       case route === "GET /bench/report":
       case route === "POST /bench/report": {
         const row = (rate: number, p50: number, p99: number) => ({ rate_rps: rate, p50, p99, error_share: 0 });
-        if (route.startsWith("POST")) this.active = null;
+        if (!this.active) return err(404, "no_exercise", "No exercise is open.");
+        if (this.active.mode !== "bench") return err(409, "wrong_mode", `The open exercise is a ${this.active.mode}.`);
+        if (route.startsWith("POST")) {
+          this.history.push({ n: this.active.n, id: "bench", title: "Closed-loop bench", level: null, mode: "bench", score: null, hints: 0, minutes: 2, at: Date.now() / 1000, missed: [], note: "" });
+          this.active = null;
+        }
         return {
           status: 200,
           body: {

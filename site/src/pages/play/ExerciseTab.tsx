@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Confirm, ErrorNote } from "../../components/LabUi";
 import { api, ApiError, type ActiveView, type Options, type Result, type Reveal } from "../../lib/api";
@@ -23,48 +23,78 @@ export function ExerciseTab() {
   const [choices, setChoices] = useState<Choices | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [hintError, setHintError] = useState<unknown>(null);
   const [confirmReveal, setConfirmReveal] = useState(false);
   const [starting, setStarting] = useState(false);
+  const shown = useRef<number | null>(null);
+  const synced = useRef<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const v = await api.exercise();
+      if (shown.current !== v.n) {
+        setChoices(null);
+        setStarting(false);
+      }
+      shown.current = v.n;
+      setView(v);
+      setReveal(v.reveal ?? null);
+      setResult(v.result && "verdicts" in v.result && v.result.verdicts && "nature" in v.result.verdicts ? (v.result as Result) : null);
+      setError(null);
+      setHintError(null);
+    } catch (e) {
+      if (!(e instanceof ApiError && e.code === "no_exercise")) setError(e);
+      shown.current = null;
+      setView(null);
+      setReveal(null);
+      setResult(null);
+      setChoices(null);
+    } finally {
+      setLoaded(true);
+    }
+  }, []);
 
   useEffect(() => {
     let live = true;
-    api.exercise().then(
-      (v) => {
-        if (!live) return;
-        setView(v);
-        setReveal(v.reveal ?? null);
-        if (v.result && "verdicts" in v.result && v.result.verdicts && "nature" in v.result.verdicts) setResult(v.result as Result);
-        setLoaded(true);
-      },
-      (e) => {
-        if (!live) return;
-        if (!(e instanceof ApiError && e.code === "no_exercise")) setError(e);
-        setView(null);
-        setLoaded(true);
-      },
-    );
+    const id = window.setTimeout(load, 0);
     api.options().then(
       (o) => live && setOptions(o),
       (e) => live && setError(e),
     );
     return () => {
       live = false;
+      window.clearTimeout(id);
     };
-  }, []);
+  }, [load]);
 
-  const act = async (name: string, fn: () => Promise<void>) => {
+  const active = status?.active;
+  const statusKey = status ? (active ? `${active.n}:${active.answered}` : "none") : null;
+  const viewKey = view ? `${view.n}:${view.answered}` : "none";
+
+  useEffect(() => {
+    if (statusKey === null || !loaded || busy !== null || statusKey === synced.current) return;
+    synced.current = statusKey;
+    if (statusKey === viewKey) return;
+    const id = window.setTimeout(load, 0);
+    return () => window.clearTimeout(id);
+  }, [statusKey, viewKey, loaded, busy, load]);
+
+  const act = async (name: string, fn: () => Promise<void>, onError: (e: unknown) => void = setError) => {
     setBusy(name);
     setError(null);
+    setHintError(null);
     try {
       await fn();
     } catch (e) {
-      setError(e);
+      if (e instanceof ApiError && (e.code === "no_exercise" || e.code === "already_answered")) await load();
+      onError(e);
     } finally {
       setBusy(null);
     }
   };
 
   const reset = () => {
+    shown.current = null;
     setView(null);
     setReveal(null);
     setResult(null);
@@ -114,6 +144,7 @@ export function ExerciseTab() {
           onStarted={(v) => {
             reset();
             setStarting(false);
+            shown.current = v.n;
             setView(v);
             void refresh();
           }}
@@ -175,6 +206,7 @@ export function ExerciseTab() {
                 setChoices(c);
                 setResult(r);
                 setReveal(r.reveal);
+                setView({ ...view, answered: true });
                 await refresh();
               })
             }
@@ -184,7 +216,7 @@ export function ExerciseTab() {
         )}
       </div>
       <aside className="play-side">
-        <Hints view={view} busy={busy === "hint"} error={null} onHint={() => act("hint", async () => setView(await api.hint()))} />
+        <Hints view={view} busy={busy === "hint"} error={hintError} onHint={() => act("hint", async () => setView(await api.hint()), setHintError)} />
         <ExplorePanel view={view} status={status} />
         <section className="give-up">
           <button type="button" className="btn btn-quiet" onClick={() => setConfirmReveal(true)}>
@@ -202,6 +234,7 @@ export function ExerciseTab() {
           setConfirmReveal(false);
           void act("reveal", async () => {
             setReveal(await api.reveal());
+            setView({ ...view, answered: true });
             await refresh();
           });
         }}

@@ -15,6 +15,10 @@
   background: var(--paper-raised);
 }
 
+.lab-lost {
+  margin-bottom: 20px;
+}
+
 .lab-offline-title {
   display: flex;
   align-items: center;

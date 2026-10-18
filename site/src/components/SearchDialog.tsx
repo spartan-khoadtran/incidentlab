@@ -21,6 +21,7 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
   const [entries, setEntries] = useState<SearchEntry[]>(PAGES);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  const [failed, setFailed] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -29,7 +30,13 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
     if (open && !el.open) {
       el.showModal();
       input.current?.select();
-      void import("../generated/search.json").then((m) => setEntries([...PAGES, ...(m.default as SearchEntry[])]));
+      import("../generated/search.json").then(
+        (m) => {
+          setFailed(false);
+          setEntries([...PAGES, ...(m.default as SearchEntry[])]);
+        },
+        () => setFailed(true),
+      );
     } else if (!open && el.open) el.close();
   }, [open]);
 
@@ -107,6 +114,14 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
             </li>
           ))}
         </ul>
+        {failed ? (
+          <p className="search-empty" role="alert">
+            The search index did not load, so only the page names show. The site was probably rebuilt.{" "}
+            <button type="button" className="btn btn-quiet" onClick={() => window.location.reload()}>
+              Reload the page
+            </button>
+          </p>
+        ) : null}
         {query && hits.length === 0 ? <p className="search-empty">Nothing matches. Try one word, like a metric name or a make target.</p> : null}
         {!query ? <p className="search-empty">Type a word: a metric, a topic, a scenario title or a make target.</p> : null}
       </div>

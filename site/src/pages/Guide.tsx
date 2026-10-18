@@ -112,6 +112,7 @@ export function Guide() {
   const { hash } = useLocation();
   const doc = slug ? docBySlug(slug) : undefined;
   const [html, setHtml] = useState<{ slug: string; html: string } | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
   const article = useRef<HTMLDivElement>(null);
   const ids = useMemo(() => doc?.headings.filter((h) => h.depth <= 3).map((h) => h.id) ?? [], [doc]);
   const ready = html?.slug === doc?.slug;
@@ -121,7 +122,11 @@ export function Guide() {
     if (!doc) return;
     let live = true;
     const load = loaderFor(doc.slug);
-    if (load) void load().then((m) => live && setHtml(m.default));
+    if (load)
+      load().then(
+        (m) => live && setHtml(m.default),
+        () => live && setFailed(doc.slug),
+      );
     return () => {
       live = false;
     };
@@ -180,6 +185,13 @@ export function Guide() {
         </details>
         {ready && html ? (
           <div ref={article} className="prose html-content" dangerouslySetInnerHTML={{ __html: html.html }} />
+        ) : failed === doc.slug ? (
+          <div className="loading" role="alert">
+            <p>{doc.file} did not load. The site was probably rebuilt since you opened it.</p>
+            <button type="button" className="btn" onClick={() => window.location.reload()}>
+              Reload the page
+            </button>
+          </div>
         ) : (
           <p className="loading" role="status">
             Loading {doc.file}...

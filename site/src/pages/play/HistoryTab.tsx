@@ -23,13 +23,14 @@ export function HistoryTab() {
   if (!history.entries.length) return <p className="muted">No exercise yet. Your scores and notes show up here after the first answer.</p>;
 
   const max = lab.scoring.max_points;
-  const scored = history.entries.filter((e) => e.score !== null);
+  const unscored = history.entries.filter((e) => e.score === null).length;
   return (
     <div className="history">
       <section className="stats-band" aria-label="Summary">
         <Stat value={history.average === null ? "-" : `${history.average.toFixed(2)}`} label={`average score out of ${max}`} />
-        <Stat value={scored.length} label="scored exercises" />
-        <Stat value={history.entries.length - scored.length} label="revealed or not scored" />
+        <Stat value={history.scored_count} label="scored exercises" />
+        {history.ramp_count > 0 ? <Stat value={history.ramp_average === null ? "-" : history.ramp_average.toFixed(2)} label={`ramp average out of ${max}, over ${history.ramp_count} ${history.ramp_count === 1 ? "ramp" : "ramps"}`} /> : null}
+        <Stat value={unscored} label="revealed or not scored" />
       </section>
       <div className="split">
         <section>

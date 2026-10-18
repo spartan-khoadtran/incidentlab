@@ -8,8 +8,22 @@ import { Cmd } from "./Copy";
 
 /** What an interactive page shows instead of its controls while the lab is not running. */
 export function LabGate({ children, what }: { children: ReactNode; what: string }) {
-  const { online } = useLab();
-  if (online === "online") return <>{children}</>;
+  const { online, seen } = useLab();
+  if (online === "online" || seen)
+    return (
+      <>
+        {online === "online" ? null : (
+          <div className="lab-offline lab-lost" role="status">
+            <p className="lab-offline-title">
+              <span className="lab-dot is-off" aria-hidden="true" /> The lab stopped answering
+            </p>
+            <p>Your work on this page is kept. It connects again by itself when the lab answers. If you stopped it, start it again with:</p>
+            <Cmd text="make up" />
+          </div>
+        )}
+        {children}
+      </>
+    );
   if (online === "checking")
     return (
       <p className="lab-wait" role="status">

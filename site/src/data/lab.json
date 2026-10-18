@@ -327,11 +327,11 @@
     "concepts" : 10
   }, {
     "file" : "profiling.md",
-    "numbers" : 9,
+    "numbers" : 8,
     "concepts" : 16
   }, {
     "file" : "runtime.md",
-    "numbers" : 10,
+    "numbers" : 11,
     "concepts" : 17
   }, {
     "file" : "toolbox.md",

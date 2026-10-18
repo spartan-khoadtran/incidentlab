@@ -14,7 +14,7 @@ interface Done {
 const COUNT_MAX = 300;
 
 function Setup({ onStart, busy }: { onStart: (count: number, kind: Kind) => void; busy: boolean }) {
-  const [count, setCount] = useState(20);
+  const [count, setCount] = useState(lab.defaults.quiz_questions);
   const [kind, setKind] = useState<Kind>("all");
   return (
     <form

@@ -182,12 +182,6 @@ function RampRunning({ view, onDone }: { view: ActiveView; onDone: () => void })
     };
   }, []);
 
-  if (result) return <RampResultView result={result} onDone={onDone} />;
-
-  const steps = plan?.steps ?? lab.defaults.ramp_rates;
-  const step = plan ? Math.min(Math.floor(elapsed / plan.every), steps.length) : null;
-  const finished = plan ? elapsed >= plan.total_seconds : false;
-
   const run = async (fn: () => Promise<RampResult>) => {
     setBusy(true);
     setError(null);
@@ -199,6 +193,24 @@ function RampRunning({ view, onDone }: { view: ActiveView; onDone: () => void })
       setBusy(false);
     }
   };
+
+  if (result) return <RampResultView result={result} onDone={onDone} />;
+
+  if (view.answered) {
+    return (
+      <div>
+        <p className="small muted">This ramp already has its answer or its result, maybe from the terminal.</p>
+        <button type="button" className="btn btn-primary" disabled={busy} onClick={() => run(() => api.rampReveal())}>
+          {busy ? "Reading Prometheus..." : "Show the result"}
+        </button>
+        <ErrorNote error={error} />
+      </div>
+    );
+  }
+
+  const steps = plan?.steps ?? lab.defaults.ramp_rates;
+  const step = plan ? Math.min(Math.floor(elapsed / plan.every), steps.length) : null;
+  const finished = plan ? elapsed >= plan.total_seconds : false;
 
   return (
     <div>
@@ -217,50 +229,52 @@ function RampRunning({ view, onDone }: { view: ActiveView; onDone: () => void })
           "The ramp is over. Read the charts, then answer."
         ) : (
           <>
-            Step {Math.min((step ?? 0) + 1, steps.length)} of {steps.length}, next in <Countdown seconds={plan.every - (elapsed % plan.every)} />. You can answer after the first step. The score reads what Prometheus recorded.
+            Step {Math.min((step ?? 0) + 1, steps.length)} of {steps.length}, next in <Countdown seconds={plan.every - (elapsed % plan.every)} />. You answer after the last step. The score reads what Prometheus recorded.
           </>
         )}
       </p>
-      <form
-        className="ramp-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const k = parseNumber(knee);
-          const m = parseNumber(max);
-          if (k === null || m === null || !resource) {
-            setError(new Error("Give two numbers in rps (0 for no knee) and pick a resource."));
-            return;
-          }
-          void run(() => api.rampAnswer({ knee_rps: k, max_rps: m, resource, ...(note.trim() ? { note: note.trim() } : {}) }));
-        }}
-      >
-        <label className="field">
-          <span>Knee (rps, 0 for none)</span>
-          <input inputMode="decimal" value={knee} onChange={(e) => setKnee(e.target.value)} />
-        </label>
-        <label className="field">
-          <span>Highest throughput (rps)</span>
-          <input inputMode="decimal" value={max} onChange={(e) => setMax(e.target.value)} />
-        </label>
-        <label className="field">
-          <span>Resource that filled first</span>
-          <select value={resource} onChange={(e) => setResource(e.target.value)}>
-            <option value="">Pick one</option>
-            {resources.map((r) => (
-              <option key={r.key} value={r.key}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field ramp-note">
-          <span>One line about how you read the knee (optional, kept in your history)</span>
-          <input value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="The panel or the number that showed it" />
-        </label>
-        <button type="submit" className="btn btn-primary" disabled={busy}>
-          {busy ? "Reading Prometheus..." : "Submit"}
-        </button>
-      </form>
+      {!plan || finished ? (
+        <form
+          className="ramp-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const k = parseNumber(knee);
+            const m = parseNumber(max);
+            if (k === null || m === null || !resource) {
+              setError(new Error("Give two numbers in rps (0 for no knee) and pick a resource."));
+              return;
+            }
+            void run(() => api.rampAnswer({ knee_rps: k, max_rps: m, resource, ...(note.trim() ? { note: note.trim() } : {}) }));
+          }}
+        >
+          <label className="field">
+            <span>Knee (rps, 0 for none)</span>
+            <input inputMode="decimal" value={knee} onChange={(e) => setKnee(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Highest throughput (rps)</span>
+            <input inputMode="decimal" value={max} onChange={(e) => setMax(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Resource that filled first</span>
+            <select value={resource} onChange={(e) => setResource(e.target.value)}>
+              <option value="">Pick one</option>
+              {resources.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field ramp-note">
+            <span>One line about how you read the knee (optional, kept in your history)</span>
+            <input value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="The panel or the number that showed it" />
+          </label>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? "Reading Prometheus..." : "Submit"}
+          </button>
+        </form>
+      ) : null}
       <button type="button" className="btn btn-quiet" onClick={() => setConfirm(true)}>
         Show the result without a score
       </button>
@@ -324,20 +338,31 @@ function BenchTable({ report }: { report: BenchReport }) {
   );
 }
 
-function BenchRunning({ view, onDone }: { view: ActiveView; onDone: () => void }) {
+const RETRY_MAX_MS = 30_000;
+
+function BenchRunning({ view, onClosed }: { view: ActiveView; onClosed: () => void }) {
   const [report, setReport] = useState<BenchReport | null>(null);
   const [left, setLeft] = useState<number | null>(() => (view.ends_at ? Math.max(0, view.ends_at - Date.now() / 1000) : null));
   const [error, setError] = useState<unknown>(null);
+  const [failures, setFailures] = useState(0);
   const [busy, setBusy] = useState(false);
 
   const poll = useCallback(async () => {
     try {
       setReport(await api.benchReport());
+      setError(null);
     } catch (e) {
-      if (e instanceof ApiError && e.code === "still_running") setLeft(Math.max(1, Number(e.body.seconds_left ?? 0)));
-      else setError(e);
+      if (e instanceof ApiError && e.code === "still_running") {
+        setError(null);
+        setLeft(Math.max(1, Number(e.body.seconds_left ?? 0)));
+      } else if (e instanceof ApiError && (e.code === "no_exercise" || e.code === "wrong_mode")) {
+        onClosed();
+      } else {
+        setError(e);
+        setFailures((f) => f + 1);
+      }
     }
-  }, []);
+  }, [onClosed]);
 
   useEffect(() => {
     if (report) return;
@@ -351,6 +376,26 @@ function BenchRunning({ view, onDone }: { view: ActiveView; onDone: () => void }
     return () => window.clearTimeout(id);
   }, [left, report, poll]);
 
+  useEffect(() => {
+    if (report || failures === 0) return;
+    const id = window.setTimeout(poll, Math.min(RETRY_MAX_MS, 2_000 * 2 ** (failures - 1)));
+    return () => window.clearTimeout(id);
+  }, [failures, report, poll]);
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.benchClose();
+      onClosed();
+    } catch (e) {
+      if (e instanceof ApiError && (e.code === "no_exercise" || e.code === "wrong_mode")) onClosed();
+      else setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!report) {
     return (
       <div>
@@ -359,11 +404,18 @@ function BenchRunning({ view, onDone }: { view: ActiveView; onDone: () => void }
             <>
               Closed-loop clients running. Report in <Countdown seconds={left} />.
             </>
+          ) : error ? (
+            "The report did not load. The page tries again by itself."
           ) : (
             "Reading the report..."
           )}
         </p>
         <ErrorNote error={error} />
+        {error ? (
+          <button type="button" className="btn" onClick={() => void poll()}>
+            Try again now
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -375,22 +427,8 @@ function BenchRunning({ view, onDone }: { view: ActiveView; onDone: () => void }
       <BenchTable report={report} />
       <p className="explanation">{report.explanation}</p>
       <GuideLinks refs={report.guide} />
-      <button
-        type="button"
-        className="btn btn-primary"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          try {
-            await api.benchClose();
-          } catch (e) {
-            setError(e);
-          }
-          setBusy(false);
-          onDone();
-        }}
-      >
-        Save to history and go back
+      <button type="button" className="btn btn-primary" disabled={busy} onClick={save}>
+        {busy ? "Saving..." : error ? "Try to save again" : "Save to history and go back"}
       </button>
       <ErrorNote error={error} />
     </div>
@@ -493,6 +531,11 @@ export function CapacityTab() {
     await refresh();
   };
 
+  const closed = useCallback(() => {
+    setView(null);
+    void refresh();
+  }, [refresh]);
+
   return (
     <div className="capacity">
       <LoadControl />
@@ -514,7 +557,7 @@ export function CapacityTab() {
           <h2 id="bench-run-title" className="panel-title">
             Bench
           </h2>
-          <BenchRunning view={view} onDone={done} />
+          <BenchRunning view={view} onClosed={closed} />
         </section>
       ) : (
         <StartCapacity

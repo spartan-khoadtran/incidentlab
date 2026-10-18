@@ -97,11 +97,15 @@ export interface HistoryEntry {
   note: string;
 }
 
+/** `average`, `scored_count`, `by_topic` and `most_missed_cause` count scored incident and toolbox entries only. */
 export interface History {
   entries: HistoryEntry[];
   average: number | null;
+  scored_count: number;
   by_topic: { topic: string; average: number; count: number }[];
   most_missed_cause: (Option & { count: number }) | null;
+  ramp_average: number | null;
+  ramp_count: number;
 }
 
 export interface Answer {
