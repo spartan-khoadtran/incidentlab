@@ -148,7 +148,7 @@ internal object DiskNumbers {
     return NumericQuestion(
       "max_wal_size is $maxWal MB and checkpoint_completion_target is ${shown(target)}. About how many MB of WAL since the last checkpoint start a requested checkpoint?",
       answer, Tolerance.Relative(0.05), "MB",
-      "About max_wal_size / (1 + target) = $maxWal / ${shown(1 + target)} = ${shown(answer)} MB. Postgres rounds it down to whole 16 MB segments.",
+      "About max_wal_size / (1 + target) = $maxWal / ${shown(1 + target)} = ${shown(answer)} MB. Postgres counts whole 16 MB segments, so the real point can be a segment or two lower.",
       "Postgres and the disk > Checkpoints"
     )
   }

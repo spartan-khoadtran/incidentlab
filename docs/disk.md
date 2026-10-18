@@ -77,7 +77,7 @@ When another process fills the same disk with writes and fsyncs, the WAL flush w
 
 A checkpoint writes every dirty page in shared buffers to the table files, flushes them, and writes a checkpoint record to the WAL. After a crash, recovery starts from the last checkpoint.
 
-A checkpoint starts when `checkpoint_timeout` passes, or when the WAL is about to pass `max_wal_size`, whichever comes first. `pg_stat_bgwriter` counts the first kind as `checkpoints_timed` and the second as `checkpoints_req` (requested). Postgres starts the requested kind when the WAL since the last checkpoint reaches about `max_wal_size / (1 + checkpoint_completion_target)`, rounded down to whole 16 MB WAL segments.
+A checkpoint starts when `checkpoint_timeout` passes, or when the WAL is about to pass `max_wal_size`, whichever comes first. `pg_stat_bgwriter` counts the first kind as `checkpoints_timed` and the second as `checkpoints_req` (requested). Postgres requests one when the WAL since the last checkpoint reaches about `max_wal_size / (1 + checkpoint_completion_target)`. It counts in whole 16 MB WAL segments, so the real point can be one or two segments lower. With the default 1 GB that hardly matters. With 64 MB it does.
 
 | Setting | Default | Allowed | Lower value means |
 |---|---|---|---|
