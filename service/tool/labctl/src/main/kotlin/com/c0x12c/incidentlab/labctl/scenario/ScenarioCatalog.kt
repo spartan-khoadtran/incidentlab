@@ -6,6 +6,7 @@ import com.c0x12c.incidentlab.labctl.scenario.catalog.ContainerHostScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.DatabaseScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.DownstreamScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.EdgeScenarios
+import com.c0x12c.incidentlab.labctl.scenario.catalog.JvmScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.LoadScenarios
 
 /**
@@ -18,7 +19,8 @@ import com.c0x12c.incidentlab.labctl.scenario.catalog.LoadScenarios
 object ScenarioCatalog {
 
   val all: List<Scenario> =
-    LoadScenarios.all + EdgeScenarios.all + AppScenarios.all + DatabaseScenarios.all + DownstreamScenarios.all + AsyncScenarios.all + ContainerHostScenarios.all
+    LoadScenarios.all + EdgeScenarios.all + AppScenarios.all + DatabaseScenarios.all + DownstreamScenarios.all + AsyncScenarios.all + ContainerHostScenarios.all +
+      JvmScenarios.all
 
   val byId: Map<String, Scenario> = all.associateBy { it.id }
 }

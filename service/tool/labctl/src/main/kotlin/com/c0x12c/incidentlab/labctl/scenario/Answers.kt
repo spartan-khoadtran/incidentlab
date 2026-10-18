@@ -41,7 +41,10 @@ object Answers {
     "memory_restarts" to "Container memory against its limit (sawtooth) and the restart count",
     "host_cpu" to "Host CPU and load, split by container",
     "consumer_lag" to "Produce rate against consume rate, processing time, lag over time",
-    "lag_per_partition" to "Lag and retries per partition"
+    "lag_per_partition" to "Lag and retries per partition",
+    "jvm_gc" to "GC pause rate and pause p99 against live data after GC and heap max",
+    "vthread_pinned" to "Pinned virtual-thread events per second against in-flight requests, with CPU low",
+    "user_vs_sys" to "Process CPU split into user and system time: system time rises with syscalls"
   )
 
   /** Causes by layer, outermost first. The prompt prints one header per layer. */
@@ -63,7 +66,10 @@ object Answers {
       "n_plus_one" to "N+1 queries: each request sends far too many queries",
       "cache_miss" to "Cache misses rose, load shifted to the DB",
       "gc_pause" to "Long GC pauses stop the JVM",
-      "memory_leak" to "Memory grows without limit (a leak) and will hit the limit"
+      "memory_leak" to "Memory grows without limit (a leak) and will hit the limit",
+      "thread_pool_exhausted" to "A thread pool is full: requests wait for a free worker thread",
+      "vthread_pinning" to "Virtual threads pinned to their carriers: synchronized around blocking work caps concurrency at the CPU count",
+      "sync_logging" to "Verbose synchronous logging: every line is a write syscall under one lock"
     ),
     "DB client and Postgres" to listOf(
       "pool_exhausted" to "Connection pool exhausted: hold time too long, or the pool too small",
@@ -99,7 +105,7 @@ object Answers {
   val CAUSE_GROUPS: Map<String, String> = CAUSES_BY_LAYER.flatMap { (group, causes) -> causes.map { it.first to group } }.toMap()
 
   /** Causes no scenario has. They keep the cause list from being a copy of the catalog. */
-  val DISTRACTORS: Set<String> = setOf("gc_pause", "missing_index", "packet_loss", "disk_full")
+  val DISTRACTORS: Set<String> = setOf("thread_pool_exhausted", "missing_index", "packet_loss", "disk_full")
 
   val DECOYS: List<String> = listOf(
     "Deploy worker v1.8: logging library update",
