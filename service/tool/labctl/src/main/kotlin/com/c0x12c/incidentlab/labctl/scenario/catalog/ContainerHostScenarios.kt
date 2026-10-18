@@ -119,10 +119,13 @@ internal object ContainerHostScenarios {
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("leak_kb" to p.int("leak")))) },
     marker = { "Deploy checkout-api v2.35: product page keeps rendered fragments in memory" },
     decoy = 0.5,
-    ticket = { p -> "Since ${p.startedAt}, api's memory has been climbing on the container panel. Nothing fails yet. Is this a problem, and if so, how long do we have?" },
+    ticket = { p ->
+      "Since ${p.startedAt}, api's memory has been climbing on the container panel. Nothing fails yet. " +
+        "Is this a problem, and if so, about how long do we have? A rough number is fine."
+    },
     hints = listOf(
       "Container memory against its limit: is it a step, a sawtooth, or a straight line?",
-      "How many MB per minute does it grow? Read two points 5 minutes apart.",
+      "How many MB per minute does it grow? Read two points 5 minutes apart, not 1: the JVM's own memory moves a few MB on its own.",
       "Time to the limit = (limit − used) / growth per minute."
     ),
     answer = Answer(nature = setOf("arch"), location = setOf("container", "api"), signal = setOf("memory_restarts"), cause = "memory_leak", partial = setOf("oom")),
@@ -130,7 +133,7 @@ internal object ContainerHostScenarios {
       "Problem statement: memory climbs since a deploy, no errors yet, the question is how long until it breaks.",
       "USE for the container: memory against the $API_LIMIT_MB MB limit rises in a straight line and never drops. No restarts yet.",
       "RED is clean: no errors, normal latency. The problem is in the future, not now.",
-      "Measure the growth: two points a few minutes apart give MB per minute.",
+      "Measure the growth over 5 minutes or more: two points that far apart give MB per minute, and the JVM's own noise averages out.",
       "Predict: (limit − used) / growth gives the minutes until the OOM kill.",
       "The cause: a memory leak from the deploy. Saturation that predicts a certain incident is worth acting on before users see it."
     ),
@@ -139,7 +142,9 @@ internal object ContainerHostScenarios {
       "Each request keeps about ${p.int("leak")} KB for ever. At about $BASE_RPS requests/s that is about ${p.fixed(perMinute, 1)} MB per minute. " +
         "Memory against the $API_LIMIT_MB MB limit climbs in a straight line with no drop, which is how a leak looks before it becomes an outage. " +
         "Time to the OOM kill = (limit − used) / growth. api idles at about $IDLE_RSS_TEXT, so about ${LEAK_HEADROOM_MB.roundToInt()} MB are left: " +
-        "about ${(LEAK_HEADROOM_MB / perMinute).roundToInt()} minutes. " +
+        "about ${(LEAK_HEADROOM_MB / perMinute).roundToInt()} minutes. Your own numbers from the panel beat this estimate. " +
+        "Over a short window the growth reads low or high: right after a restart the JVM is still growing its heap, " +
+        "and the first leaked blocks can reuse memory the process already freed, so RSS lags the leak for a while. Measure over 5 minutes or more. " +
         "This is saturation that predicts a certain incident, the kind worth a page even though no user is affected yet. " +
         "Fix: roll back v2.35, then find what keeps the memory."
     },
@@ -251,8 +256,10 @@ internal object ContainerHostScenarios {
   // api idles at 450 to 500 of its 768 MB, so at 50 requests/s this leak fills the rest in 35 to 50 s.
   internal const val MIN_LEAK_KB = 120
   internal const val MAX_LEAK_KB = 170
-  internal const val MIN_SLOW_LEAK_KB = 2
-  internal const val MAX_SLOW_LEAK_KB = 3
+
+  // 12 to 18 MB per minute: well above the JVM's own drift, and still 15 to 25 minutes to the limit.
+  internal const val MIN_SLOW_LEAK_KB = 4
+  internal const val MAX_SLOW_LEAK_KB = 6
   internal const val API_LIMIT_MB = 768
   internal const val LEAK_HEADROOM_MB = 280.0
   private const val IDLE_RSS_TEXT = "450 to 500 MB"
