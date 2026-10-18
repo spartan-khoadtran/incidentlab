@@ -4,6 +4,7 @@ import assertk.assertThat
 import assertk.assertions.containsOnly
 import assertk.assertions.hasSize
 import assertk.assertions.isBetween
+import assertk.assertions.isCloseTo
 import assertk.assertions.isEmpty
 import assertk.assertions.isEqualTo
 import assertk.assertions.isFalse
@@ -377,9 +378,9 @@ class ScenarioCatalogTest {
       }
     }
     val rtt = ScenarioCatalog.byId.getValue("rtt_amplified")
-    repeat(50) {
+    repeat(200) {
       val params = Params(rtt.params(random, ExerciseContext()), "14:05")
-      assertThat(NetworkScenarios.inUse(params)).isBetween(2.3, 3.4)
+      assertThat(NetworkScenarios.inUse(params)).isBetween(2.0, 3.0)
     }
     val keepalive = ScenarioCatalog.byId.getValue("no_keepalive")
     assertThat(keepalive.faults(Params(mapOf("delay" to 7), "14:05")).services).isEqualTo(mapOf("api" to mapOf<String, Any?>("pricing_keepalive" to false)))
@@ -387,13 +388,16 @@ class ScenarioCatalogTest {
 
   @Test
   fun `the round trip arithmetic of rtt_amplified matches a hand computation`() {
-    val params = Params(mapOf("delay" to 5, "k" to 8), "14:05")
-    // 15/s x (50 + (2.5 x 8 + 3) x 5) ms = 15 x 0.165 s = 2.475 connections
-    assertThat(NetworkScenarios.inUse(params)).isEqualTo(2.475)
+    val params = Params(mapOf("delay" to 5, "k" to 6), "14:05")
+    // a round trip costs 5 + 1.8 = 6.8 ms; 15/s x (50 + (2.5 x 6 + 3) x 6.8) ms = 15 x 0.1724 s = 2.586 connections
+    assertThat(NetworkScenarios.inUse(params)).isCloseTo(2.586, 0.0001)
     val explain = ScenarioCatalog.byId.getValue("rtt_amplified").explain(params)
-    assertThat(explain.contains("23 x 5 ms = 115 ms")).isTrue()
-    assertThat(explain.contains("175 ms for a basket of 4")).isTrue()
-    assertThat(explain.contains("about 2.5 of 4")).isTrue()
+    assertThat(explain.contains("5 + 1.8 = 6.8 ms")).isTrue()
+    assertThat(explain.contains("18 x 6.8 ms = 122 ms")).isTrue()
+    assertThat(explain.contains("184 ms for a basket of 4")).isTrue()
+    assertThat(explain.contains("about 2.6 of 4")).isTrue()
+    // the live draw that filled the pool: 3 ms and 15 repeats give 15 x (50 + 40.5 x 4.8) ms = 3.67 connections
+    assertThat(NetworkScenarios.inUse(Params(mapOf("delay" to 3, "k" to 15), "14:05")) > 3.6).isTrue()
   }
 
   private companion object {
