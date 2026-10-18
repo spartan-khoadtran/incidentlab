@@ -148,7 +148,7 @@ Read the layers top to bottom. Each one is a measuring point that sits inside th
 | Client (browser, mobile app) | A user action, an API call from the app | The whole time: DNS, TCP/TLS, network, server, payload download, render. Network errors and client-side timeouts | What the server does inside |
 | CDN, edge | An HTTP request to the edge | Cache hit/miss, errors from the origin, latency to the origin | Errors before the edge (DNS), render time |
 | Load balancer, API gateway | An HTTP request | Time from the LB until the backend answers. Errors the LB creates itself (502/503/504) | The network between client and LB, what happens inside the app |
-| Service (entry span) | A request the app accepted | Processing time inside the app, errors the app knows about | Time waiting before the app accepted the request, errors at the LB, a latency heatmap |
+| Service (entry span) | A request the app accepted | Processing time inside the app, errors the app knows about | Time waiting before the app accepted the request, errors at the LB |
 | Downstream call, seen from the app | A call to a DB, a cache, another service | The call time, including network and maybe the wait for a connection | Execution time on the other side |
 | Downstream, seen by itself | The query or request the DB or service received | The real execution time | Network, the pool wait on the client side |
 
@@ -334,7 +334,7 @@ When the rate goes up, answer four questions: who causes the load (client, tenan
 
 | Set | Metrics | Relation to RED and USE |
 |---|---|---|
-| Four golden signals (Google SRE) | Latency, traffic, errors, saturation | RED plus the service's saturation. Handy when you want one set per service |
+| Four golden signals | Latency, traffic, errors, saturation | RED plus the service's saturation. Handy when you want one set per service |
 | Core Web Vitals | LCP, INP, CLS | Duration at the client layer, measured as the user experiences a web page |
 | SLI and SLO | The share of "good" requests, for example no error and under 300 ms | Turns R, E and D into a commitment. Error budgets and burn-rate alerts are built on RED |
 

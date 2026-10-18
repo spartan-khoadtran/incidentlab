@@ -49,7 +49,7 @@ internal object FoundationsConcepts {
         "Neither queues under 100% utilization"
       ),
       explanation = "(1 + 1.44) / 2 = 1.22 for B against (1 + 0.01) / 2 = 0.505 for A. CV 0 is M/D/1, half the M/M/1 wait. CV above 1 is worse than M/M/1.",
-      doc = "Statistics for latency > Spread"
+      doc = "Modeling and scaling laws > Queue models"
     ),
     ChoiceQuestion(
       text = "The mean of a product endpoint moved from 10 ms to 18 ms. p50 stayed at 2 ms and p99 stayed at 40 ms. What happened?",

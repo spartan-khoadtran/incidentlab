@@ -150,7 +150,7 @@ internal object ProfilingNumbers {
       answer, Tolerance.Relative(0.02), "%",
       "$rps × ${shown(cpuMs / MILLIS_PER_SECOND)} s = ${shown(cores)} cores of work. Spread over $carriers carriers: ${shown(cores)} / $carriers = ${shown(answer)}%. " +
         "Requests now wait for a free carrier, so p99 rises on every route while the event loop stays idle.",
-      "Profiles in this lab > How the agent is wired"
+      "Virtual threads > Carriers and parallelism"
     )
   }
 

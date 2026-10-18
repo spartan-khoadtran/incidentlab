@@ -120,7 +120,7 @@ class QuizSessions(
   companion object {
     const val NUMBER = "number"
     const val CHOICE = "choice"
-    const val DEFAULT_COUNT = 20
+    const val DEFAULT_COUNT = 50
     const val MAX_COUNT = 300
   }
 }

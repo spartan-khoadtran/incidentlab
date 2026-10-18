@@ -65,8 +65,8 @@ class RuntimeNumbersTest {
 
   @Test
   fun `log volume per minute`() {
-    // 300 lines × 50/s × 100 bytes × 60 / 1048576 = 85.8 MB
-    check(RuntimeNumbers::logVolume) { (lines, rps, bytes) -> lines * rps * bytes * 60 / 1_048_576 }
+    // 300 lines × 50/s × 100 bytes × 60 / 1,000,000 = 90 MB
+    check(RuntimeNumbers::logVolume) { (lines, rps, bytes) -> lines * rps * bytes * 60 / 1_000_000 }
   }
 
   private fun check(generate: (Random) -> NumericQuestion, formula: (List<Double>) -> Double) {

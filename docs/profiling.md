@@ -28,7 +28,7 @@ async-profiler, which the Pyroscope Java agent runs, has three CPU engines:
 
 ### Reading a flame graph
 
-- A flame graph merges all samples into one picture. Each box is a function. A box sits next to the box of the function that called it.
+- A flame graph merges all samples into one picture. Each box is a function. A box sits on top of the box of the function that called it (below it, in Grafana's top-down view).
 - Width is the share of samples where the function was on the stack: its own work plus everything it called.
 - Depth is only the length of the call chain. A deep stack is not a slow stack.
 - The x-axis is not time. Boxes are placed so equal stacks merge. A 10-second spike and a steady cost can look the same.

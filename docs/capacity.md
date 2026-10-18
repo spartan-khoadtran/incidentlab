@@ -33,7 +33,7 @@ U cannot pass 100%, so the highest rate is X max = c / D. For the pool of 4 that
 
 ### Finding the knee
 
-The knee is the load where latency starts to bend up. Past it, a small step in load adds a lot of latency. Throughput still grows a little after the knee, then it flattens at X max.
+The knee is the load where latency bends up sharply. The lab marks it at the first step with p99 above 3 times the first step's, or errors above 1%. Past it, a small step in load adds a lot of latency. Throughput still grows a little after the knee, then it flattens at X max.
 
 How to run a ramp:
 
@@ -52,7 +52,7 @@ How to read the table:
 |---|---|---|---|---|---|
 | 1 | 50 | 50 | 80 ms | 0% | Baseline |
 | 4 | 125 | 125 | 110 ms | 0% | Still flat |
-| 5 | 150 | 149 | 180 ms | 0% | Bending, 2.3x the baseline |
+| 5 | 150 | 149 | 180 ms | 0% | Bending, but still under 3x the baseline |
 | 6 | 200 | 196 | 420 ms | 0.2% | The knee: above 3x the baseline |
 | 7 | 250 | 203 | 1.9 s | 6% | Saturated: achieved is flat |
 
@@ -75,7 +75,7 @@ Fixing the bottleneck moves it. The next resource with the lowest X max becomes 
 |---|---|---|---|
 | DB pool (default 4) | 0.3 × 50 ms | 4 connections | about 267 rps |
 | Kafka worker | 0.3 messages | about 113 messages/s | about 377 rps |
-| api CPU (2 cores) | 0.06 cores at 50 rps = 1.2 ms of CPU | 2 cores | about 1,667 rps |
+| api CPU (2 cores) | 0.073 cores at 50 rps = 1.46 ms of CPU | 2 cores | about 1,370 rps |
 
 Raise the pool and the worker is next at about 377 rps. The worker is async, so its saturation does not show in api p99. It shows as consumer lag, and orders get late while the api looks healthy.
 
@@ -99,7 +99,7 @@ What to watch, step by step:
 | The highest successful throughput | Within 10% of the highest api 2xx rate of any step | 2 |
 | The limiting resource | The hidden one. With no knee, "nothing within the range" is right too | 1 |
 
-You can answer before the last step. Then only the steps that ran count. The step table prints after the score, with the knee marked. If Prometheus does not answer, nothing is asked and nothing is scored.
+You answer after the last step: the knee and the limit only show over the whole range, so an early answer is refused. The step table prints after the score, with the knee marked. If Prometheus does not answer, nothing is asked and nothing is scored.
 
 ## Closed-loop clients in this lab
 

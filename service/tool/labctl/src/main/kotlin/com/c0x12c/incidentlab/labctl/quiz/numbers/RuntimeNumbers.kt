@@ -145,9 +145,9 @@ internal object RuntimeNumbers {
     val perSecond = lines * rps * bytes.toDouble()
     val answer = perSecond * SECONDS_PER_MINUTE / BYTES_PER_MB
     return NumericQuestion(
-      "A service logs $lines lines per request at $rps requests/s. A line is about $bytes bytes. How many MB of log does it write per minute?",
+      "A service logs $lines lines per request at $rps requests/s. A line is about $bytes bytes. How many MB (1 MB = 1,000,000 bytes) of log does it write per minute?",
       answer, Tolerance.Relative(0.03), "MB",
-      "$lines × $rps × $bytes = ${shown(perSecond)} bytes/s. × 60 / 1048576 = ${shown(answer)} MB per minute. Without rotation, that fills a disk.",
+      "$lines × $rps × $bytes = ${shown(perSecond)} bytes/s. × 60 / 1,000,000 = ${shown(answer)} MB per minute. Without rotation, that fills a disk.",
       "System time > Logging costs"
     )
   }
@@ -157,5 +157,5 @@ internal object RuntimeNumbers {
   private const val OLD_SHARE = 2.0 / 3.0
   private const val KB_PER_MB = 1_024.0
   private const val SECONDS_PER_MINUTE = 60
-  private const val BYTES_PER_MB = 1_048_576.0
+  private const val BYTES_PER_MB = 1_000_000.0
 }

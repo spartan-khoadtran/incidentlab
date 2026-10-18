@@ -30,7 +30,7 @@ internal object CapacityConcepts {
       doc = "Capacity from a ramp test > Utilization Law"
     ),
     ChoiceQuestion(
-      text = "In a ramp test, p99 starts to bend up at 150 requests/s, but achieved throughput keeps growing until 200 requests/s. Which number is the capacity to plan with?",
+      text = "In a ramp test, p99 bends up sharply at 150 requests/s (above 3 times the first step), but achieved throughput keeps growing until 200 requests/s. Which number is the capacity to plan with?",
       answer = "150 requests/s, the knee: past it a small step in load adds a lot of latency",
       others = listOf(
         "200 requests/s, the maximum: the service still answers there",

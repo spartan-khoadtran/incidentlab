@@ -73,7 +73,7 @@ Method R and the layer comparison in the guide are the same idea. The guide comp
 | Rate by endpoint | A drop is a symptom too, and a rise needs a size | `sum by (route) (rate(http_server_requests_total{job="api"}[5m]))` |
 | p50 and p99 by endpoint | p99 is the number the ticket will quote | `histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job="api",route="/checkout"}[5m])))` |
 | Error share | To tell 0.2% from 3% | `sum(rate(http_server_requests_total{job="api",status=~"5.."}[5m])) / sum(rate(http_server_requests_total{job="api"}[5m]))` |
-| CPU in cores | api uses about 0.06 cores at 50 rps, so 0.5 cores is a lot | `rate(process_cpu_seconds_total{job="api"}[5m])` |
+| CPU in cores | api uses about 0.07 cores at 50 rps, so 0.5 cores is a lot | `rate(process_cpu_seconds_total{job="api"}[5m])` |
 | Pool in use | About 0.8 of 4 at 15 checkouts/s, so 4 of 4 is saturation | `db_pool_in_use{job="api"}` |
 
 Keep a week of history. Traffic repeats by day and by week, so the right baseline for Monday 9:00 is last Monday 9:00, not the hour before. In PromQL, `offset 1w` draws last week's line on the same chart. In the lab, a healthy run is about 50 rps in total: 15 checkouts/s and 35 products/s.
