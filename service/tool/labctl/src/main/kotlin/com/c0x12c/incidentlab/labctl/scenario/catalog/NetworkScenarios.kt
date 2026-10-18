@@ -75,9 +75,10 @@ internal object NetworkScenarios {
       "histogram_quantile(0.5, sum by (le) (rate(http_client_duration_seconds_bucket{job=\"api\",target=\"pricing\",route=\"/price\"}[1m])))"
     ),
     cli = listOf(
-      "docker compose exec api nstat -az TcpRetransSegs TcpExtTCPTimeouts TcpExtTCPLossProbes",
-      "docker compose exec api ss -tin '( dport = :8001 )'",
-      "docker compose exec api tc -s qdisc show dev eth0"
+      "nsenter -t $(pgrep -f checkout-api) -n nstat -az TcpRetransSegs TcpExtTCPTimeouts TcpExtTCPLossProbes   # run twice 10 s apart: TcpRetransSegs and the timeouts or probes grow",
+      "nsenter -t $(pgrep -f checkout-api) -n ss -tin '( dport = :8001 )'   # retrans:x/y above 0 and rto:200 or more on the sockets to pricing",
+      "curl -s http://api:8000/metrics | grep ^net_tcp_retrans   # net_tcp_retrans_segs_total keeps rising",
+      "nsenter -t $(pgrep -f checkout-api) -n tc -s qdisc show dev eth0   # the netem leaf with loss and its dropped count: the loss is on api's way out"
     ),
     doc = "TCP behaviour you feel in p99 > Retransmits and the minimum RTO"
   )
@@ -141,8 +142,8 @@ internal object NetworkScenarios {
       "histogram_quantile(0.99, sum by (le, op) (rate(db_client_session_seconds_bucket{job=\"api\"}[1m])))"
     ),
     cli = listOf(
-      "docker compose exec api ss -tin '( dport = :5432 )'",
-      "docker compose exec api tc qdisc show dev eth0"
+      "nsenter -t $(pgrep -f checkout-api) -n ss -tin '( dport = :5432 )'   # rtt: a few ms on every connection to Postgres, where the compose network alone is well under 1 ms",
+      "nsenter -t $(pgrep -f checkout-api) -n tc qdisc show dev eth0   # the netem leaf with a delay towards Postgres"
     ),
     doc = "Network math > Round trips add up"
   )
@@ -196,10 +197,11 @@ internal object NetworkScenarios {
       "histogram_quantile(0.5, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"pricing\",route=\"/price\"}[1m])))"
     ),
     cli = listOf(
-      "docker compose exec api ss -s",
-      "docker compose exec api ss -tan state time-wait '( dport = :8001 )'",
-      "docker compose exec api nstat -az TcpActiveOpens",
-      "docker compose exec api tc qdisc show dev eth0"
+      "nsenter -t $(pgrep -f checkout-api) -n ss -s   # timewait near calls/s x 60",
+      "nsenter -t $(pgrep -f checkout-api) -n ss -tan state time-wait '( dport = :8001 )'   # the TIME_WAIT sockets all point at pricing on port 8001",
+      "nsenter -t $(pgrep -f checkout-api) -n nstat -az TcpActiveOpens   # run twice 10 s apart: it grows by about the pricing calls in those 10 s",
+      "curl -s http://api:8000/metrics | grep ^net_tcp_time_wait   # net_tcp_time_wait near calls/s x 60",
+      "nsenter -t $(pgrep -f checkout-api) -n tc qdisc show dev eth0   # the netem leaf with a delay towards pricing: the zone hop"
     ),
     doc = "TCP behaviour you feel in p99 > Connections and TIME_WAIT"
   )
