@@ -6,3 +6,5 @@
 service/.gradle/
 service/.kotlin/
 service/**/build/
+
+.worktrees/
