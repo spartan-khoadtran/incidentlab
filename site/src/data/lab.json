@@ -246,18 +246,6 @@
     "topics" : [ "network", "layers" ],
     "toolbox" : true
   }, {
-    "id" : "wal_fsync_contention",
-    "title" : "A batch job fills the database disk",
-    "level" : 2,
-    "topics" : [ "disk", "use", "layers", "db" ],
-    "toolbox" : true
-  }, {
-    "id" : "checkpoint_bursts",
-    "title" : "Latency spikes every half minute",
-    "level" : 3,
-    "topics" : [ "disk", "db", "use" ],
-    "toolbox" : true
-  }, {
     "id" : "iops_limit",
     "title" : "Database I/O slow on an idle disk",
     "level" : 3,
@@ -388,8 +376,8 @@
     }
   },
   "counts" : {
-    "scenarios" : 47,
-    "toolbox" : 26,
+    "scenarios" : 45,
+    "toolbox" : 24,
     "causes" : 41,
     "signals" : 26,
     "numbers" : 137,

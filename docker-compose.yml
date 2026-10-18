@@ -129,7 +129,7 @@ services:
       - pg_stat_statements.track=all
       - -c
       - max_connections=200
-      # Room for the 128 MB review_stats table that the checkpoint exercise rewrites.
+      # Room for the 128 MB review_stats table that pgobserver's stats writer rewrites.
       - -c
       - shared_buffers=256MB
       - -c

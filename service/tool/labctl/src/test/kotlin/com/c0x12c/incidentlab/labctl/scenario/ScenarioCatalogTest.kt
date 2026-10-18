@@ -198,26 +198,15 @@ class ScenarioCatalogTest {
   }
 
   @Test
-  fun `the disk scenarios drive noisy, pgobserver and the postgres write IOPS`() {
+  fun `the disk scenario caps the postgres write IOPS and the contention causes stay as distractors`() {
     val random = Random(9)
-    val wal = ScenarioCatalog.byId.getValue("wal_fsync_contention")
-    val walSpec = wal.faults(Params(wal.params(random, ExerciseContext()), "14:05"))
-    assertThat(walSpec.services.keys).containsOnly("noisy")
-    assertThat((walSpec.services.getValue("noisy")["fsync_mb_per_s"] as Int)).isBetween(40, 120)
-
-    val bursts = ScenarioCatalog.byId.getValue("checkpoint_bursts")
-    val pg = bursts.faults(Params(bursts.params(random, ExerciseContext()), "14:05")).services.getValue("pgobserver")
-    assertThat(pg["checkpoint_timeout_s"]).isEqualTo(30)
-    assertThat(pg["checkpoint_completion_target"]).isEqualTo(0.1)
-    assertThat(pg.containsKey("max_wal_size_mb")).isFalse()
-    assertThat((pg["stats_rows_per_s"] as Int)).isBetween(2000, 3000)
-
     val iops = ScenarioCatalog.byId.getValue("iops_limit")
     val iopsSpec = iops.faults(Params(iops.params(random, ExerciseContext()), "14:05"))
     assertThat(iopsSpec.services).isEmpty()
     assertThat((iopsSpec.docker.getValue("postgres")["write_iops"] as Int)).isBetween(40, 60)
-    assertThat(iops.answer.partial).containsOnly("disk_io_contention")
-    assertThat("disk_full" in Answers.DISTRACTORS).isTrue()
+    assertThat(iops.answer.partial).isEmpty()
+    assertThat(Answers.DISTRACTORS.containsAll(listOf("disk_full", "disk_io_contention", "checkpoint_bursts"))).isTrue()
+    assertThat(ScenarioCatalog.byId.keys.none { it == "wal_fsync_contention" || it == "checkpoint_bursts" }).isTrue()
   }
 
   @Test
@@ -227,19 +216,6 @@ class ScenarioCatalogTest {
     assertThat(entries.filter { it.contains("pgrep") }).isEmpty()
     val services = entries.flatMap { line -> Regex("""\$\(pid ([a-z]+)\)""").findAll(line).map { it.groupValues[1] }.toList() }.toSet()
     assertThat(services.isNotEmpty() && services.all { it in Services.ENDPOINTS || it == "postgres" }).isTrue()
-  }
-
-  @Test
-  fun `the checkpoint explanation works out the dirty pages and the burst window`() {
-    val scenario = ScenarioCatalog.byId.getValue("checkpoint_bursts")
-    val explain = scenario.explain(Params(mapOf("rows" to 2500), "14:05"))
-
-    // 2500 × 30 = 75000 updates; 16410 × (1 − e^(−75000/16410)) = 16240 pages = 126.9 MB; 30 × 0.1 = 3 s → 42.3 MB/s
-    assertThat(explain.contains("75000 updates")).isTrue()
-    assertThat(explain.contains("16240 pages (126.9 MB)")).isTrue()
-    assertThat(explain.contains("= 3 s (about 42.3 MB/s)")).isTrue()
-    val pgobserver = scenario.faults(Params(mapOf("rows" to 2500), "14:05")).services.getValue("pgobserver")
-    assertThat(pgobserver.keys).containsOnly("checkpoint_timeout_s", "checkpoint_completion_target", "stats_rows_per_s")
   }
 
   @Test

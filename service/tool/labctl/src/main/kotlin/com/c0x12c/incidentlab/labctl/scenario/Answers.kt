@@ -121,7 +121,7 @@ object Answers {
   val CAUSE_GROUPS: Map<String, String> = CAUSES_BY_LAYER.flatMap { (group, causes) -> causes.map { it.first to group } }.toMap()
 
   /** Causes no scenario has. They keep the cause list from being a copy of the catalog. */
-  val DISTRACTORS: Set<String> = setOf("thread_pool_exhausted", "missing_index", "disk_full", "dns_slow")
+  val DISTRACTORS: Set<String> = setOf("thread_pool_exhausted", "missing_index", "disk_full", "dns_slow", "disk_io_contention", "checkpoint_bursts")
 
   val DECOYS: List<String> = listOf(
     "Deploy worker v1.8: logging library update",

@@ -1,6 +1,6 @@
 # Disk and storage
 
-This file covers the disk under a database: the math of a disk, how Postgres uses it, and the disk panels of the lab. The disk exercises (`make new TOPIC=disk`) and the drills in `make quiz` point at its sections. Read [USE method in detail](investigation-guide.md#use-method-in-detail) first: a disk is one more resource with utilization, saturation and errors.
+This file covers the disk under a database: the math of a disk, how Postgres uses it, and the disk panels of the lab. The disk exercise (`make new TOPIC=disk`) and the drills in `make quiz` point at its sections. Read [USE method in detail](investigation-guide.md#use-method-in-detail) first: a disk is one more resource with utilization, saturation and errors.
 
 ## Disk math
 
