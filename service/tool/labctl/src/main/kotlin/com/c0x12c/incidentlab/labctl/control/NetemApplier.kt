@@ -30,7 +30,7 @@ class NetemApplier(
       val command = command(desired.docker[container]?.get(NETEM))
       val now = clock.millis()
       val last = applied[container]
-      if (last != null && last.command == command && now - last.at < resync.toMillis()) {
+      if (last != null && last.command == command && (command == CLEAR || now - last.at < resync.toMillis())) {
         continue
       }
       try {
@@ -52,6 +52,9 @@ class NetemApplier(
     const val SCRIPT = "/run/netem.sh"
     const val NETEM = "netem"
 
+    /** A restarted container starts with no qdisc, so a clear is never sent again until something was applied. */
+    val CLEAR: List<String> = listOf(SCRIPT, "clear")
+
     /** `netem.sh apply host delay loss [host delay loss]...`, or `netem.sh clear` when nothing is asked for. */
     fun command(netem: Any?): List<String> {
       val targets = when (netem) {
@@ -60,7 +63,7 @@ class NetemApplier(
         else -> emptyList()
       }
       if (targets.isEmpty()) {
-        return listOf(SCRIPT, "clear")
+        return CLEAR
       }
       return listOf(SCRIPT, "apply") + targets.flatMap { listOf(it["target"].toString(), plain(it["delay_ms"]), plain(it["loss_pct"])) }
     }

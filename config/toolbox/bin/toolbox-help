@@ -17,6 +17,7 @@ The 60-second checklist (Ctrl-C stops the ones that repeat)
 
 Find a service's process (from the docker socket: pgrep also matches other projects on this VM)
   pid api        pid pricing      pid worker      pid noisy      pid postgres
+  cid api        the container id, for the docker socket: curl -s --unix-socket /var/run/docker.sock http://localhost/containers/$(cid api)/json
   containers     every container with its PID and cgroup
 
 Read a container's cgroup

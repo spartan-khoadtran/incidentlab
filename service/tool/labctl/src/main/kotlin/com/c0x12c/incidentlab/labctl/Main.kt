@@ -8,14 +8,12 @@ import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.Capabilities
 import com.c0x12c.incidentlab.labctl.control.CapabilitiesFile
 import com.c0x12c.incidentlab.labctl.control.CgroupApplier
-import com.c0x12c.incidentlab.labctl.control.ContainerCpuApplier
 import com.c0x12c.incidentlab.labctl.control.ControlDaemon
 import com.c0x12c.incidentlab.labctl.control.DockerControl
 import com.c0x12c.incidentlab.labctl.control.GrafanaAnnotator
 import com.c0x12c.incidentlab.labctl.control.HttpLabProbe
 import com.c0x12c.incidentlab.labctl.control.JsonHttp
 import com.c0x12c.incidentlab.labctl.control.LabProbe
-import com.c0x12c.incidentlab.labctl.control.NetemApplier
 import com.c0x12c.incidentlab.labctl.control.ServiceFaultApplier
 import com.c0x12c.incidentlab.labctl.exercise.ExerciseEngine
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
@@ -60,12 +58,11 @@ object Main : Logging {
     return try {
       when (command) {
         "daemon" -> {
-          val docker = DockerControl.ifAvailable(System.getenv("COMPOSE_PROJECT") ?: "incidentlab", Path.of(System.getenv("DOCKER_SOCK") ?: "/var/run/docker.sock"))
-          if (docker == null) {
-            info { "docker socket not found: CPU-limit, network and disk IOPS exercises are disabled" }
-          }
-          val cgroups = docker?.let { CgroupApplier.ifAvailable(it::containerId, hostPath("CGROUP_ROOT", "/host/cgroup"), hostPath("HOST_VOLUMES", "/host/volumes"), hostPath("HOST_SYS", "/host/sys")) }
-          val appliers = listOfNotNull(ServiceFaultApplier(http), docker?.let { ContainerCpuApplier(it) }, docker?.let { NetemApplier(it) }, cgroups)
+          val docker = DockerControl.ifAvailable(Path.of(System.getenv("DOCKER_SOCK") ?: "/var/run/docker.sock"), System.getenv("COMPOSE_PROJECT"))
+          val containerAppliers = docker?.containerAppliers { containerId ->
+            CgroupApplier.ifAvailable(containerId, hostPath("CGROUP_ROOT", "/host/cgroup"), hostPath("HOST_VOLUMES", "/host/volumes"), hostPath("HOST_SYS", "/host/sys"))
+          }.orEmpty()
+          val appliers = listOf(ServiceFaultApplier(http)) + containerAppliers
           val daemon = ControlDaemon(store, appliers, capabilities)
           daemon.publishCapabilities()
           serveApi(store, probe, http, capabilities, loopbackOnly = false)

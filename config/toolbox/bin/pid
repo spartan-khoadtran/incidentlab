@@ -5,16 +5,10 @@ if [ -z "$service" ]; then
   echo "usage: pid SERVICE   (api, pricing, worker, noisy, postgres...)" >&2
   exit 2
 fi
-name="${COMPOSE_PROJECT:-incidentlab}-$service-1"
-state=$(curl -s --unix-socket /var/run/docker.sock "http://localhost/containers/$name/json" | jq -r '.State // empty | "\(.Running) \(.Pid)"')
-if [ -z "$state" ]; then
-  echo "pid: no container $name (is the lab up? docker compose names it <project>-<service>-1)" >&2
-  exit 1
-fi
-running=${state% *}
-main=${state#* }
-if [ "$running" != "true" ] || [ "$main" = "0" ]; then
-  echo "pid: container $name is not running" >&2
+id=$(cid "$service") || exit 1
+main=$(curl -s --unix-socket /var/run/docker.sock "http://localhost/containers/$id/json" | jq -r '.State.Pid // 0')
+if [ "$main" = "0" ]; then
+  echo "pid: the $service container is not running" >&2
   exit 1
 fi
 case "$(cat "/proc/$main/comm" 2>/dev/null)" in

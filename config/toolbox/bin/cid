@@ -1,0 +1,32 @@
+#!/bin/sh
+# Prints the container id of a lab service, found by its compose labels, so `docker compose -p` works too.
+service=$1
+if [ -z "$service" ]; then
+  echo "usage: cid SERVICE   (api, pricing, worker, noisy, postgres...)" >&2
+  exit 2
+fi
+sock=/var/run/docker.sock
+engine() { curl -s --unix-socket "$sock" "http://localhost$1"; }
+
+# The project comes from the toolbox's own labels: mountinfo names its container id, /etc/hostname is the fallback.
+project=${COMPOSE_PROJECT:-}
+if [ -z "$project" ]; then
+  for self in $(sed -n 's|.*/containers/\([0-9a-f]\{64\}\)/.*|\1|p' /proc/self/mountinfo | sort -u) "$(cat /etc/hostname 2>/dev/null)"; do
+    [ -n "$self" ] || continue
+    project=$(engine "/containers/$self/json" | jq -r '.Config.Labels["com.docker.compose.project"] // empty' 2>/dev/null)
+    [ -n "$project" ] && break
+  done
+fi
+if [ -z "$project" ]; then
+  echo "cid: cannot find the compose project of this toolbox (set COMPOSE_PROJECT to name it)" >&2
+  exit 1
+fi
+
+filters=$(jq -cn --arg p "$project" --arg s "$service" \
+  '{label: ["com.docker.compose.project=\($p)", "com.docker.compose.service=\($s)", "com.docker.compose.oneoff=False"]}')
+id=$(curl -s -G --unix-socket "$sock" --data-urlencode "all=1" --data-urlencode "filters=$filters" "http://localhost/containers/json" | jq -r '.[0].Id // empty')
+if [ -z "$id" ]; then
+  echo "cid: no container for service $service in compose project $project (is the lab up?)" >&2
+  exit 1
+fi
+echo "$id"

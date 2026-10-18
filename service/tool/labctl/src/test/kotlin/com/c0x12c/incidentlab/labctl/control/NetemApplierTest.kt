@@ -75,6 +75,19 @@ class NetemApplierTest {
   }
 
   @Test
+  fun `a clear is not sent again by the resync, so api sees no exec while no exercise shapes it`() {
+    val exec = RecordingExec()
+    val clock = MovingClock(Instant.parse("2026-01-01T00:00:00Z"))
+    val applier = NetemApplier(exec, clock, Duration.ofMinutes(1))
+
+    applier.apply(none)
+    clock.now = clock.now.plusSeconds(600)
+    applier.apply(none)
+
+    assertThat(exec.calls).containsExactly("api" to listOf("/run/netem.sh", "clear"))
+  }
+
+  @Test
   fun `a failed exec is tried again next tick`() {
     val exec = RecordingExec(fail = true)
     val clock = MovingClock(Instant.parse("2026-01-01T00:00:00Z"))
