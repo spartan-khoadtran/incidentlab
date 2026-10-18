@@ -39,7 +39,7 @@ internal object NetworkScenarios {
     decoy = 0.5,
     ticket = { p ->
       "At ${p.startedAt}, /checkout p99 jumped and p50 did not move. The pricing team shows that their own p99 on /price is flat " +
-        "and says it must be the network. Please prove it or rule it out."
+        "and says the problem is not on their side. Find where the time goes."
     },
     hints = listOf(
       "Which downstream call of /checkout has the same tail? Compare api's view of pricing with pricing's own p99.",
@@ -120,7 +120,7 @@ internal object NetworkScenarios {
         "One checkout loads prices one product at a time, $k times per product: about ${p.fixed(queries, 0)} queries for an average basket " +
         "of $AVERAGE_BASKET items, then $ORDER_TRIPS more round trips to write the order. They run one after another, so the delay adds up: " +
         "about ${p.fixed(trips, 0)} x $delay ms = ${p.fixed(addedMs, 0)} ms per checkout on average, and $fullBasketMs ms for a basket of $MAX_BASKET. " +
-        "The connection is held the whole time. By Little's Law the pool goes from about ${p.fixed(BASE_CONNECTIONS_IN_USE, 2)} to about " +
+        "A connection is held during every one of those round trips. By Little's Law the pool goes from about ${p.fixed(BASE_CONNECTIONS_IN_USE, 2)} to about " +
         "${p.fixed(inUse, 1)} of $POOL_MAX connections in use (${p.fixed(inUse / POOL_MAX * PERCENT, 0)}%), so checkouts also wait for a connection " +
         "and p99 grows more than the sum. /products pays $delay ms once, and only on a cache miss. The N+1 was cheap on a fast network. " +
         "One batch query (WHERE id = ANY(...)) gives back about ${p.fixed((queries - 1) * delay, 0)} ms per checkout. Moving Postgres back is not needed."
