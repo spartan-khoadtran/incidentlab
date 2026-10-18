@@ -428,7 +428,7 @@ class Exercises(
     const val MIN_LOAD = 0.1
     const val MAX_LOAD = 6.0
     private const val MAX_LEVEL = 3
-    private const val RECENT_WINDOW = 5
+    const val RECENT_WINDOW = 5
     private const val DECOY_MAX_LEAD_SECONDS = 600
     private const val DECOY_MAX_LAG_SECONDS = 60
     private const val MARKER_MAX_LEAD_SECONDS = 180
@@ -448,6 +448,7 @@ class Exercises(
     const val LINKS = "  Grafana     http://localhost:3000   (dashboards '01 · RED by layer' and '02 · USE by layer')\n" +
       "  Traces      in Grafana: Explore > Tempo (search, service graph), or click an exemplar dot on a latency panel\n" +
       "  Profiles    in Grafana: Explore > Pyroscope (service = api, pricing, worker), or http://localhost:4040\n" +
-      "  Prometheus  http://localhost:9090"
+      "  Prometheus  http://localhost:9090\n" +
+      "  Handbook    http://localhost:4000"
   }
 }

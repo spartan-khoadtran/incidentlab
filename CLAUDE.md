@@ -52,8 +52,10 @@ Development (Gradle lives in `service/`, needs a JDK on the host; Gradle downloa
 - `make dashboards` regenerates the Grafana JSON from `service/tool/dashboards` through the built image. Grafana reads the bind-mounted folder, so no restart is needed. Do not edit the JSON by hand.
 - `docker compose up -d --build api` rebuilds after a code change. All services share one image (`incidentlab-svc:latest`); other services keep the old code until you restart them too.
 - `make logs S=api` (empty `S` means all services), `make ps`.
+- `make site` opens the handbook (http://localhost:4000, the `site` service).
+- The handbook alone: `cd site && npm ci && npm run dev` (Node 22). `npm run build`, `npm run lint`, `npm test`, `npm run check:data`.
 
-Host ports: Envoy 8080 (admin 9901), Grafana 3000, Prometheus 9090, Pyroscope 4040. Tempo has no host port: traces are read in Grafana. Service ports (api 8000, pricing 8001, worker 8002, loadgen 8003, pgobserver 8004, noisy 8005) are only reachable inside the compose network.
+Host ports: Envoy 8080 (admin 9901), Grafana 3000, Prometheus 9090, Pyroscope 4040, handbook 4000. Tempo has no host port: traces are read in Grafana. Service ports (api 8000, pricing 8001, worker 8002, loadgen 8003, pgobserver 8004, noisy 8005) are only reachable inside the compose network.
 
 ## Architecture
 
@@ -171,6 +173,15 @@ Changing one of these breaks the scenario named in brackets:
 - `HeapPressure` keeps `retain_mb` of 16-byte objects in one array and each request writes `churn_kb` of new ones over random slots, so objects live tens of seconds, get promoted, and die in the old generation. With api's 256 MB Serial heap (old gen 170 MB), 70 to 85 MB at 48 to 64 KB per request gave full GCs every 12 to 50 s with 120 to 220 ms pauses on the host JDK. Many small objects, not a few big arrays, make the pause long: a full GC's cost follows the live object count. [`gc_pressure`]
 - `pin_db` runs the checkout DB sessions and a `pin_hold_ms` sleep inside `synchronized` on a request-local object (`LegacyOrderCache`). On JDK 21 that pins the virtual thread, and api has 2 carriers (one per core), so checkouts need 15 × (50 + hold) / 2000 of them: the scenario draws 1.2 to 1.6. `LegacyOrderCacheTest` proves the mechanism in a forked JVM. JDK 24 or later removes it (JEP 491). [`vthread_pinning`]
 - `debug_log_lines` writes DEBUG lines through `SupportTrace`, whose logger api's `logback.xml` sets to DEBUG. The console appender flushes every line, so each one is a write syscall under the appender lock. api's json-file log rotates at 3 × 20 MB so the exercise cannot fill the disk. [`sync_logging`]
+
+### The handbook site (`site/`)
+
+- Vite, React 19, TypeScript, React Router with browser routes. `site/Dockerfile` builds it with the repo root as context (`site/Dockerfile.dockerignore` lets in only `docs/`, the Makefile, docker-compose.yml, README, CLAUDE.md, the Gradle files and Answers.kt), and nginx serves it with an SPA fallback. The `site` service maps it to host port 4000.
+- Nothing on the site is copied by hand. `scripts/prebuild.ts` runs before `npm run dev` and `npm run build`. It reads `docs/*.md` (GitHub slugs for the heading ids, so a `Section > Subsection` pointer links to `/guide/<file>#<slug>`), the Makefile (the `target: ## help` lines, the `# -----` groups, the URLs `wait` prints), docker-compose.yml, README, CLAUDE.md, `service/settings.gradle` and the header comment of each `build.gradle`. It writes `site/src/generated/`, which git ignores.
+- The catalog, the quiz counts, the scoring and the defaults come from `labctl export`, committed as `site/src/data/lab.json`. Regenerate it after any change to the catalog, the drills, `GuideIndex`, the scoring or a default: `cd site && npm run export:lab` (it runs `./gradlew :tool:labctl:run --args="export <absolute path>"`, so Gradle picks JDK 21). `npm run check:data` fails when the committed file differs from a fresh export.
+- No spoilers. Per scenario the export holds only id, title, level, topics and the toolbox flag, the same as `make list`. The guide pointer stays out: it names the cause, and the CLI only prints it after the answer. `LabExportTest` checks the keys and scans for cause and signal keys, answer labels, guide pointers, tickets, hints, steps, explanations, evidence and cli lines. `test/spoilers.test.ts` also checks that no scenario's guide pointer is in lab.json or `dist/`. `npm run build` ends with `scripts/check-bundle.ts`, which reads the keys from Answers.kt and fails if one is in `dist/` (a key that is also a scenario id, or that the docs print, counts as public). Never add a field or a page that shows a cause, signal, location, nature, ticket, hint, explanation, evidence or cli command.
+- The request path diagram places its nodes in `src/lib/topology.ts`. Their facts come from docker-compose.yml, and `test/compose.test.ts` checks that every node is a compose service and that each hop named by a compose variable matches it.
+- `scripts/lib/groups.ts` groups the guide files. A new docs file shows up by itself under "More" until it gets a group.
 
 ### Data and state
 

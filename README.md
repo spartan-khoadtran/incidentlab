@@ -115,12 +115,18 @@ make down      # stop and remove everything
 
 `make` with no target lists every command.
 
+### The handbook
+
+`make up` also starts a small website at http://localhost:4000 (`make site` opens it). It has the guide with a search, the system diagram, every command, and the catalog by level and topic. It shows scenario titles only, never an answer. It is built from this repo, so it always matches the docs and the Makefile.
+
 ## Layout
 
 - `service/`: the Kotlin services, one Gradle build. `tool/labctl` is the controller and the CLI;
   `tool/labctl/.../scenario/catalog/` holds the answers, do not read it before you play.
 - `config/`: Envoy, Prometheus, Grafana (pre-built dashboards), Postgres.
 - `service/tool/dashboards`: regenerates the Grafana dashboards (`make dashboards`).
+- `docs/`: the study guide. Every exercise and quiz question points at one of its sections.
+- `site/`: the handbook at http://localhost:4000, a React site built from the docs, the Makefile and docker-compose.yml.
 
 ## Development
 

@@ -6,7 +6,7 @@ GRADLE   = cd service && ./gradlew
 
 .DEFAULT_GOAL := help
 .PHONY: help up up-datadog wait new hint answer reveal clear status list history quiz load ramp bench \
-        toolbox shell open logs ps stop down nuke check build test lint format dashboards
+        toolbox shell open logs ps stop down nuke check build test lint format dashboards site
 
 help: ## List the commands
 	@echo "incidentlab: incident investigation lab"
@@ -35,6 +35,7 @@ wait:
 	@echo "  Profiles    in Grafana: Explore > Pyroscope (service = api, pricing, worker), or http://localhost:4040"
 	@echo "  Prometheus  http://localhost:9090"
 	@echo "  Envoy       http://localhost:8080 (admin: http://localhost:9901)"
+	@echo "  Handbook    http://localhost:4000 (guide, catalog, commands)"
 	@echo ""
 	@echo "Let the system run for 3-5 minutes to get a baseline, then type: make new"
 
@@ -95,6 +96,9 @@ bench: ## Closed-loop bench on the live lab, not scored, then a before/after rep
 # ----------------------------------------------------------------------------- tools
 open: ## Open Grafana in the browser (macOS)
 	@open http://localhost:3000 || true
+
+site: ## Open the handbook in the browser (macOS): the guide, the catalog and every command
+	@open http://localhost:4000 || true
 
 logs: ## Tail logs: S=worker (empty = all services)
 	$(COMPOSE) logs -f --tail=100 $(S)

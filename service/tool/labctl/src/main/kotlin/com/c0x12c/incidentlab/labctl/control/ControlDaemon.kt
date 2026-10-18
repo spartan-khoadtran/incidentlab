@@ -14,7 +14,7 @@ import java.time.Duration
 class ControlDaemon(
   private val store: StateStore,
   private val appliers: List<Applier>,
-  private val interval: Duration = Duration.ofSeconds(3)
+  private val interval: Duration = TICK
 ) : Logging {
 
   fun run() {
@@ -32,5 +32,9 @@ class ControlDaemon(
   fun applyOnce() {
     val desired = DesiredState.of(store.load())
     appliers.forEach { it.apply(desired) }
+  }
+
+  companion object {
+    val TICK: Duration = Duration.ofSeconds(3)
   }
 }

@@ -303,6 +303,17 @@ services:
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
+  # The handbook: the guide, the catalog and every command, built from this repo. `make site` opens it.
+  site:
+    build:
+      context: .
+      dockerfile: site/Dockerfile
+    image: incidentlab-site:latest
+    restart: unless-stopped
+    mem_limit: 64m
+    ports:
+      - "4000:80"
+
   # ------------------------------------------------------------------ optional: Datadog (make up-datadog)
   datadog-agent:
     image: gcr.io/datadoghq/agent:7
