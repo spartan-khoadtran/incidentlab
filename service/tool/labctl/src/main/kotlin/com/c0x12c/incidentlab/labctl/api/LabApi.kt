@@ -2,7 +2,6 @@ package com.c0x12c.incidentlab.labctl.api
 
 import com.c0x12c.incidentlab.labctl.bench.BenchCatalog
 import com.c0x12c.incidentlab.labctl.bench.BenchEngine
-import com.c0x12c.incidentlab.labctl.exercise.Choices
 import com.c0x12c.incidentlab.labctl.exercise.ExerciseEngine
 import com.c0x12c.incidentlab.labctl.exercise.Format
 import com.c0x12c.incidentlab.labctl.exercise.NewOptions
@@ -15,6 +14,7 @@ import com.c0x12c.incidentlab.labctl.ramp.RampAnswer
 import com.c0x12c.incidentlab.labctl.ramp.RampEngine
 import com.c0x12c.incidentlab.labctl.ramp.RampPlan
 import com.c0x12c.incidentlab.labctl.scenario.Answers
+import com.c0x12c.incidentlab.labctl.state.Choices
 
 data class NewRequest(
   val mode: String? = null,
@@ -94,7 +94,7 @@ class LabApi(
         ?: throw badRequest("bad_multiplier", "multiplier must be a number from ${Format.plain(ExerciseEngine.MIN_LOAD)} to ${Format.plain(ExerciseEngine.MAX_LOAD)}. 1 is the normal load.")
       ok(exercises.load(multiplier))
     },
-    get("/api/ramp/options") { ok(RampEngine.RESOURCE_OPTIONS) },
+    get("/api/ramp/options") { ok(mapOf("resources" to RampEngine.RESOURCE_OPTIONS)) },
     post("/api/ramp") { call ->
       val every = within(call.body(RampRequest::class).every ?: RampPlan.DEFAULT_STEP_SECONDS, "every", RampPlan.MIN_STEP_SECONDS, RampPlan.MAX_STEP_SECONDS)
       created(ramp.start(every).orFail())

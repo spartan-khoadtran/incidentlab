@@ -12,6 +12,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Params
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
 import com.c0x12c.incidentlab.labctl.state.ActiveExercise
+import com.c0x12c.incidentlab.labctl.state.Choices
 import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.c0x12c.incidentlab.labctl.state.LabState
 import com.c0x12c.incidentlab.labctl.state.StateStore
@@ -33,6 +34,9 @@ interface ModeEngine {
   val mode: String
 
   fun view(active: ActiveExercise): ExerciseView
+
+  /** The scored answer of an answered exercise, or null. May read Prometheus. */
+  fun result(active: ActiveExercise): ScoredResult? = null
 }
 
 data class OptionsView(
@@ -85,16 +89,25 @@ class ExerciseEngine(
     return Done(ExerciseView(view(active, scenario)))
   }
 
-  /** The open exercise in any mode. An answered incident carries its reveal. */
-  fun active(): Outcome<ExerciseView> {
+  /** The open exercise in any mode. An answered one carries its result, and an incident its reveal. */
+  fun active(): Outcome<ExerciseView> = current(withResult = true)
+
+  private fun current(withResult: Boolean): Outcome<ExerciseView> {
     val state = store.load()
     val active = state.active ?: return Refused(Refusal.NoExercise)
-    modes.firstOrNull { it.mode == active.mode }?.let { return Done(it.view(active)) }
+    modes.firstOrNull { it.mode == active.mode }?.let { mode ->
+      val view = mode.view(active)
+      return Done(if (withResult && active.answered) view.copy(result = mode.result(active)) else view)
+    }
     return when (val found = incident(state)) {
       is Refused -> found
       is Done -> {
         val (open, scenario) = found.value
-        Done(ExerciseView(view(open, scenario), reveal = if (open.answered) reveal(open, scenario) else null))
+        if (open.answered && withResult) {
+          Done(ExerciseView(view(open, scenario), reveal = reveal(open, scenario), result = open.choices?.let { score(open, scenario, it) }))
+        } else {
+          Done(ExerciseView(view(open, scenario)))
+        }
       }
     }
   }
@@ -138,7 +151,7 @@ class ExerciseEngine(
           } else {
             val result = score(active, scenario, choices)
             val entry = entry(active, scenario.title, scenario.level, result.score, result.missed, note)
-            write(state.copy(active = active.copy(answered = true), history = state.history + entry))
+            write(state.copy(active = active.copy(answered = true, choices = choices), history = state.history + entry))
             Done(result)
           }
         }
@@ -180,7 +193,7 @@ class ExerciseEngine(
   }
 
   fun status(): LabStatus {
-    val active = (active() as? Done)?.value?.active
+    val active = (current(withResult = false) as? Done)?.value?.active
     return LabStatus(probe.serviceStatus(), active, loadMultiplier(store.load()), Baseline.BASE_RPS, HOST_LINKS)
   }
 

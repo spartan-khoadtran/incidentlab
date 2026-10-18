@@ -36,13 +36,6 @@ data class Option(
   val group: String? = null
 )
 
-data class Choices(
-  val nature: String,
-  val location: String,
-  val signal: String,
-  val cause: String
-)
-
 data class AnswerView(
   val nature: List<Option>,
   val location: List<Option>,
@@ -74,6 +67,9 @@ data class Verdicts(
   val cause: String
 )
 
+/** A scored answer: [Result] for an incident, a ramp result for a ramp. */
+interface ScoredResult
+
 data class Result(
   val n: Int,
   val score: Double,
@@ -83,7 +79,7 @@ data class Result(
   val verdicts: Verdicts,
   val missed: List<String>,
   val reveal: Reveal
-)
+) : ScoredResult
 
 data class Revealed(
   val n: Int,
@@ -99,12 +95,14 @@ data class PlanView(
   val totalSeconds: Int
 )
 
-/** The open exercise with what its mode adds: the reveal once answered, the ramp's plan, the bench's end. */
+/** The open exercise with what its mode adds: the reveal and the result once answered, the ramp's plan, the bench's end. */
 data class ExerciseView(
   @get:JsonUnwrapped
   val active: ActiveView,
   @get:JsonInclude(JsonInclude.Include.NON_NULL)
   val reveal: Reveal? = null,
+  @get:JsonInclude(JsonInclude.Include.NON_NULL)
+  val result: ScoredResult? = null,
   @get:JsonInclude(JsonInclude.Include.NON_NULL)
   val plan: PlanView? = null,
   @get:JsonInclude(JsonInclude.Include.NON_NULL)

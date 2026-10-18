@@ -2,7 +2,9 @@
 
 `labctl daemon` serves this API on port 8090 (`LAB_API_PORT`), next to the control loop. The site's nginx proxies `/api/` to `http://control:8090`, so the browser calls it as `/api/...` on port 4000. Port 8090 is not published to the host.
 
-JSON in and out, snake_case keys. Every response has `Content-Type: application/json`. Times are epoch seconds (a number). Latencies are in seconds.
+JSON in and out, snake_case keys. Every response has `Content-Type: application/json`. Every path starts with `/api/`, exactly as written below: nginx and the vite dev server pass the path through unchanged.
+
+Times are epoch seconds (a number). Every duration is a number of seconds, even when the field name has no unit (`p50`, `p99`, `client_mean`). Rates are requests per second.
 
 ## Errors
 
@@ -72,7 +74,12 @@ HistoryEntry = { n, id, mode, title, level, score: number|null, hints, minutes, 
 ### Incident and toolbox
 
 - `POST /api/exercises` body `{ mode?: "incident"|"toolbox", level?: int, topic?: string, id?: string, force?: bool }` -> 201 `ActiveView`. 409 `exercise_open` when one is open and `force` is not true. 400 for a bad mode, level, topic or id, or `no_cli` for an id without CLI proof in toolbox mode. Writes the same Grafana annotations as `make new`.
-- `GET /api/exercise` -> the open exercise in any mode: `ActiveView`, plus `reveal: Reveal` once an incident is answered or revealed, `plan` for a ramp, `ends_at` for a bench. 404 `no_exercise`.
+- `GET /api/exercise` -> the open exercise in any mode, so a page reload can rebuild itself: `ActiveView`, plus
+  - `plan: { steps: [rps], every, total_seconds }` for a ramp, and `ends_at` (epoch seconds) for a bench, from the start;
+  - `reveal: Reveal` once an incident is answered or revealed;
+  - `result` once it is answered: the same `Result` that `POST /api/exercise/answer` returned, or the same `RampResult` that `POST /api/ramp/answer` returned. A reveal is not an answer, so a revealed exercise has no `result`. A ramp's `result` is read again from Prometheus and is left out when Prometheus does not answer.
+
+  404 `no_exercise`.
 - `POST /api/exercise/hint` -> `ActiveView` with the new hint at the end of `hints`. 409 `no_hints_left` (also for a ramp or a bench), or `already_answered`.
 - `POST /api/exercise/answer` body `{ nature, location, signal, cause, note?: string }` -> `Result`. Keys come from `/api/options`. 400 `unknown_key` or `missing_field`. 409 `already_answered`. Keeps the history entry like `make answer`, note included (one line, at most 500 characters). Does not clear the fault.
 - `POST /api/exercise/reveal` -> `Reveal`. Not scored. The first reveal adds a history entry with `score: null`, like `make reveal`. Does not clear the fault.
@@ -80,7 +87,7 @@ HistoryEntry = { n, id, mode, title, level, score: number|null, hints, minutes, 
 
 ### Capacity ramp
 
-- `GET /api/ramp/options` -> `[Option]`: the resources the third question offers.
+- `GET /api/ramp/options` -> `{ resources: [Option] }`: the resources the third question offers.
 - `POST /api/ramp` body `{ every?: int }` (30 to 300 s, default 60) -> 201 `ActiveView` (mode ramp) plus `plan: { steps: [rps], every, total_seconds }`. 409 `exercise_open`, or `load_not_one` when the load multiplier is not 1.
 - `POST /api/ramp/answer` body `{ knee_rps: number, max_rps: number, resource: string, note?: string }` -> `RampResult`. `knee_rps` is 0 when there was no knee. 409 `too_early` before the first step ends, `already_answered`. 400 `unknown_key` for a resource. 503 `prometheus_down`. Keeps the history entry. Does not stop the ramp.
 - `POST /api/ramp/reveal` -> `RampResult` with `score`, `given` and `verdicts` null. The table is empty and `prometheus_down` is true when Prometheus does not answer.
@@ -88,7 +95,7 @@ HistoryEntry = { n, id, mode, title, level, score: number|null, hints, minutes, 
 ```
 RampResult = {
   n, title, score: number|null, max: number, steps_run: int, steps_total: int,
-  table: [{ step, target_rps, rps_offered, rps_achieved, p99, error_share, knee: bool }],   // p99 in seconds, null when no sample
+  table: [{ step, target_rps, rps_offered, rps_achieved, p99, error_share, knee: bool }],   // p99 in seconds; null when Prometheus had no sample
   measured: { knee_rps: int|null, knee_step: int|null, max_rps: number|null, resource: string, resource_label: string },
   given: { knee_rps, max_rps, resource }|null, verdicts: { knee: bool, max: bool, resource: bool }|null,
   missed: [string], prometheus_down: bool, explanation: string, guide: [GuidePointer]
@@ -102,9 +109,12 @@ RampResult = {
 - `POST /api/bench/report` -> the same `BenchReport`, and it closes the bench with a history entry, like `make answer`.
 
 ```
-Row = { client: { rate, p50_seconds, p99_seconds, error_share }, api: { rate, p50_seconds, p99_seconds, error_share }, client_mean_seconds, api_inflight }
-BenchReport = { n, clients, seconds, before: Row, during: Row, explanation: string, guide: [GuidePointer] }
+Row = { rate_rps: number|null, p50: number|null, p99: number|null, error_share: number|null }   // p50 and p99 in seconds
+Window = { client: Row, api: Row, client_mean: number|null, api_in_flight: number|null }   // client_mean in seconds
+BenchReport = { n, clients, seconds, before: Window, during: Window, explanation: string, guide: [GuidePointer] }
 ```
+
+`before` is the 2 minutes before the bench, with the open load. `during` is the bench window without its first 10 s. `client` is what loadgen measured: `rate_rps` is what the clients sent, and `error_share` is the share of requests that failed for them (a timeout, a 5xx or a connection error; a 4xx does not count). `api` is api's own view: `rate_rps` is what api served, and `error_share` is its share of 5xx. `client_mean` is the mean response time the clients saw. `api_in_flight` is the mean number of requests inside api. A null is a number Prometheus had no data for.
 
 ### Quiz
 

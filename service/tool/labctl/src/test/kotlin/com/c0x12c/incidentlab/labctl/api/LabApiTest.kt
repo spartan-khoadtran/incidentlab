@@ -223,6 +223,7 @@ class LabApiTest {
     val after = get(base, "/api/exercise").json
     assertThat(after["answered"].asBoolean()).isTrue()
     assertThat(after["reveal"]["title"].asText()).isEqualTo(ScenarioCatalog.byId.getValue("pool_hold").title)
+    assertThat(after["result"]).isEqualTo(result)
     assertThat(store().load().active!!.answered).isTrue()
     assertThat(store().load().history.single().note).isEqualTo("session time vs exec time")
     assertThat(annotations.none { it == "lab: fault cleared" }).isTrue()
@@ -230,6 +231,17 @@ class LabApiTest {
     assertThat(post(base, "/api/exercise/clear").json["cleared"].asBoolean()).isTrue()
     assertThat(annotations.last()).isEqualTo("lab: fault cleared")
     assertThat(store().load().active).isNull()
+  }
+
+  @Test
+  fun `an exercise answered before the picks were stored shows its reveal and no result`() {
+    val base = server()
+    post(base, "/api/exercises", mapOf("id" to "oom"))
+    store().update { it.copy(active = it.active!!.copy(answered = true)) }
+
+    val view = get(base, "/api/exercise").json
+    assertThat(view["reveal"]["id"].asText()).isEqualTo("oom")
+    assertThat(view.has("result")).isFalse()
   }
 
   @Test
@@ -334,7 +346,12 @@ class LabApiTest {
     assertThat(started.json["plan"]["steps"].map { it.asInt() }).isEqualTo(RampPlan.rates)
     assertThat(started.json["plan"]["total_seconds"].asInt()).isEqualTo(RampPlan.totalSeconds(EVERY))
     pinPoolOfThree()
-    assertThat(get(base, "/api/ramp/options").json.map { it["key"].asText() }).isEqualTo(RampCatalog.RESOURCES.map { it.first })
+    assertThat(get(base, "/api/ramp/options").json["resources"].map { it["key"].asText() }).isEqualTo(RampCatalog.RESOURCES.map { it.first })
+    clock = START + 90
+    val running = get(base, "/api/exercise").json
+    assertThat(running["plan"]).isEqualTo(started.json["plan"])
+    assertThat(running["elapsed_seconds"].asDouble()).isEqualTo(90.0)
+    assertThat(running.has("result")).isFalse()
     assertThat(post(base, "/api/exercise/hint").json["error"].asText()).isEqualTo("no_hints_left")
     assertThat(post(base, "/api/exercise/answer", choices("arch", "api_db", "pool", "pool_exhausted")).json["error"].asText()).isEqualTo("wrong_mode")
 
@@ -354,6 +371,10 @@ class LabApiTest {
     assertThat(keys(result["table"][0])).containsOnly("step", "target_rps", "rps_offered", "rps_achieved", "p99", "error_share", "knee")
     assertThat(result["explanation"].asText().contains("pool_max = 3")).isTrue()
     assertThat(post(base, "/api/ramp/answer", rampAnswer(200, 205, "pool")).json["error"].asText()).isEqualTo("already_answered")
+    clock += 600
+    val reloaded = get(base, "/api/exercise").json
+    assertThat(reloaded["result"]).isEqualTo(result)
+    assertThat(reloaded["plan"]["every"].asInt()).isEqualTo(EVERY)
     val entry = store().load().history.single()
     assertThat(entry.mode).isEqualTo("ramp")
     assertThat(entry.score).isEqualTo(5.0)
@@ -384,6 +405,7 @@ class LabApiTest {
     val started = post(base, "/api/bench", mapOf("clients" to 20, "seconds" to 120))
     assertThat(started.status).isEqualTo(201)
     assertThat(started.json["ends_at"].asDouble()).isEqualTo(BENCH_START + 120)
+    assertThat(get(base, "/api/exercise").json["ends_at"].asDouble()).isEqualTo(BENCH_START + 120)
     assertThat(post(base, "/api/ramp").json["error"].asText()).isEqualTo("exercise_open")
 
     clock = BENCH_START + 50
@@ -393,9 +415,11 @@ class LabApiTest {
 
     clock = BENCH_START + 200
     val report = get(base, "/api/bench/report").json
-    assertThat(report["during"]["client"]["rate"].asDouble()).isEqualTo(267.0)
-    assertThat(report["before"]["client"]["rate"].asDouble()).isEqualTo(50.0)
-    assertThat(report["before"].has("empty")).isFalse()
+    assertThat(report["during"]["client"]["rate_rps"].asDouble()).isEqualTo(267.0)
+    assertThat(report["before"]["client"]["rate_rps"].asDouble()).isEqualTo(50.0)
+    assertThat(keys(report["during"])).containsOnly("client", "api", "client_mean", "api_in_flight")
+    assertThat(keys(report["during"]["api"])).containsOnly("rate_rps", "p50", "p99", "error_share")
+    assertThat(report["during"]["client_mean"].asDouble()).isEqualTo(0.075)
     assertThat(report["explanation"].asText().contains("R = 20 / 267 = 75 ms")).isTrue()
     assertThat(store().load().active!!.mode).isEqualTo("bench")
 

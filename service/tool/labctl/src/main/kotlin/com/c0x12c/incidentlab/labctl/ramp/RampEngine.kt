@@ -13,12 +13,14 @@ import com.c0x12c.incidentlab.labctl.exercise.Outcome.Done
 import com.c0x12c.incidentlab.labctl.exercise.Outcome.Refused
 import com.c0x12c.incidentlab.labctl.exercise.PlanView
 import com.c0x12c.incidentlab.labctl.exercise.Refusal
+import com.c0x12c.incidentlab.labctl.exercise.ScoredResult
 import com.c0x12c.incidentlab.labctl.guide.GuideIndex
 import com.c0x12c.incidentlab.labctl.guide.GuidePointer
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.BASE_RPS
 import com.c0x12c.incidentlab.labctl.scenario.Params
 import com.c0x12c.incidentlab.labctl.state.ActiveExercise
 import com.c0x12c.incidentlab.labctl.state.HistoryEntry
+import com.c0x12c.incidentlab.labctl.state.RampSubmission
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import com.c0x12c.incidentlab.labctl.state.withNote
 import com.fasterxml.jackson.annotation.JsonIgnore
@@ -73,7 +75,7 @@ data class RampResult(
   @get:JsonIgnore
   val notes: List<String>,
   val guide: List<GuidePointer>
-) {
+) : ScoredResult {
   val explanation: String get() = notes.joinToString("\n\n")
 }
 
@@ -144,6 +146,15 @@ class RampEngine(
     return ExerciseView(view, plan = PlanView(RampPlan.rates, every, RampPlan.totalSeconds(every)))
   }
 
+  /** The scored answer again, from the same steps. Null when Prometheus does not answer or the ramp was only revealed. */
+  override fun result(active: ActiveExercise): ScoredResult? {
+    val given = active.rampAnswer ?: return null
+    val params = params(active)
+    val readings = RampMeasure(probe).read(active.started, params.int("every"), given.stepsRun) ?: return null
+    val answer = RampAnswer(given.kneeRps, given.maxRps, given.resource)
+    return result(active.n, params, given.stepsRun, readings, answer, RampMath.verdict(answer, readings, RampCatalog.resource(params)))
+  }
+
   /** The finished steps, read from Prometheus, once the first step is over. */
   fun steps(): Outcome<RampSteps> {
     val active = store.load().active ?: return Refused(Refusal.NoExercise)
@@ -168,7 +179,8 @@ class RampEngine(
         active.answered -> Refused(Refusal.AlreadyAnswered)
         else -> {
           val verdict = RampMath.verdict(answer, steps.readings, RampCatalog.resource(steps.params))
-          write(state.copy(active = active.copy(answered = true), history = state.history + entry(active, steps.params, verdict.points, verdict.missed, note)))
+          val submitted = RampSubmission(answer.kneeRps, answer.maxRps, answer.resource, steps.stepsRun)
+          write(state.copy(active = active.copy(answered = true, rampAnswer = submitted), history = state.history + entry(active, steps.params, verdict.points, verdict.missed, note)))
           Done(result(active.n, steps.params, steps.stepsRun, steps.readings, answer, verdict))
         }
       }

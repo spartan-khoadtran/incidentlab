@@ -9,6 +9,7 @@ import com.c0x12c.incidentlab.labctl.guide.GuideIndex
 import com.c0x12c.incidentlab.labctl.scenario.Answers
 import com.c0x12c.incidentlab.labctl.scenario.Baseline
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
+import com.c0x12c.incidentlab.labctl.state.Choices
 import com.c0x12c.incidentlab.labctl.state.LabState
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import java.time.Instant

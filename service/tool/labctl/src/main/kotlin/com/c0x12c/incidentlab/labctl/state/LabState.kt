@@ -9,7 +9,25 @@ data class ActiveExercise(
   val started: Double,
   val hints: Int = 0,
   val n: Int,
-  val answered: Boolean = false
+  val answered: Boolean = false,
+  /** The four picks of an answered incident, so its result can be shown again. */
+  val choices: Choices? = null,
+  /** What the learner said about a ramp, and how many steps had run. */
+  val rampAnswer: RampSubmission? = null
+)
+
+data class Choices(
+  val nature: String,
+  val location: String,
+  val signal: String,
+  val cause: String
+)
+
+data class RampSubmission(
+  val kneeRps: Double,
+  val maxRps: Double,
+  val resource: String,
+  val stepsRun: Int
 )
 
 data class HistoryEntry(
