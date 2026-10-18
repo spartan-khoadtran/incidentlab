@@ -1,6 +1,7 @@
 package com.c0x12c.incidentlab.labctl
 
 import com.c0x12c.incidentlab.labctl.control.Annotator
+import com.c0x12c.incidentlab.labctl.control.Deletion
 import com.c0x12c.incidentlab.labctl.control.LabProbe
 import com.c0x12c.incidentlab.labctl.control.Sample
 
@@ -10,7 +11,8 @@ import com.c0x12c.incidentlab.labctl.control.Sample
  */
 class ScriptedTerminal(vararg answers: String?) : Terminal {
   private val answers = ArrayDeque(answers.toList())
-  private var asked = 0
+  var asked = 0
+    private set
   val lines = mutableListOf<String>()
   var beforeAnswer: (Int) -> Unit = {}
 
@@ -59,12 +61,17 @@ class FakePrometheus(
   }
 }
 
-/** Grafana's annotations in memory: each one gets the next id, and a delete is recorded. */
+/**
+ * Grafana's annotations in memory: each one gets the next id, and a delete is recorded. While
+ * [down], every delete fails and is only counted in [attempts].
+ */
 class FakeAnnotator : Annotator {
   data class Mark(val id: Long, val text: String, val tags: List<String>, val at: Double)
 
   val written = mutableListOf<Mark>()
   val deleted = mutableListOf<Long>()
+  val attempts = mutableListOf<Long>()
+  var down = false
 
   /** The texts in the order they were written, deleted ones too. */
   val texts: List<String> get() = written.map { it.text }
@@ -74,7 +81,10 @@ class FakeAnnotator : Annotator {
 
   override fun annotate(text: String, tags: List<String>, atSeconds: Double): Long = (written.size + 1L).also { written += Mark(it, text, tags, atSeconds) }
 
-  override fun delete(id: Long) {
+  override fun delete(id: Long): Deletion {
+    attempts += id
+    if (down) return Deletion.Failed("connection refused")
     deleted += id
+    return Deletion.Gone
   }
 }

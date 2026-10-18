@@ -9,13 +9,16 @@ import java.time.Duration
 /**
  * Keeps the lab in the desired fault state. Every tick it recomputes the desired state from the
  * state file and hands it to each applier, so the state file is the whole truth and a hand-made
- * change lasts one tick. A service that is restarting is simply tried again next tick.
+ * change lasts one tick. A service that is restarting is simply tried again next tick. Each
+ * applier and the [cleanup] of queued Grafana marks run on their own thread at that pace, so a
+ * hung Docker engine or Grafana never delays the service faults.
  */
 class ControlDaemon(
   private val store: StateStore,
   private val appliers: List<Applier>,
   private val capabilities: CapabilitiesFile? = null,
-  private val interval: Duration = TICK
+  private val interval: Duration = TICK,
+  private val cleanup: AnnotationCleanup? = null
 ) : Logging {
 
   /** Tells the CLI and the API which container settings this daemon applies, so they never start an exercise it cannot run. */
@@ -27,11 +30,19 @@ class ControlDaemon(
 
   fun run() {
     info { "lab controller started" }
+    cleanup?.let { pass -> Thread.ofVirtual().name("annotation-cleanup").start { repeatEveryTick("annotations") { pass.runOnce() } } }
+    appliers.map { applier ->
+      val name = applier::class.simpleName ?: "applier"
+      Thread.ofVirtual().name(name).start { repeatEveryTick(name) { applier.apply(DesiredState.of(store.load())) } }
+    }.forEach { it.join() }
+  }
+
+  private fun repeatEveryTick(name: String, step: () -> Unit) {
     while (!Thread.currentThread().isInterrupted) {
       try {
-        applyOnce()
+        step()
       } catch (e: Exception) {
-        warn { "control: ${e.message}" }
+        warn { "$name: ${e.message}" }
       }
       Thread.sleep(interval.toMillis())
     }

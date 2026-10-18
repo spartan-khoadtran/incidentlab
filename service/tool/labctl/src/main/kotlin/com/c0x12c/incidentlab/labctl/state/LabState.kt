@@ -71,8 +71,19 @@ data class HistoryEntry(
 data class LabState(
   val active: ActiveExercise? = null,
   val history: List<HistoryEntry> = emptyList(),
-  val base: Map<String, Map<String, Any?>> = emptyMap()
+  val base: Map<String, Map<String, Any?>> = emptyMap(),
+  /** Marks of exercises that ended early, still to delete from Grafana. The control daemon deletes them. */
+  val pendingAnnotationDeletes: List<PlannedAnnotation> = emptyList()
 )
+
+/**
+ * The state with the marks of [ended] that are still in the future at [now] queued for deletion.
+ * Call it in the same locked write that ends the exercise, so no id is lost between the two.
+ */
+fun LabState.queueFutureMarks(ended: ActiveExercise?, now: Double): LabState = queueMarks(ended?.annotations.orEmpty().filter { it.at > now })
+
+fun LabState.queueMarks(marks: List<PlannedAnnotation>): LabState =
+  if (marks.isEmpty()) this else copy(pendingAnnotationDeletes = (pendingAnnotationDeletes + marks).distinctBy { it.id })
 
 /** The state with [note] on the latest history entry numbered [n]. An empty note changes nothing. */
 fun LabState.withNote(n: Int, note: String): LabState {

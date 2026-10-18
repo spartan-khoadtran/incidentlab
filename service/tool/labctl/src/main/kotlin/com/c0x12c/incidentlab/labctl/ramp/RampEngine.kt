@@ -24,6 +24,7 @@ import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.c0x12c.incidentlab.labctl.state.RampSubmission
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import com.c0x12c.incidentlab.labctl.state.matches
+import com.c0x12c.incidentlab.labctl.state.queueFutureMarks
 import com.c0x12c.incidentlab.labctl.state.withNote
 import com.fasterxml.jackson.annotation.JsonIgnore
 import java.time.ZoneId
@@ -233,13 +234,12 @@ class RampEngine(
     return Done(RampRevealed(active.answered, result(active.n, params, stepsRun, readings.orEmpty(), null, null, prometheusDown = readings == null)))
   }
 
-  /** Ends the ramp named [key] with its own annotation, and only that one. True when it was open. */
+  /** Ends the ramp named [key] with its own annotation, and only that one. True when it was open. Its future marks are queued like [ExerciseEngine.clear] does. */
   fun clearIf(key: String): Boolean {
-    val ended = store.withLock { state, write ->
-      state.active?.takeIf { it.key == key }?.also { write(state.copy(active = null)) }
-    } ?: return false
     val at = now()
-    ScheduledAnnotations.dropFuture(annotator, ended, at)
+    store.withLock { state, write ->
+      state.active?.takeIf { it.key == key }?.also { write(state.queueFutureMarks(it, at).copy(active = null)) }
+    } ?: return false
     annotator.annotate("lab: ramp cleared", listOf("clear"), at)
     return true
   }

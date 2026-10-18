@@ -3,7 +3,6 @@ package com.c0x12c.incidentlab.labctl.exercise
 import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.Capabilities
 import com.c0x12c.incidentlab.labctl.control.LabProbe
-import com.c0x12c.incidentlab.labctl.control.ScheduledAnnotations
 import com.c0x12c.incidentlab.labctl.exercise.Outcome.Done
 import com.c0x12c.incidentlab.labctl.exercise.Outcome.Refused
 import com.c0x12c.incidentlab.labctl.guide.GuideIndex
@@ -20,6 +19,7 @@ import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.c0x12c.incidentlab.labctl.state.LabState
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import com.c0x12c.incidentlab.labctl.state.matches
+import com.c0x12c.incidentlab.labctl.state.queueFutureMarks
 import com.c0x12c.incidentlab.labctl.state.withNote
 import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
@@ -86,13 +86,12 @@ class ExerciseEngine(
     val context = ExerciseContext(cpuCount = probe.cpuCount(), productDetailSeconds = probe.productDetailSeconds(), tenants = probe.tenants())
     val params = scenario.params(random, context)
     val startedAt = now()
-    val (active, replaced) = store.withLock { current, write ->
+    val active = store.withLock { current, write ->
       if (current.active != null && !options.force) return@withLock null
       val opened = ActiveExercise(id = scenario.id, mode = options.mode, params = params, started = startedAt, n = current.history.size + 1, key = ActiveExercise.newKey())
-      write(current.copy(active = opened))
-      opened to current.active
+      write(current.queueFutureMarks(current.active, startedAt).copy(active = opened))
+      opened
     } ?: return Refused(Refusal.ExerciseOpen)
-    ScheduledAnnotations.dropFuture(annotator, replaced, startedAt)
     if (random.nextDouble() < scenario.decoy) {
       annotator.annotate(Answers.DECOYS.random(random), listOf("change"), startedAt + random.nextInt(-DECOY_MAX_LEAD_SECONDS, DECOY_MAX_LAG_SECONDS + 1))
     }
@@ -202,31 +201,27 @@ class ExerciseEngine(
 
   /**
    * Ends the open exercise of any mode. True when one was open. With a [key], it is refused when
-   * the open exercise is another one.
+   * the open exercise is another one. Its marks still in the future are left in the state for the
+   * control daemon to delete, so a slow Grafana costs this call one write at most.
    */
   fun clear(key: String? = null): Outcome<Boolean> {
+    val at = now()
     val ended = store.withLock<Outcome<ActiveExercise?>> { state, write ->
       if (state.active != null && !state.active.matches(key)) return@withLock Refused(Refusal.ExerciseChanged)
-      write(state.copy(active = null))
+      write(state.queueFutureMarks(state.active, at).copy(active = null))
       Done(state.active)
     }
-    if (ended is Done) markEnd(ended.value)
     return when (ended) {
-      is Done -> Done(ended.value != null)
+      is Done -> {
+        if (ended.value != null) annotator.annotate(CLEARED, listOf("clear"), at)
+        Done(ended.value != null)
+      }
       is Refused -> ended
     }
   }
 
   /** Ends the exercise named [key] only, so a late reply cannot end a newer one. True when it was open. */
   fun clearIf(key: String): Boolean = (clear(key) as? Done)?.value == true
-
-  /** An exercise that ends takes back its own future marks, and one more mark shows the end. */
-  private fun markEnd(active: ActiveExercise?) {
-    if (active == null) return
-    val at = now()
-    ScheduledAnnotations.dropFuture(annotator, active, at)
-    annotator.annotate(CLEARED, listOf("clear"), at)
-  }
 
   fun status(): LabStatus {
     val active = (current(withResult = false) as? Done)?.value?.active

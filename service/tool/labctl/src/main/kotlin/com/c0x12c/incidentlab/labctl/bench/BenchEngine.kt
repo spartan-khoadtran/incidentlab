@@ -21,6 +21,7 @@ import com.c0x12c.incidentlab.labctl.state.ActiveExercise
 import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import com.c0x12c.incidentlab.labctl.state.matches
+import com.c0x12c.incidentlab.labctl.state.queueFutureMarks
 import com.fasterxml.jackson.annotation.JsonIgnore
 import java.time.ZoneId
 import kotlin.math.ceil
@@ -107,8 +108,9 @@ class BenchEngine(
     val bench = BenchMeasure(probe).read(active.started + seconds, seconds - BenchCatalog.SETTLE_SECONDS)
     if (before.empty && bench.empty) return Refused(Refusal.PrometheusDown)
     if (record) {
+      val at = now()
       val closed = store.withLock { state, write ->
-        (state.active?.key == active.key).also { if (it) write(state.copy(active = null, history = state.history + entry(active, params))) }
+        (state.active?.key == active.key).also { if (it) write(state.queueFutureMarks(active, at).copy(active = null, history = state.history + entry(active, params))) }
       }
       if (!closed) return Refused(Refusal.ExerciseChanged)
     }

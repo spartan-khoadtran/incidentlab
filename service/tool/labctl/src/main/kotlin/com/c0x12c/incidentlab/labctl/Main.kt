@@ -4,7 +4,9 @@ import com.c0x12c.incidentlab.labctl.api.ApiServer
 import com.c0x12c.incidentlab.labctl.api.LabApi
 import com.c0x12c.incidentlab.labctl.bench.BenchEngine
 import com.c0x12c.incidentlab.labctl.bench.BenchExercise
+import com.c0x12c.incidentlab.labctl.control.AnnotationCleanup
 import com.c0x12c.incidentlab.labctl.control.Annotator
+import com.c0x12c.incidentlab.labctl.control.Applier
 import com.c0x12c.incidentlab.labctl.control.Capabilities
 import com.c0x12c.incidentlab.labctl.control.CapabilitiesFile
 import com.c0x12c.incidentlab.labctl.control.CgroupApplier
@@ -58,19 +60,21 @@ object Main : Logging {
     return try {
       when (command) {
         "daemon" -> {
+          val grafana = GrafanaAnnotator(http) { warn { it } }
+          val services = listOf<Applier>(ServiceFaultApplier(http))
+          ControlDaemon(store, services, capabilities).publishCapabilities()
+          serveApi(store, probe, grafana, capabilities, loopbackOnly = false)
           val docker = DockerControl.ifAvailable(Path.of(System.getenv("DOCKER_SOCK") ?: "/var/run/docker.sock"), System.getenv("COMPOSE_PROJECT"))
           val containerAppliers = docker?.containerAppliers { containerId ->
             CgroupApplier.ifAvailable(containerId, hostPath("CGROUP_ROOT", "/host/cgroup"), hostPath("HOST_VOLUMES", "/host/volumes"), hostPath("HOST_SYS", "/host/sys"))
           }.orEmpty()
-          val appliers = listOf(ServiceFaultApplier(http)) + containerAppliers
-          val daemon = ControlDaemon(store, appliers, capabilities)
+          val daemon = ControlDaemon(store, services + containerAppliers, capabilities, cleanup = AnnotationCleanup(store, grafana) { warn { it } })
           daemon.publishCapabilities()
-          serveApi(store, probe, http, capabilities, loopbackOnly = false)
           daemon.run()
           0
         }
         "api" -> {
-          serveApi(store, probe, http, capabilities, loopbackOnly = true)
+          serveApi(store, probe, GrafanaAnnotator(http) { warn { it } }, capabilities, loopbackOnly = true)
           info { "no control loop: faults in the state file are not applied" }
           Thread.currentThread().join()
           0
@@ -104,9 +108,9 @@ object Main : Logging {
     }
   }
 
-  private fun serveApi(store: StateStore, probe: LabProbe, http: JsonHttp, capabilities: Capabilities, loopbackOnly: Boolean) {
+  private fun serveApi(store: StateStore, probe: LabProbe, annotator: Annotator, capabilities: Capabilities, loopbackOnly: Boolean) {
     val port = System.getenv("LAB_API_PORT")?.toIntOrNull() ?: ApiServer.DEFAULT_PORT
-    labApi(store, probe, GrafanaAnnotator(http) { warn { it } }, capabilities).start(port, loopbackOnly)
+    labApi(store, probe, annotator, capabilities).start(port, loopbackOnly)
     info { "lab API listening on port $port" }
   }
 

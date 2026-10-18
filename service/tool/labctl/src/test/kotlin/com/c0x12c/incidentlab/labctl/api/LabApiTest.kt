@@ -151,7 +151,9 @@ class LabApiTest {
     val base = server()
 
     assertThat(get(base, "/api/nope").json["error"].asText()).isEqualTo("not_found")
-    assertThat(get(base, "/api/exercises").status).isEqualTo(405)
+    val wrongMethod = get(base, "/api/exercises")
+    assertThat(wrongMethod.status).isEqualTo(405)
+    assertThat(wrongMethod.json["error"].asText()).isEqualTo("method_not_allowed")
     val broken = send(HttpRequest.newBuilder(URI.create("$base/api/load")).POST(HttpRequest.BodyPublishers.ofString("{oops")).headers(*WEB_HEADERS).build())
     assertThat(broken.status).isEqualTo(400)
     assertThat(broken.json["error"].asText()).isEqualTo("bad_json")
@@ -159,6 +161,7 @@ class LabApiTest {
     assertThat(wrongType.json["message"].asText()).isEqualTo("The field 'multiplier' has the wrong type.")
     val big = post(base, "/api/load", mapOf("multiplier" to 1, "pad" to "x".repeat(ApiServer.MAX_BODY_BYTES)))
     assertThat(big.status).isEqualTo(413)
+    assertThat(big.json["error"].asText()).isEqualTo("too_large")
   }
 
   @Test
@@ -285,7 +288,7 @@ class LabApiTest {
     assertThat(second == first).isFalse()
     assertThat(get(base, "/api/status").json["active"]["key"].asText()).isEqualTo(second)
 
-    for ((path, body) in listOf("answer" to choices("arch", "api_db", "pool", "pool_exhausted"), "reveal" to emptyMap(), "clear" to emptyMap())) {
+    for ((path, body) in listOf("hint" to emptyMap(), "answer" to choices("arch", "api_db", "pool", "pool_exhausted"), "reveal" to emptyMap(), "clear" to emptyMap())) {
       val stale = post(base, "/api/exercise/$path", body + ("key" to first))
       assertThat(stale.status).isEqualTo(409)
       assertThat(stale.json["error"].asText()).isEqualTo("exercise_changed")
@@ -293,11 +296,13 @@ class LabApiTest {
     val state = store().load()
     assertThat(state.active!!.id).isEqualTo("oom")
     assertThat(state.active!!.answered).isFalse()
+    assertThat(state.active!!.hints).isEqualTo(0)
     assertThat(state.history).isEmpty()
 
     assertThat(post(base, "/api/exercise/answer", choices("arch", "api_db", "pool", "pool_exhausted") + ("key" to second)).status).isEqualTo(200)
-    assertThat(post(base, "/api/exercise/clear", mapOf("key" to second)).status).isEqualTo(200)
+    assertThat(post(base, "/api/exercise/clear", mapOf("key" to second)).json["cleared"].asBoolean()).isTrue()
     assertThat(store().load().active).isNull()
+    assertThat(post(base, "/api/exercise/clear").json["cleared"].asBoolean()).isFalse()
     assertThat(post(base, "/api/exercise/answer", choices("arch", "api_db", "pool", "pool_exhausted") + ("key" to second)).json["error"].asText()).isEqualTo("exercise_changed")
   }
 
@@ -311,9 +316,18 @@ class LabApiTest {
     val bench = post(base, "/api/bench", mapOf("clients" to 20, "seconds" to 120)).json["key"].asText()
     clock = BENCH_START + 200
 
-    assertThat(post(base, "/api/ramp/answer", rampAnswer(200, 205, "pool") + ("key" to ramp)).json["error"].asText()).isEqualTo("exercise_changed")
-    assertThat(post(base, "/api/ramp/reveal", mapOf("key" to ramp)).json["error"].asText()).isEqualTo("exercise_changed")
-    assertThat(post(base, "/api/bench/report", mapOf("key" to ramp)).json["error"].asText()).isEqualTo("exercise_changed")
+    post(base, "/api/ramp/answer", rampAnswer(200, 205, "pool") + ("key" to ramp)).let {
+      assertThat(it.status).isEqualTo(409)
+      assertThat(it.json["error"].asText()).isEqualTo("exercise_changed")
+    }
+    post(base, "/api/ramp/reveal", mapOf("key" to ramp)).let {
+      assertThat(it.status).isEqualTo(409)
+      assertThat(it.json["error"].asText()).isEqualTo("exercise_changed")
+    }
+    post(base, "/api/bench/report", mapOf("key" to ramp)).let {
+      assertThat(it.status).isEqualTo(409)
+      assertThat(it.json["error"].asText()).isEqualTo("exercise_changed")
+    }
     assertThat(store().load().active!!.key).isEqualTo(bench)
     assertThat(post(base, "/api/bench/report", mapOf("key" to bench)).status).isEqualTo(200)
     assertThat(store().load().active).isNull()
@@ -539,6 +553,7 @@ class LabApiTest {
     assertThat(post(base, "/api/quiz", mapOf("count" to 0)).json["error"].asText()).isEqualTo("bad_count")
     assertThat(post(base, "/api/quiz", mapOf("count" to QuizSessions.MAX_COUNT + 1)).status).isEqualTo(400)
     assertThat(post(base, "/api/quiz", mapOf("kind" to "trivia")).json["error"].asText()).isEqualTo("bad_kind")
+    assertThat(post(base, "/api/quiz").json["questions"].size()).isEqualTo(QuizSessions.DEFAULT_COUNT)
     val quiz = post(base, "/api/quiz", mapOf("count" to 4, "kind" to "concepts"))
     assertThat(quiz.status).isEqualTo(201)
     val session = quiz.json["session"].asText()

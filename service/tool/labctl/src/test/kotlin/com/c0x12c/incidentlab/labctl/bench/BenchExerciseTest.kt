@@ -4,6 +4,7 @@ import assertk.assertThat
 import assertk.assertions.contains
 import assertk.assertions.containsExactly
 import assertk.assertions.hasSize
+import assertk.assertions.isEmpty
 import assertk.assertions.isEqualTo
 import assertk.assertions.isNotNull
 import assertk.assertions.isNull
@@ -11,6 +12,7 @@ import assertk.assertions.isTrue
 import com.c0x12c.incidentlab.labctl.FakeAnnotator
 import com.c0x12c.incidentlab.labctl.FakePrometheus
 import com.c0x12c.incidentlab.labctl.ScriptedTerminal
+import com.c0x12c.incidentlab.labctl.control.AnnotationCleanup
 import com.c0x12c.incidentlab.labctl.control.DesiredState
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
@@ -89,7 +91,7 @@ class BenchExerciseTest {
   }
 
   @Test
-  fun `a bench cleared early takes back its end mark`(@TempDir dir: Path) {
+  fun `a bench cleared early queues its end mark, and the daemon deletes it`(@TempDir dir: Path) {
     val terminal = ScriptedTerminal()
     val bench = bench(dir, terminal)
     bench.start(BenchOptions())
@@ -97,8 +99,11 @@ class BenchExerciseTest {
 
     exercises(dir, terminal, bench).clear()
 
-    assertThat(annotator.live.map { it.text }).containsExactly("bench: 20 closed-loop clients", "lab: fault cleared")
+    assertThat(annotator.attempts).isEmpty()
     assertThat(store(dir).load().active).isNull()
+    AnnotationCleanup(store(dir), annotator, { clock }) {}.runOnce()
+    assertThat(annotator.live.map { it.text }).containsExactly("bench: 20 closed-loop clients", "lab: fault cleared")
+    assertThat(store(dir).load().pendingAnnotationDeletes).isEmpty()
   }
 
   @Test

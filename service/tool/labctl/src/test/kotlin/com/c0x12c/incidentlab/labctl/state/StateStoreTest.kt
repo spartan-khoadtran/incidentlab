@@ -18,7 +18,8 @@ class StateStoreTest {
     val state = LabState(
       active = ActiveExercise(id = "pool_hold", params = mapOf("recommend_ms" to 230), started = 1.5, hints = 1, n = 3),
       history = listOf(HistoryEntry(n = 1, id = "oom", title = "Periodic OOM kill", level = 3, score = null, hints = 0, minutes = 4.2, at = 2.0)),
-      base = mapOf("loadgen" to mapOf("rate_multiplier" to 1.5))
+      base = mapOf("loadgen" to mapOf("rate_multiplier" to 1.5)),
+      pendingAnnotationDeletes = listOf(PlannedAnnotation(7, 90.0))
     )
 
     store.save(state)
@@ -43,6 +44,7 @@ class StateStoreTest {
     assertThat(state.active?.key).isEqualTo("legacy-3-1.5")
     assertThat(StateStore(path).load().active?.key).isEqualTo(state.active?.key)
     assertThat(state.active?.annotations).isEqualTo(emptyList<PlannedAnnotation>())
+    assertThat(state.pendingAnnotationDeletes).isEqualTo(emptyList<PlannedAnnotation>())
   }
 
   @Test
@@ -69,7 +71,7 @@ class StateStoreTest {
     val path = dir.resolve("state.json")
     val java = ProcessHandle.current().info().command().orElse("java")
     val child = ProcessBuilder(java, "-cp", System.getProperty("java.class.path"), StateWriterProbe::class.java.name, path.toString(), UPDATES.toString())
-      .redirectErrorStream(true)
+      .redirectError(ProcessBuilder.Redirect.INHERIT)
       .start()
     val output = child.inputStream.bufferedReader()
     StateStore(dir.resolve("warm-up.json")).update { it }

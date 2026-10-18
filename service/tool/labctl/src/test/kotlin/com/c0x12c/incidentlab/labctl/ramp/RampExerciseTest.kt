@@ -4,6 +4,7 @@ import assertk.assertThat
 import assertk.assertions.contains
 import assertk.assertions.containsExactly
 import assertk.assertions.hasSize
+import assertk.assertions.isEmpty
 import assertk.assertions.isEqualTo
 import assertk.assertions.isNotNull
 import assertk.assertions.isNull
@@ -11,6 +12,7 @@ import assertk.assertions.isTrue
 import com.c0x12c.incidentlab.labctl.FakeAnnotator
 import com.c0x12c.incidentlab.labctl.FakePrometheus
 import com.c0x12c.incidentlab.labctl.ScriptedTerminal
+import com.c0x12c.incidentlab.labctl.control.AnnotationCleanup
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
 import com.c0x12c.incidentlab.labctl.exercise.NewOptions
 import com.c0x12c.incidentlab.labctl.state.HistoryEntry
@@ -108,21 +110,28 @@ class RampExerciseTest {
   }
 
   @Test
-  fun `a ramp cleared early takes back the marks of the steps it never ran`(@TempDir dir: Path) {
+  fun `a ramp cleared early queues the marks of the steps it never ran, and the daemon deletes them`(@TempDir dir: Path) {
     val terminal = ScriptedTerminal()
     val ramp = ramp(dir, terminal)
     ramp.start(RampOptions(every = EVERY))
-    assertThat(store(dir).load().active!!.annotations.map { it.id }).isEqualTo(annotator.written.map { it.id })
+    val marks = store(dir).load().active!!.annotations
+    assertThat(marks.map { it.id }).isEqualTo(annotator.written.map { it.id })
     clock = START + 2.5 * EVERY
 
     exercises(dir, terminal, ramp).clear()
 
-    assertThat(annotator.live.map { it.text }).containsExactly("ramp step 1: 50 rps", "ramp step 2: 75 rps", "ramp step 3: 100 rps", "lab: fault cleared")
+    assertThat(annotator.attempts).isEmpty()
     assertThat(store(dir).load().active).isNull()
+    assertThat(store(dir).load().pendingAnnotationDeletes).isEqualTo(marks.drop(3))
+
+    AnnotationCleanup(store(dir), annotator, { clock }) {}.runOnce()
+
+    assertThat(annotator.live.map { it.text }).containsExactly("ramp step 1: 50 rps", "ramp step 2: 75 rps", "ramp step 3: 100 rps", "lab: fault cleared")
+    assertThat(store(dir).load().pendingAnnotationDeletes).isEmpty()
   }
 
   @Test
-  fun `a new exercise forced over a ramp takes back the ramp's future marks too`(@TempDir dir: Path) {
+  fun `a new exercise forced over a ramp queues the ramp's future marks too`(@TempDir dir: Path) {
     val terminal = ScriptedTerminal()
     val ramp = ramp(dir, terminal)
     ramp.start(RampOptions(every = EVERY))
@@ -130,8 +139,10 @@ class RampExerciseTest {
 
     assertThat(exercises(dir, terminal, ramp).newExercise(NewOptions(id = "oom", force = true))).isEqualTo(0)
 
-    assertThat(annotator.live.filter { "ramp" in it.tags }.map { it.text }).containsExactly("ramp step 1: 50 rps", "ramp step 2: 75 rps")
+    assertThat(annotator.attempts).isEmpty()
     assertThat(store(dir).load().active!!.id).isEqualTo("oom")
+    AnnotationCleanup(store(dir), annotator, { clock }) {}.runOnce()
+    assertThat(annotator.live.filter { "ramp" in it.tags }.map { it.text }).containsExactly("ramp step 1: 50 rps", "ramp step 2: 75 rps")
   }
 
   @Test
@@ -222,6 +233,7 @@ class RampExerciseTest {
     assertThat(exercises(dir, terminal, ramp).answer()).isEqualTo(1)
 
     assertThat(terminal.lines.last()).contains("Prometheus did not answer")
+    assertThat(terminal.asked).isEqualTo(0)
     val state = store(dir).load()
     assertThat(state.history).hasSize(0)
     assertThat(state.active).isNotNull()

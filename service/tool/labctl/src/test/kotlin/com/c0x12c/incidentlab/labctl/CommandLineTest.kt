@@ -9,6 +9,7 @@ import com.c0x12c.incidentlab.labctl.bench.BenchOptions
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
 import com.c0x12c.incidentlab.labctl.exercise.NewOptions
 import com.c0x12c.incidentlab.labctl.quiz.QuizKind
+import com.c0x12c.incidentlab.labctl.quiz.QuizSessions
 import com.c0x12c.incidentlab.labctl.ramp.RampOptions
 import org.junit.jupiter.api.Test
 
@@ -49,12 +50,13 @@ class CommandLineTest {
   }
 
   @Test
-  fun `quiz takes a positive count and a kind, and defaults to five mixed questions`() {
+  fun `quiz takes a positive count and a kind, and falls back to the given count of mixed questions`() {
     assertThat(CommandLine.quizOptions(listOf("-n", "3", "--kind", "concepts"), 5)).isEqualTo(QuizOptions(count = 3, kind = QuizKind.CONCEPTS))
     assertThat(CommandLine.quizOptions(emptyList(), 5)).isEqualTo(QuizOptions(count = 5, kind = QuizKind.ALL))
     assertFailure { CommandLine.quizOptions(listOf("-n", "x"), 5) }.isInstanceOf(UsageError::class)
     assertFailure { CommandLine.quizOptions(listOf("--kind", "riddles"), 5) }.hasMessage("KIND must be one of numbers, concepts, all, for example `make quiz KIND=concepts`.")
     assertFailure { CommandLine.quizOptions(listOf("--bogus"), 5) }.isInstanceOf(UsageError::class)
+    assertThat(QuizSessions.DEFAULT_COUNT).isEqualTo(50)
   }
 
   @Test

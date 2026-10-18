@@ -92,8 +92,7 @@ class LabApi(
     },
     post("/api/exercise/reveal") { ok(exercises.reveal(key(it)).orFail().reveal) },
     post("/api/exercise/clear") {
-      exercises.clear(key(it)).orFail()
-      ok(mapOf("cleared" to true))
+      ok(mapOf("cleared" to exercises.clear(key(it)).orFail()))
     },
     get("/api/history") { ok(exercises.history()) },
     post("/api/load") { call ->

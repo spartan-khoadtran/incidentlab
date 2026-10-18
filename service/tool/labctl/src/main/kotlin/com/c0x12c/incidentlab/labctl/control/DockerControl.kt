@@ -13,6 +13,7 @@ import java.net.URLEncoder
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 import kotlin.math.roundToLong
 
 /** Runs a command inside a compose service's container and returns what it printed. Throws on a non-zero exit. */
@@ -25,10 +26,18 @@ fun interface DockerEngine {
   fun call(method: DockerHttpClient.Request.Method, path: String, body: Any?): ByteArray
 }
 
+/** Without them a stalled engine blocks a call for ever, and with it the daemon's start. */
+private val CONNECT_TIMEOUT: Duration = Duration.ofSeconds(3)
+private val RESPONSE_TIMEOUT: Duration = Duration.ofSeconds(15)
+
 /** The engine API over the unix socket, through `docker-java-transport-zerodep`. */
 class SocketEngine(socket: Path) : DockerEngine {
 
-  private val client: DockerHttpClient = ZerodepDockerHttpClient.Builder().dockerHost(URI.create("unix://$socket")).build()
+  private val client: DockerHttpClient = ZerodepDockerHttpClient.Builder()
+    .dockerHost(URI.create("unix://$socket"))
+    .connectionTimeout(CONNECT_TIMEOUT)
+    .responseTimeout(RESPONSE_TIMEOUT)
+    .build()
 
   override fun call(method: DockerHttpClient.Request.Method, path: String, body: Any?): ByteArray =
     DockerHttpClient.Request.builder()

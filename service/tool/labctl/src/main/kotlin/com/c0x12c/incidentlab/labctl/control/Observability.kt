@@ -33,7 +33,14 @@ interface Annotator {
   /** Grafana's id for the new annotation, or null when it was not written. */
   fun annotate(text: String, tags: List<String>, atSeconds: Double): Long?
 
-  fun delete(id: Long)
+  fun delete(id: Long): Deletion
+}
+
+sealed interface Deletion {
+  /** Deleted now, or already gone. */
+  data object Gone : Deletion
+
+  data class Failed(val reason: String) : Deletion
 }
 
 class HttpLabProbe(private val http: JsonHttp) : LabProbe {
@@ -85,28 +92,31 @@ class HttpLabProbe(private val http: JsonHttp) : LabProbe {
   }
 }
 
-/** Writes annotations to Grafana. A failure is reported, not thrown: the CLI prints it, the daemon logs it. */
-class GrafanaAnnotator(private val http: JsonHttp, private val report: (String) -> Unit) : Annotator {
+/** Writes annotations to Grafana. A failed write is reported, not thrown: the CLI prints it, the daemon logs it. A failed delete is returned to the caller. */
+class GrafanaAnnotator(private val http: JsonHttp, private val grafana: String = GRAFANA, private val report: (String) -> Unit) : Annotator {
 
   override fun annotate(text: String, tags: List<String>, atSeconds: Double): Long? =
     try {
-      http.post("$GRAFANA/api/annotations", mapOf("time" to (atSeconds * MILLIS_PER_SECOND).toLong(), "tags" to listOf("lab") + tags, "text" to text))
+      http.post("$grafana/api/annotations", mapOf("time" to (atSeconds * MILLIS_PER_SECOND).toLong(), "tags" to listOf("lab") + tags, "text" to text))
         .path("id").takeIf { it.isIntegralNumber }?.asLong()
     } catch (e: Exception) {
       report("(could not write the annotation to Grafana: ${e.message})")
       null
     }
 
-  override fun delete(id: Long) {
+  override fun delete(id: Long): Deletion =
     try {
-      http.delete("$GRAFANA/api/annotations/$id")
+      http.delete("$grafana/api/annotations/$id")
+      Deletion.Gone
+    } catch (e: HttpStatusException) {
+      if (e.code == NOT_FOUND) Deletion.Gone else Deletion.Failed(e.message.orEmpty())
     } catch (e: Exception) {
-      report("(could not delete annotation $id from Grafana: ${e.message})")
+      Deletion.Failed(e.message ?: e.javaClass.simpleName)
     }
-  }
 
   companion object {
     val GRAFANA: String = System.getenv("GRAFANA_URL") ?: "http://grafana:3000"
     private const val MILLIS_PER_SECOND = 1_000.0
+    private const val NOT_FOUND = 404
   }
 }
