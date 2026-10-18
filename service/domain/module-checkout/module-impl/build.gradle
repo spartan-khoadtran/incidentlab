@@ -33,3 +33,8 @@ dependencies {
 
   testImplementation(libs.kotlinx.coroutines.core)
 }
+
+// LegacyOrderCacheTest starts a second JVM on the test classpath.
+tasks.withType(Test).configureEach {
+  systemProperty("probe.classpath", sourceSets.test.runtimeClasspath.asPath)
+}

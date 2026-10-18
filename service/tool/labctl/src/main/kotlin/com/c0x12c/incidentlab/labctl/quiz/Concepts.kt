@@ -10,6 +10,7 @@ import com.c0x12c.incidentlab.labctl.quiz.concepts.MethodsConcepts
 import com.c0x12c.incidentlab.labctl.quiz.concepts.MonitoringConcepts
 import com.c0x12c.incidentlab.labctl.quiz.concepts.NetworkConcepts
 import com.c0x12c.incidentlab.labctl.quiz.concepts.ProfilingConcepts
+import com.c0x12c.incidentlab.labctl.quiz.concepts.RuntimeConcepts
 import com.c0x12c.incidentlab.labctl.quiz.concepts.ToolboxConcepts
 
 /** Every concept drill, one list per guide file. */
@@ -25,6 +26,7 @@ object Concepts {
     MonitoringConcepts.all,
     NetworkConcepts.all,
     ProfilingConcepts.all,
+    RuntimeConcepts.all,
     ToolboxConcepts.all
   ).flatten()
 }

@@ -17,6 +17,7 @@ import com.c0x12c.incidentlab.labctl.scenario.catalog.DatabaseScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.DiskScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.DownstreamScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.EdgeScenarios
+import com.c0x12c.incidentlab.labctl.scenario.catalog.JvmScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.LoadScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.ProfilingScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.NetworkScenarios
@@ -33,7 +34,8 @@ class ScenarioCatalogTest {
     LoadScenarios.all, EdgeScenarios.all, AppScenarios.all, DatabaseScenarios.all, DownstreamScenarios.all, AsyncScenarios.all, ContainerHostScenarios.all,
     ProfilingScenarios.all,
     NetworkScenarios.all,
-    DiskScenarios.all
+    DiskScenarios.all,
+    JvmScenarios.all
   )
 
   @Test
@@ -356,5 +358,53 @@ class ScenarioCatalogTest {
     val TOOLBOX_CORE = listOf(
       "cpu_throttle", "noisy_neighbor", "single_thread_cpu", "pricing_cpu", "oom", "slow_leak", "pool_hold", "pool_shrunk", "db_lock", "consumer_backlog", "n_plus_one"
     )
+  }
+
+  @Test
+  fun `the runtime scenarios drive only api's runtime keys`() {
+    val random = Random(9)
+    val keys = mapOf(
+      "gc_pressure" to setOf("retain_mb", "churn_kb"),
+      "vthread_pinning" to setOf("pin_db", "pin_hold_ms"),
+      "sync_logging" to setOf("debug_log_lines")
+    )
+    for ((id, expected) in keys) {
+      val scenario = ScenarioCatalog.byId.getValue(id)
+      val spec = scenario.faults(Params(scenario.params(random, ExerciseContext()), "14:05"))
+      assertThat(spec.services.keys).containsOnly("api")
+      assertThat(spec.services.getValue("api").keys).isEqualTo(expected)
+      assertThat(spec.docker).isEmpty()
+    }
+    assertThat(Answers.DISTRACTORS.contains("gc_pause")).isFalse()
+  }
+
+  @Test
+  fun `the pinning hold puts the checkout demand at 1_2 to 1_6 times the two carriers`() {
+    assertThat(JvmScenarios.carrierDemand(JvmScenarios.PIN_HOLD_MIN_MS)).isBetween(1.2, 1.6)
+    assertThat(JvmScenarios.carrierDemand(JvmScenarios.PIN_HOLD_MAX_MS)).isBetween(1.2, 1.6)
+    // 15 checkouts/s × (50 + 110) ms / 2 carriers = 1.2
+    assertThat(JvmScenarios.carrierDemand(110)).isEqualTo(1.2)
+    val scenario = ScenarioCatalog.byId.getValue("vthread_pinning")
+    val random = Random(4)
+    repeat(50) {
+      val hold = scenario.params(random, ExerciseContext())["hold"] as Int
+      assertThat(JvmScenarios.carrierDemand(hold)).isBetween(1.2, 1.6)
+    }
+  }
+
+  @Test
+  fun `the GC store stays inside the calibrated band`() {
+    val scenario = ScenarioCatalog.byId.getValue("gc_pressure")
+    val random = Random(6)
+    repeat(50) {
+      val params = scenario.params(random, ExerciseContext())
+      assertThat(params["retain"] as Int).isBetween(70, 85)
+      assertThat(params["churn"] as Int).isBetween(48, 64)
+    }
+    val explain = scenario.explain(Params(mapOf("retain" to 80, "churn" to 64), "14:05"))
+    // 80 MB / 20 bytes = 4.2 million objects; 50 × 64 KB = 3.1 MB/s; 80 / 3.125 = 26 s
+    assertThat(explain.contains("4.2 million")).isTrue()
+    assertThat(explain.contains("3.1 MB/s")).isTrue()
+    assertThat(explain.contains("26 s")).isTrue()
   }
 }

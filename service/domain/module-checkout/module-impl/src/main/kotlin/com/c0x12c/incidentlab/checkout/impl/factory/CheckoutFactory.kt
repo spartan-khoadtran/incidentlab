@@ -17,6 +17,9 @@ import com.c0x12c.incidentlab.checkout.impl.pricing.PricingClient
 import com.c0x12c.incidentlab.checkout.impl.pricing.PricingTimeoutInterceptor
 import com.c0x12c.incidentlab.checkout.impl.render.ReceiptRenderer
 import com.c0x12c.incidentlab.checkout.impl.resource.ApiGates
+import com.c0x12c.incidentlab.checkout.impl.runtime.HeapPressure
+import com.c0x12c.incidentlab.checkout.impl.runtime.LegacyOrderCache
+import com.c0x12c.incidentlab.checkout.impl.runtime.SupportTrace
 import com.c0x12c.incidentlab.client.PricingApi
 import com.c0x12c.incidentlab.database.DatabaseContext
 import com.c0x12c.incidentlab.faults.Faults
@@ -54,6 +57,14 @@ class CheckoutFactory {
 
   @Singleton
   fun receiptRenderer(objectMapper: ObjectMapper): ReceiptRenderer = ReceiptRenderer(objectMapper)
+
+  fun heapPressure(registry: MeterRegistry): HeapPressure = HeapPressure(registry)
+
+  @Singleton
+  fun legacyOrderCache(): LegacyOrderCache = LegacyOrderCache()
+
+  @Singleton
+  fun supportTrace(): SupportTrace = SupportTrace()
 
   @Singleton
   @Bean(preDestroy = "shutdown")
@@ -128,6 +139,9 @@ class CheckoutFactory {
     inventory: InventoryCache,
     leak: MemoryLeak,
     renderer: ReceiptRenderer,
+    heap: HeapPressure,
+    legacyCache: LegacyOrderCache,
+    supportTrace: SupportTrace,
     runtime: EventLoopRuntime,
     tracer: Tracer,
     objectMapper: ObjectMapper,
@@ -143,6 +157,9 @@ class CheckoutFactory {
     inventory = inventory,
     leak = leak,
     renderer = renderer,
+    heap = heap,
+    legacyCache = legacyCache,
+    supportTrace = supportTrace,
     runtime = runtime,
     tracer = tracer,
     objectMapper = objectMapper,

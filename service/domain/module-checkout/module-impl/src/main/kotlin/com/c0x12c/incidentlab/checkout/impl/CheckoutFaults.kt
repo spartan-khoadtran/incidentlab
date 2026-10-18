@@ -22,6 +22,11 @@ object CheckoutFaults {
   const val PRICE_FALLBACK = "price_fallback"
   const val RENDER_MS = "render_ms"
   const val PRICING_KEEPALIVE = "pricing_keepalive"
+  const val RETAIN_MB = "retain_mb"
+  const val CHURN_KB = "churn_kb"
+  const val PIN_DB = "pin_db"
+  const val PIN_HOLD_MS = "pin_hold_ms"
+  const val DEBUG_LOG_LINES = "debug_log_lines"
 
   val DEFAULTS: Map<String, Any?> = mapOf(
     // max concurrent requests the app accepts; the rest wait before the handler starts timing
@@ -58,6 +63,16 @@ object CheckoutFaults {
     // CPU work per request on the request's own thread: the receipt renderer
     RENDER_MS to 0,
     // false: no connection reuse towards pricing; every call opens a TCP connection and closes it after the response
-    PRICING_KEEPALIVE to true
+    PRICING_KEEPALIVE to true,
+    // live data the GC-pressure store keeps on the heap
+    RETAIN_MB to 0,
+    // new objects per request written over random old ones in that store
+    CHURN_KB to 0,
+    // checkout DB work inside synchronized, which pins a virtual thread to its carrier
+    PIN_DB to false,
+    // blocking cache put inside that synchronized block
+    PIN_HOLD_MS to 0,
+    // DEBUG lines per request that reach the console
+    DEBUG_LOG_LINES to 0
   )
 }

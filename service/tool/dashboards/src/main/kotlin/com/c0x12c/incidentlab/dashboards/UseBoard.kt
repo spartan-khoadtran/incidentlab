@@ -4,6 +4,7 @@ import com.c0x12c.incidentlab.dashboards.Board.Companion.quantile
 
 object UseBoard {
 
+  private const val JVM_SERVICES = "job=~\"api|pricing|worker\""
   private const val SERVICES = "job=~\"api|pricing|worker|loadgen|pgobserver\""
 
   fun build(): Board {
@@ -60,6 +61,12 @@ object UseBoard {
     )
     b.timeseries("Memory (RSS)", listOf("process_resident_memory_bytes{$SERVICES}" to "{{job}}"), "bytes")
     b.timeseries("Restarts in 10 minutes", listOf("changes(process_start_time_seconds{job=~\"api|pricing|worker|loadgen\"}[10m])" to "{{job}}"), "short")
+    b.timeseries(
+      "CPU user against system (cores)",
+      listOf("sum by (job, mode) (rate(cgroup_cpu_mode_seconds_total{$JVM_SERVICES}[RI]))" to "{{job}} {{mode}}"),
+      "short",
+      "From the container's cpu.stat. System time is the kernel working for the process: syscalls such as writes to a socket, a pipe or a file."
+    )
 
     b.row("Container (cgroup)")
     b.timeseries("CPU usage per container (cores)", listOf("rate(cgroup_cpu_usage_seconds_total[RI])" to "{{job}}"), "short")
@@ -202,6 +209,58 @@ object UseBoard {
       listOf("rate(node_disk_io_time_weighted_seconds_total[RI])" to "{{device}}"),
       "short",
       "Saturation, like iostat's aqu-sz. By Little's Law it is IOPS times await."
+    )
+    b.row("JVM (heap, GC, virtual threads)")
+    b.timeseries(
+      "api heap by pool against the old gen max",
+      listOf("jvm_memory_used_bytes{job=\"api\",area=\"heap\"}" to "{{id}}", "jvm_memory_max_bytes{job=\"api\",id=\"Tenured Gen\"}" to "Tenured Gen max"),
+      "bytes",
+      "Serial collector pools: Eden Space and Survivor Space are the young generation, Tenured Gen the old one. Old gen usage grows between full GCs."
+    )
+    b.timeseries(
+      "GC pause p99",
+      listOf(quantile(0.99, "jvm_gc_pause_seconds", "job", "{$JVM_SERVICES}") to "{{job}}"),
+      "s",
+      "Every pause stops all application threads. A request in flight during a pause waits for it."
+    )
+    b.heatmap(
+      "api GC pauses (pauses per bucket)",
+      "jvm_gc_pause_seconds",
+      "{job=\"api\"}",
+      description = "One cell per pause-length bucket and interval. A full GC shows as a cell far above the young GC band."
+    )
+    b.timeseries(
+      "GC runs per second by collector and cause",
+      listOf("sum by (job, gc, cause) (rate(jvm_gc_pause_seconds_count{$JVM_SERVICES}[RI]))" to "{{job}} {{gc}} {{cause}}"),
+      "short",
+      "Copy is the young collector, MarkSweepCompact the full one."
+    )
+    b.timeseries(
+      "Allocation rate",
+      listOf("rate(jvm_gc_memory_allocated_bytes_total{$JVM_SERVICES}[RI])" to "{{job}}"),
+      "Bps",
+      "Bytes allocated in the young generation per second, counted at each GC."
+    )
+    b.timeseries(
+      "Live data after full GC against the old gen max",
+      listOf(
+        "jvm_gc_live_data_size_bytes{$JVM_SERVICES}" to "{{job}} live after GC",
+        "jvm_memory_max_bytes{$JVM_SERVICES,id=\"Tenured Gen\"}" to "{{job}} old gen max"
+      ),
+      "bytes",
+      "What a full GC could not free. Close to the max: each GC frees little, so the next one comes soon."
+    )
+    b.timeseries(
+      "Pinned virtual threads per second",
+      listOf("rate(jvm_virtual_thread_pinned_total{$JVM_SERVICES}[RI])" to "{{job}}"),
+      "short",
+      "JFR jdk.VirtualThreadPinned events above 1 ms: a virtual thread blocked while it could not leave its carrier thread."
+    )
+    b.timeseries(
+      "Time pinned per second (carriers blocked)",
+      listOf("rate(jvm_virtual_thread_pinned_seconds_total{$JVM_SERVICES}[RI])" to "{{job}}"),
+      "short",
+      "Seconds of pinned blocking per second, about the number of carriers blocked at once. api has 2 carriers, one per core."
     )
     b.row("CPU profiles (Pyroscope)")
     b.flamegraph(

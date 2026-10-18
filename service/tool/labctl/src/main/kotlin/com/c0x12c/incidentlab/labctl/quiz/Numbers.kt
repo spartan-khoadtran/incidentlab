@@ -10,6 +10,7 @@ import com.c0x12c.incidentlab.labctl.quiz.numbers.MethodsNumbers
 import com.c0x12c.incidentlab.labctl.quiz.numbers.MonitoringNumbers
 import com.c0x12c.incidentlab.labctl.quiz.numbers.NetworkNumbers
 import com.c0x12c.incidentlab.labctl.quiz.numbers.ProfilingNumbers
+import com.c0x12c.incidentlab.labctl.quiz.numbers.RuntimeNumbers
 import com.c0x12c.incidentlab.labctl.quiz.numbers.ToolboxNumbers
 import kotlin.random.Random
 
@@ -26,6 +27,7 @@ object Numbers {
     MonitoringNumbers.generators,
     NetworkNumbers.generators,
     ProfilingNumbers.generators,
+    RuntimeNumbers.generators,
     ToolboxNumbers.generators
   ).flatten()
 }

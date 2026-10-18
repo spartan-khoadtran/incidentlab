@@ -64,6 +64,11 @@ object GuideIndex {
         "Profiles in this lab"
       ).associateWith { "profiling.md" } +
       listOf(
+        "Garbage collection",
+        "Virtual threads",
+        "System time"
+      ).associateWith { "runtime.md" } +
+      listOf(
         "The 60-second checklist",
         "Crisis tools",
         "The toolbox in this lab"

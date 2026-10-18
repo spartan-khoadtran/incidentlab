@@ -7,6 +7,7 @@ import com.c0x12c.incidentlab.labctl.scenario.catalog.DatabaseScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.DiskScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.DownstreamScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.EdgeScenarios
+import com.c0x12c.incidentlab.labctl.scenario.catalog.JvmScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.LoadScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.ProfilingScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.NetworkScenarios
@@ -24,7 +25,8 @@ object ScenarioCatalog : FaultSource {
     LoadScenarios.all + EdgeScenarios.all + AppScenarios.all + DatabaseScenarios.all + DownstreamScenarios.all + AsyncScenarios.all + ContainerHostScenarios.all +
       ProfilingScenarios.all +
       NetworkScenarios.all +
-      DiskScenarios.all
+      DiskScenarios.all +
+      JvmScenarios.all
 
   val byId: Map<String, Scenario> = all.associateBy { it.id }
 

@@ -47,7 +47,10 @@ object Answers {
     "cpu_profile" to "A CPU profile of api: one code path owns most of the samples",
     "tcp_retransmits" to "TCP retransmits and RTO timeouts counted inside api, against pricing's own p99 which stays flat",
     "tcp_connections" to "New TCP connections per second and TIME_WAIT count at api against its call rate",
-    "disk_io" to "Disk await and busy share on the host against Postgres wait events (WAL sync, checkpoint) and exec time by query"
+    "disk_io" to "Disk await and busy share on the host against Postgres wait events (WAL sync, checkpoint) and exec time by query",
+    "jvm_gc" to "GC pause rate and pause p99 against live data after GC and heap max",
+    "vthread_pinned" to "Pinned virtual-thread events per second against in-flight requests, with CPU low",
+    "user_vs_sys" to "Process CPU split into user and system time: system time rises with syscalls"
   )
 
   /** Causes by layer, outermost first. The prompt prints one header per layer. */
@@ -71,7 +74,10 @@ object Answers {
       "gc_pause" to "Long GC pauses stop the JVM",
       "memory_leak" to "Memory grows without limit (a leak) and will hit the limit",
       "app_lock" to "A lock inside the app serializes requests: they wait for each other, not for a resource",
-      "hot_code_path" to "A hot code path burns CPU on every request: a serializer, a regex, a formatter"
+      "hot_code_path" to "A hot code path burns CPU on every request: a serializer, a regex, a formatter",
+      "thread_pool_exhausted" to "A thread pool is full: requests wait for a free worker thread",
+      "vthread_pinning" to "Virtual threads pinned to their carriers: synchronized around blocking work caps concurrency at the CPU count",
+      "sync_logging" to "Verbose synchronous logging: every line is a write syscall under one lock"
     ),
     "DB client and Postgres" to listOf(
       "pool_exhausted" to "Connection pool exhausted: hold time too long, or the pool too small",
@@ -115,7 +121,7 @@ object Answers {
   val CAUSE_GROUPS: Map<String, String> = CAUSES_BY_LAYER.flatMap { (group, causes) -> causes.map { it.first to group } }.toMap()
 
   /** Causes no scenario has. They keep the cause list from being a copy of the catalog. */
-  val DISTRACTORS: Set<String> = setOf("gc_pause", "missing_index", "disk_full", "dns_slow")
+  val DISTRACTORS: Set<String> = setOf("thread_pool_exhausted", "missing_index", "disk_full", "dns_slow")
 
   val DECOYS: List<String> = listOf(
     "Deploy worker v1.8: logging library update",

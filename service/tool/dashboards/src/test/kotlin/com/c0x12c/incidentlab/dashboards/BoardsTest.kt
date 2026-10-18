@@ -58,7 +58,7 @@ class BoardsTest {
 
   @Test
   fun `latency quantile targets ask for exemplars and rate targets do not`() {
-    val targets = RedBoard.build().panels.flatMap { (it["targets"] as? List<*>).orEmpty() }.map { it as Map<*, *> }
+    val targets = RedBoard.build().panels.filter { it["type"] == "timeseries" }.flatMap { (it["targets"] as? List<*>).orEmpty() }.map { it as Map<*, *> }
     val (quantiles, others) = targets.partition { (it["expr"] as String).startsWith("histogram_quantile(") }
 
     assertThat(quantiles.isNotEmpty() && quantiles.all { it["exemplar"] == true }).isTrue()
@@ -78,5 +78,28 @@ class BoardsTest {
     val expressions = panels.subList(next - 3, next).flatMap { (it["targets"] as List<*>) }.mapNotNull { (it as Map<*, *>)["expr"] as String? }
     assertThat(expressions.any { it.contains("app_lock_wait_seconds_bucket") }).isTrue()
     assertThat(expressions.any { it.contains("app_lock_held_seconds_total") }).isTrue()
+  }
+
+  @Test
+  fun `heatmaps read Prometheus buckets as they are`() {
+    val heatmaps = (RedBoard.build().panels + UseBoard.build().panels).filter { it["type"] == "heatmap" }
+    assertThat(heatmaps.size).isEqualTo(2)
+    for (panel in heatmaps) {
+      val target = (panel["targets"] as List<*>).single() as Map<*, *>
+      assertThat(target["format"]).isEqualTo("heatmap")
+      val expr = target["expr"] as String
+      assertThat(expr.startsWith("sum by (le) (increase(") && expr.endsWith("_seconds_bucket{job=\"api\"}[${Board.RATE_INTERVAL}]))")).isTrue()
+      assertThat((panel["options"] as Map<*, *>)["calculate"]).isEqualTo(false)
+    }
+  }
+
+  @Test
+  fun `the JVM row of the USE board has its eight panels`() {
+    val panels = UseBoard.build().panels
+    val rows = panels.withIndex().filter { it.value["type"] == "row" }
+    val jvm = rows.indexOfFirst { it.value["title"] == "JVM (heap, GC, virtual threads)" }
+    assertThat(jvm >= 0).isTrue()
+    val end = rows.getOrNull(jvm + 1)?.index ?: panels.size
+    assertThat(end - rows[jvm].index - 1).isEqualTo(8)
   }
 }

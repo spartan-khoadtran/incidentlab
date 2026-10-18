@@ -130,4 +130,15 @@ class DesiredStateTest {
 
     assertThat(desired.docker.getValue("api")).isEqualTo(mapOf("cpus" to 2.0, "netem" to mapOf("target" to "pricing", "delay_ms" to 0, "loss_pct" to 2.0)))
   }
+
+  @Test
+  fun `a runtime exercise changes api's faults and leaves its cores alone`() {
+    val state = LabState(active = ActiveExercise(id = "vthread_pinning", params = mapOf("hold" to 120), started = 0.0, n = 1))
+
+    val desired = DesiredState.of(state)
+
+    assertThat(desired.faults.getValue("api")).isEqualTo(mapOf<String, Any?>("pin_db" to true, "pin_hold_ms" to 120))
+    assertThat(desired.faults.getValue("pricing")).isEqualTo(emptyMap<String, Any?>())
+    assertThat(desired.docker.getValue("api")).isEqualTo(mapOf("cpus" to 2.0))
+  }
 }
