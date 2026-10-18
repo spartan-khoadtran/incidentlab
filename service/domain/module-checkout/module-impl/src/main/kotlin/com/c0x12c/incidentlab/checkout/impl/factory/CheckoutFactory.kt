@@ -8,6 +8,7 @@ import com.c0x12c.incidentlab.checkout.impl.cache.ProductCache
 import com.c0x12c.incidentlab.checkout.impl.config.CheckoutConfig
 import com.c0x12c.incidentlab.checkout.impl.db.DbSessions
 import com.c0x12c.incidentlab.checkout.impl.events.OrderEvents
+import com.c0x12c.incidentlab.checkout.impl.inventory.InventoryCache
 import com.c0x12c.incidentlab.checkout.impl.leak.MemoryLeak
 import com.c0x12c.incidentlab.checkout.impl.manager.DefaultCheckoutManager
 import com.c0x12c.incidentlab.checkout.impl.pricing.PricingClient
@@ -106,6 +107,9 @@ class CheckoutFactory {
   ): OrderEvents = OrderEvents(kafka, openTelemetry, tracer, objectMapper, registry).also { it.start() }
 
   @Singleton
+  fun inventoryCache(faults: Faults, tracer: Tracer, registry: MeterRegistry): InventoryCache = InventoryCache(faults, tracer, registry)
+
+  @Singleton
   fun checkoutManager(
     faults: Faults,
     products: ProductRepository,
@@ -114,6 +118,7 @@ class CheckoutFactory {
     pricing: PricingClient,
     cache: ProductCache,
     events: OrderEvents,
+    inventory: InventoryCache,
     leak: MemoryLeak,
     runtime: EventLoopRuntime,
     tracer: Tracer,
@@ -127,6 +132,7 @@ class CheckoutFactory {
     pricing = pricing,
     cache = cache,
     events = events,
+    inventory = inventory,
     leak = leak,
     runtime = runtime,
     tracer = tracer,
