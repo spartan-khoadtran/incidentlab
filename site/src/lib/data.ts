@@ -2,7 +2,7 @@ import composeJson from "../generated/compose.json";
 import guideJson from "../generated/guide.json";
 import highlightsJson from "../generated/highlights.json";
 import makeJson from "../generated/make.json";
-import repoJson from "../generated/repo.json";
+import readmeJson from "../generated/readme.json";
 import labJson from "../data/lab.json";
 
 export interface Scenario {
@@ -114,17 +114,16 @@ export interface ComposeService {
   capAdd: string[];
 }
 
-export interface Repo {
-  readme: { lede: string; trains: string[]; layout: { path: string; note: string }[] };
-  gradle: { name: string; note: string; modules: { path: string; dir: string; note: string | null }[] }[];
-  files: { readme: string | null; claude: string | null; makefile: string | null };
+export interface Readme {
+  lede: string;
+  trains: string[];
 }
 
 export const lab = labJson as unknown as Lab;
 export const guide = guideJson as unknown as GuideDoc[];
 export const make = makeJson as unknown as { groups: MakeGroup[]; links: { label: string; value: string }[] };
 export const compose = composeJson as unknown as { project: string; groups: string[]; services: ComposeService[]; volumes: string[] };
-export const repo = repoJson as unknown as Repo;
+export const readme = readmeJson as unknown as Readme;
 export const highlights = highlightsJson as unknown as { inThisLab: string | null };
 
 export function target(name: string): MakeTarget | undefined {

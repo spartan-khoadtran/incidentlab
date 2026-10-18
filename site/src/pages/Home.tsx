@@ -3,7 +3,7 @@ import { Pointer, Rich, Stat } from "../components/Bits";
 import { Cmd } from "../components/Copy";
 import { ArrowIcon } from "../components/Icons";
 import { RequestPath } from "../components/RequestPath";
-import { compose, guide, lab, make, repo, target } from "../lib/data";
+import { compose, guide, lab, make, readme, target } from "../lib/data";
 import { MODES } from "../lib/modes";
 
 function splitLede(lede: string): { head: string; rest: string } {
@@ -29,7 +29,7 @@ function linkify(value: string) {
 const QUICK = ["up", "new", "answer"];
 
 export function Home() {
-  const { head, rest } = splitLede(repo.readme.lede);
+  const { head, rest } = splitLede(readme.lede);
   const grafana = make.links.find((l) => l.label === "Grafana");
   const containers = compose.services.filter((s) => s.profiles.length === 0).length;
 
@@ -127,7 +127,7 @@ export function Home() {
             <h2>Skills for the hour after the page</h2>
           </div>
           <ul className="drill-list">
-            {repo.readme.trains.map((t) => (
+            {readme.trains.map((t) => (
               <li key={t}>{t[0].toUpperCase() + t.slice(1)}</li>
             ))}
           </ul>

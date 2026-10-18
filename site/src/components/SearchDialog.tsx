@@ -10,7 +10,6 @@ const PAGES: SearchEntry[] = [
   { kind: "page", title: "Catalog", context: "Every scenario by level and topic", body: "scenarios exercises level topic toolbox", href: "/catalog" },
   { kind: "page", title: "Quiz", context: "Theory drills", body: "make quiz numbers concepts drills", href: "/quiz" },
   { kind: "page", title: "Commands", context: "Every make target", body: "make targets lifecycle exercises tools development", href: "/commands" },
-  { kind: "page", title: "Repo", context: "Folders and Gradle modules", body: "repository structure gradle modules folders config", href: "/repo" },
 ];
 
 const KIND_LABEL: Record<SearchEntry["kind"], string> = { page: "Page", guide: "Guide", scenario: "Scenario", command: "Command" };

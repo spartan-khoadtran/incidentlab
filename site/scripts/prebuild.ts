@@ -6,7 +6,7 @@ import { parseCompose } from "./lib/compose.ts";
 import { groupOf } from "./lib/groups.ts";
 import { parseMakefile } from "./lib/makefile.ts";
 import { renderDoc } from "./lib/markdown.ts";
-import { buildGradleNote, firstSentence, parseDocNotes, parseModuleNotes, parseReadme, parseSettings } from "./lib/repo.ts";
+import { parseDocNotes, parseReadme } from "./lib/repo.ts";
 
 const SITE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(process.env.LAB_ROOT ?? join(SITE, ".."));
@@ -32,7 +32,6 @@ const docFiles = readdirSync(join(ROOT, "docs")).filter((f) => f.endsWith(".md")
 const known = new Set(docFiles.map((f) => f.replace(/\.md$/, "")));
 const claudeMd = existsSync(join(ROOT, "CLAUDE.md")) ? read("CLAUDE.md") : "";
 const notes = parseDocNotes(claudeMd);
-const moduleNotes = parseModuleNotes(claudeMd);
 
 const docs = docFiles.map((file) => {
   const slug = file.replace(/\.md$/, "");
@@ -58,24 +57,7 @@ write("compose.json", {
   services: compose.services.map((s) => ({ ...s, env: Object.fromEntries(Object.entries(s.env).filter(([k]) => KEEP_ENV.test(k) && !SHARED_ENV.has(k) && !k.startsWith("DD_"))) })),
 });
 
-const readme = parseReadme(read("README.md"));
-const gradle = parseSettings(read("service/settings.gradle")).map((g) => ({
-  ...g,
-  modules: g.modules.map((m) => {
-    const path = join(ROOT, "service", m.dir, "build.gradle");
-    const note = existsSync(path) ? buildGradleNote(readFileSync(path, "utf8")) : null;
-    const fallback = moduleNotes[m.dir.split("/").pop() ?? ""];
-    const text = note ? firstSentence(note.replace(/^[a-z:-]+: /, "")) : fallback ? `${fallback}.` : null;
-    return { ...m, note: text ? `${text[0].toUpperCase()}${text.slice(1)}` : null };
-  }),
-}));
-const firstLine = (text: string, pattern: RegExp) => text.split("\n").find((l) => pattern.test(l))?.replace(pattern, "").trim() ?? null;
-const files = {
-  readme: firstLine(read("README.md"), /^# /),
-  claude: claudeMd ? (claudeMd.split("\n\n")[1]?.trim() ?? null) : null,
-  makefile: firstLine(read("Makefile"), /^# /),
-};
-write("repo.json", { readme, gradle, files });
+write("readme.json", parseReadme(read("README.md")));
 
 const inThisLab = (() => {
   const html = (JSON.parse(readFileSync(join(OUT, "docs", "investigation-guide.json"), "utf8")) as { html: string }).html;

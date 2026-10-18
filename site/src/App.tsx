@@ -7,7 +7,6 @@ import { Home } from "./pages/Home";
 import { HowItWorks } from "./pages/HowItWorks";
 import { Play } from "./pages/Play";
 import { Quiz } from "./pages/Quiz";
-import { Repo } from "./pages/Repo";
 
 function NotFound() {
   return (
@@ -33,7 +32,6 @@ export function App() {
         <Route path="catalog" element={<Catalog />} />
         <Route path="quiz" element={<Quiz />} />
         <Route path="commands" element={<Commands />} />
-        <Route path="repo" element={<Repo />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

@@ -14,7 +14,6 @@ const NAV = [
   { to: "/catalog", label: "Catalog" },
   { to: "/quiz", label: "Quiz" },
   { to: "/commands", label: "Commands" },
-  { to: "/repo", label: "Repo" },
 ];
 
 const THEME_LABEL = { system: "Theme follows the system", light: "Light theme", dark: "Dark theme" } as const;
