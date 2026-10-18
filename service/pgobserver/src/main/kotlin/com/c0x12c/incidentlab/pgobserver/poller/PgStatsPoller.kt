@@ -47,6 +47,9 @@ data class PgSnapshot(
   val checkpoints: CheckpointStats = CheckpointStats(),
   val wal: WalStats = WalStats()
 ) {
+  /** Counters keep their last values while Postgres is unreachable: a drop to 0 would read as a counter reset and `rate()` would count the whole total again. */
+  fun down(): PgSnapshot = copy(up = false, connections = emptyMap(), maxConnections = 0.0, lockWaiters = 0.0)
+
   companion object {
     val DOWN = PgSnapshot(false, emptyMap(), emptyMap(), emptyMap(), 0.0, 0.0)
   }
@@ -157,7 +160,7 @@ class PgStatsPoller(
       }
     } catch (e: Exception) {
       warn { "poll failed: ${e.message}" }
-      PgSnapshot.DOWN
+      snapshot.get().down()
     }
     snapshot.set(fresh)
     knownStates.addAll(fresh.connections.keys)

@@ -118,7 +118,7 @@ The names that point at the disk:
 | `IO / DataFileSync` | Waiting for changes to a table or index file to reach durable storage |
 | `Timeout / CheckpointWriteDelay` | The checkpointer pausing between writes to spread them out |
 
-`Activity` and `Client` are idle waits, so leave them out when you look for a bottleneck.
+`Activity` and `Client` are idle waits, so leave them out when you look for a bottleneck. Leave out `Timeout` too: it is a pause a process chose. The checkpointer sits in `CheckpointWriteDelay` for most of every spread checkpoint, and that is the plan working, not a wait on the disk. The lab's `pg_wait_events` leaves out all three.
 
 A wait event is a snapshot. A WAL sync of 1 ms at 30 per second is in progress only 3% of the time, so one look at `pg_stat_activity` rarely catches it. Sample often and average. By Little's Law, the mean number of processes in a wait = the rate of that wait × its mean duration: 30/s × 0.001 s = 0.03. The lab samples every 100 ms and exports the mean as `pg_wait_events`.
 

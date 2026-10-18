@@ -21,7 +21,8 @@ import kotlin.random.Random
  * A steady write job: once a second it rewrites `stats_rows_per_s` random rows of `review_stats`, in
  * one transaction. The rows sit on about 16,400 pages (128 MB, inside Postgres's 256 MB of shared
  * buffers), so the job dirties most of the table between two checkpoints. The fillfactor leaves room
- * on each page, so every update is HOT and the table does not grow.
+ * on each page, so every update is HOT and the table does not grow. The table is created and filled
+ * the first time the rate is above 0, so a healthy lab never writes its 128 MB.
  */
 @Singleton
 class StatsWriter(
@@ -50,18 +51,18 @@ class StatsWriter(
 
   private fun tick() {
     try {
-      if (!ready) {
-        db.withConnection { connection ->
-          connection.execute(CREATE)
-          val added = connection.execute(FILL)
-          if (added > 0) {
-            info { "review_stats filled to $ROWS rows ($added added)" }
-          }
-        }
-        ready = true
-      }
       val rows = faults.int(PgObserverFaults.STATS_ROWS_PER_S).coerceIn(0, ROWS)
       if (rows > 0) {
+        if (!ready) {
+          db.withConnection { connection ->
+            connection.execute(CREATE)
+            val added = connection.execute(FILL)
+            if (added > 0) {
+              info { "review_stats filled to $ROWS rows ($added added)" }
+            }
+          }
+          ready = true
+        }
         val ids = List(rows) { Random.nextInt(1, ROWS + 1) }
         db.withConnection { connection -> connection.execute(REFRESH) { it.setArray(1, connection.intArray(ids)) } }
       }

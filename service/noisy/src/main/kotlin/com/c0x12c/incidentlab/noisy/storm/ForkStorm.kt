@@ -34,9 +34,7 @@ class ForkStorm(
   }
   private var due = 0.0
   private var lastRate = 0
-
-  @Volatile
-  private var unavailable = false
+  private var lastError: String? = null
 
   val started: Long
     get() = forks.count().toLong()
@@ -57,14 +55,14 @@ class ForkStorm(
       info { "fork storm: $lastRate -> $perSecond forks/s" }
       lastRate = perSecond
     }
-    if (perSecond == 0 || unavailable) {
+    if (perSecond == 0) {
       due = 0.0
       return
     }
     due += perSecond * TICK_MILLIS / MILLIS_PER_SECOND
     val count = due.toInt()
     due -= count
-    val children = (1..count).mapNotNull { start() }
+    val children = startUpTo(count)
     for (child in children) {
       if (!child.waitFor(REAP_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
         child.destroyForcibly().waitFor()
@@ -73,14 +71,22 @@ class ForkStorm(
     }
   }
 
-  private fun start(): Process? =
+  /** A failed fork (EAGAIN under the memory or pid limit) ends this tick only; the next tick tries again. */
+  private fun startUpTo(count: Int): List<Process> {
+    val children = ArrayList<Process>(count)
     try {
-      ProcessBuilder(COMMAND).redirectOutput(Redirect.DISCARD).redirectError(Redirect.DISCARD).start()
+      repeat(count) {
+        children += ProcessBuilder(COMMAND).redirectOutput(Redirect.DISCARD).redirectError(Redirect.DISCARD).start()
+      }
+      lastError = null
     } catch (e: IOException) {
-      unavailable = true
-      warn { "fork storm off, cannot start $COMMAND: ${e.message}" }
-      null
+      if (e.message != lastError) {
+        warn { "fork storm cannot start $COMMAND: ${e.message}" }
+      }
+      lastError = e.message
     }
+    return children
+  }
 
   private companion object {
     const val COMMAND = "/usr/bin/true"

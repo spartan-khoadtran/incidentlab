@@ -82,8 +82,8 @@ class WaitEventSampler(
   private companion object {
     const val SAMPLE_MILLIS = 100L
 
-    // Activity and Client are idle waits: a process with nothing to do, or a session waiting for its client.
+    // Activity and Client are idle waits. Timeout is a chosen pause, like the checkpointer spreading its writes.
     const val WAITING = "SELECT wait_event_type, wait_event, count(*) FROM pg_stat_activity " +
-      "WHERE wait_event IS NOT NULL AND wait_event_type NOT IN ('Activity', 'Client') AND pid <> pg_backend_pid() GROUP BY 1, 2"
+      "WHERE wait_event IS NOT NULL AND wait_event_type NOT IN ('Activity', 'Client', 'Timeout') AND pid <> pg_backend_pid() GROUP BY 1, 2"
   }
 }

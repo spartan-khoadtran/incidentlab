@@ -3,18 +3,21 @@ package com.c0x12c.incidentlab.pgobserver.settings
 import com.c0x12c.incidentlab.pgobserver.factory.PgObserverFaults
 import java.math.BigDecimal
 import kotlin.math.abs
-import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 /**
  * One Postgres setting the lab drives: its name, the fault key that holds the wanted value, and how
  * the value is written in SQL. All three reload on SIGHUP, so `pg_reload_conf()` is enough.
  */
-enum class PgSetting(val setting: String, val faultKey: String, private val literal: (Double) -> String) {
-  CHECKPOINT_TIMEOUT("checkpoint_timeout", PgObserverFaults.CHECKPOINT_TIMEOUT_S, { "'${it.roundToInt()}s'" }),
-  CHECKPOINT_COMPLETION_TARGET("checkpoint_completion_target", PgObserverFaults.CHECKPOINT_COMPLETION_TARGET, { BigDecimal.valueOf(it).stripTrailingZeros().toPlainString() }),
-  MAX_WAL_SIZE("max_wal_size", PgObserverFaults.MAX_WAL_SIZE_MB, { "'${it.roundToInt()}MB'" });
+enum class PgSetting(val setting: String, val faultKey: String, private val whole: Boolean, private val literal: (Double) -> String) {
+  CHECKPOINT_TIMEOUT("checkpoint_timeout", PgObserverFaults.CHECKPOINT_TIMEOUT_S, true, { "'${it.roundToLong()}s'" }),
+  CHECKPOINT_COMPLETION_TARGET("checkpoint_completion_target", PgObserverFaults.CHECKPOINT_COMPLETION_TARGET, false, { BigDecimal.valueOf(it).stripTrailingZeros().toPlainString() }),
+  MAX_WAL_SIZE("max_wal_size", PgObserverFaults.MAX_WAL_SIZE_MB, true, { "'${it.roundToLong()}MB'" });
 
-  fun alter(value: Double): String = "ALTER SYSTEM SET $setting = ${literal(value)}"
+  /** The value Postgres ends up with: integer settings drop the fraction. */
+  fun stored(value: Double): Double = if (whole) value.roundToLong().toDouble() else value
+
+  fun alter(value: Double): String = "ALTER SYSTEM SET $setting = ${literal(stored(value))}"
 
   companion object {
     /** `pg_settings.setting` prints every value in its base unit (seconds, MB, a fraction), so it compares with the fault value as a number. */
@@ -26,7 +29,7 @@ enum class PgSetting(val setting: String, val faultKey: String, private val lite
     fun plan(current: Map<String, String>, desired: Map<PgSetting, Double>): List<String> =
       desired.filter { (setting, wanted) ->
         val now = current[setting.setting]?.toDoubleOrNull()
-        now == null || abs(now - wanted) > EPSILON
+        now == null || abs(now - setting.stored(wanted)) > EPSILON
       }.map { (setting, wanted) -> setting.alter(wanted) }
   }
 }

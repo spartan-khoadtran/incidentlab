@@ -49,4 +49,15 @@ class PgSettingTest {
     assertThat(PgSetting.CHECKPOINT_COMPLETION_TARGET.alter(0.9)).isEqualTo("ALTER SYSTEM SET checkpoint_completion_target = 0.9")
     assertThat(PgSetting.CHECKPOINT_COMPLETION_TARGET.alter(1.0)).isEqualTo("ALTER SYSTEM SET checkpoint_completion_target = 1")
   }
+
+  @Test
+  fun `a fractional value compares as the whole number Postgres stores, so it is not altered again on every tick`() {
+    val desired = mapOf(PgSetting.CHECKPOINT_TIMEOUT to 45.4, PgSetting.MAX_WAL_SIZE to 64.2)
+
+    assertThat(PgSetting.plan(mapOf("checkpoint_timeout" to "300", "max_wal_size" to "1024"), desired)).containsExactly(
+      "ALTER SYSTEM SET checkpoint_timeout = '45s'",
+      "ALTER SYSTEM SET max_wal_size = '64MB'"
+    )
+    assertThat(PgSetting.plan(mapOf("checkpoint_timeout" to "45", "max_wal_size" to "64"), desired)).isEmpty()
+  }
 }
