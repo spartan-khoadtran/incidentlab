@@ -170,6 +170,9 @@ services:
       SERVICE_LAUNCHER: /run/app/noisy/bin/noisy
       SERVICE_NAME: noisy
       PORT: "8005"
+    # Same disk as pgdata: every named volume lives under the Docker data root.
+    volumes:
+      - noisyio:/data
 
   # Lab controller: applies the faults of the current exercise. `make new/hint/answer` run inside it.
   control:
@@ -268,3 +271,4 @@ volumes:
   promdata:
   tempodata:
   labstate:
+  noisyio:
