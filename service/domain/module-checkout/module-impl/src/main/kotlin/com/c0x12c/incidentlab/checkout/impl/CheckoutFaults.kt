@@ -18,6 +18,7 @@ object CheckoutFaults {
   const val EXTRA_EVENTS_RPS = "extra_events_rps"
   const val POISON_NONCE = "poison_nonce"
   const val PRICING_TIMEOUT_S = "pricing_timeout_s"
+  const val PRICING_KEEPALIVE = "pricing_keepalive"
 
   val DEFAULTS: Map<String, Any?> = mapOf(
     // max concurrent requests the app accepts; the rest wait before the handler starts timing
@@ -46,6 +47,8 @@ object CheckoutFaults {
     EXTRA_EVENTS_RPS to 0,
     // produce one malformed event when this changes
     POISON_NONCE to null,
-    PRICING_TIMEOUT_S to 2.0
+    PRICING_TIMEOUT_S to 2.0,
+    // false: no connection reuse towards pricing; every call opens a TCP connection and closes it after the response
+    PRICING_KEEPALIVE to true
   )
 }
