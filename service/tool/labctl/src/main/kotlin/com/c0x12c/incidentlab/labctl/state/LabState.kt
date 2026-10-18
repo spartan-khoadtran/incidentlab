@@ -2,6 +2,8 @@ package com.c0x12c.incidentlab.labctl.state
 
 data class ActiveExercise(
   val id: String,
+  /** The kind of exercise; "incident" is the dashboard investigation. */
+  val mode: String = "incident",
   val params: Map<String, Any>,
   /** Epoch seconds. */
   val started: Double,
@@ -13,6 +15,7 @@ data class ActiveExercise(
 data class HistoryEntry(
   val n: Int,
   val id: String,
+  val mode: String = "incident",
   val title: String,
   val level: Int,
   /** Null for a revealed exercise, which is not scored. */

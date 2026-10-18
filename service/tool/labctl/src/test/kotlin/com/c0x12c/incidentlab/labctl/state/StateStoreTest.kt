@@ -25,6 +25,21 @@ class StateStoreTest {
   }
 
   @Test
+  fun `a state file written before modes existed reads as incident mode`(@TempDir dir: Path) {
+    val path = dir.resolve("state.json")
+    Files.writeString(
+      path,
+      """{"active": {"id": "pool_hold", "params": {"recommend_ms": 230}, "started": 1.5, "n": 3},
+         "history": [{"n": 1, "id": "oom", "title": "Periodic OOM kill", "level": 3, "score": null, "hints": 0, "minutes": 4.2, "at": 2.0}]}"""
+    )
+
+    val state = StateStore(path).load()
+
+    assertThat(state.active?.mode).isEqualTo("incident")
+    assertThat(state.history.map { it.mode }).isEqualTo(listOf("incident"))
+  }
+
+  @Test
   fun `a missing or broken file reads as the empty state`(@TempDir dir: Path) {
     val path = dir.resolve("state.json")
     assertThat(StateStore(path).load()).isEqualTo(LabState())
