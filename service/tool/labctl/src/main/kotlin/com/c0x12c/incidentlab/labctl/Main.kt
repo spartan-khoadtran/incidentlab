@@ -63,5 +63,5 @@ object Main {
   }
 
   private const val USAGE_EXIT = 2
-  private const val DEFAULT_QUIZ_QUESTIONS = 20
+  private const val DEFAULT_QUIZ_QUESTIONS = 50
 }

@@ -39,10 +39,10 @@ back at a section of it.
 A good order: run `make quiz` until the guide makes sense, then `make new` to use it on a live system.
 Both point back at the section of the guide to read again.
 
-`make quiz` asks 20 questions by default, half numbers and half concepts. Change it with `N` and `KIND`:
+`make quiz` asks 50 questions by default, half numbers and half concepts. Change it with `N` and `KIND`:
 
 ```bash
-make quiz                  # 20 mixed questions
+make quiz                  # 50 mixed questions
 make quiz N=10             # 10 mixed questions
 make quiz KIND=concepts    # multiple choice only
 make quiz KIND=numbers     # calculations only
@@ -98,7 +98,7 @@ make up        # build + start, wait until ready (the first build takes several 
 make new       # an incident on the live lab
 make hint      # a hint (costs 0.5 point)
 make answer    # submit, see the explanation and the step-by-step trace
-make quiz      # theory drills, no lab needed (20 questions)
+make quiz      # theory drills, no lab needed (50 questions)
 make down      # stop and remove everything
 ```
 

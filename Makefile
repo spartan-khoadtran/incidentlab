@@ -71,9 +71,9 @@ list: ## Exercise catalog by level and topic
 history: ## History and scores
 	@$(CTL) history
 
-quiz: ## Theory drills from the guide (N=20, KIND=numbers|concepts|all). Does not need the lab running
+quiz: ## Theory drills from the guide (N=50, KIND=numbers|concepts|all). Does not need the lab running
 	@$(COMPOSE) build -q control
-	@$(COMPOSE) run --rm --no-deps control $(LABCTL) quiz -n $(or $(N),20) --kind $(or $(KIND),all)
+	@$(COMPOSE) run --rm --no-deps control $(LABCTL) quiz -n $(or $(N),50) --kind $(or $(KIND),all)
 
 load: ## Change the background load: X=1.5 (times the default 50 rps)
 	@$(CTL) load $(or $(X),1)

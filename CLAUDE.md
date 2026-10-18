@@ -24,7 +24,7 @@ Lifecycle:
 Exercises (each one runs the `labctl` CLI inside the `control` container):
 - `make new` with optional `LEVEL=1|2|3`, `TOPIC=async`, `ID=pool_hold`, `FORCE=1`
 - `make hint`, `make answer`, `make reveal`, `make clear`, `make status`, `make list`, `make history`
-- `make quiz N=20 KIND=numbers|concepts|all`: theory drills from the guide, numeric (`Numbers`) and multiple choice (`Concepts`). Default KIND is `all`. Does not need the lab running.
+- `make quiz N=50 KIND=numbers|concepts|all`: theory drills from the guide, numeric (`Numbers`) and multiple choice (`Concepts`). Default KIND is `all`. Does not need the lab running.
 - `make load X=1.5`: multiply the background load (default 50 rps).
 
 Development (Gradle lives in `service/`, needs a JDK on the host; Gradle downloads JDK 21 itself):
