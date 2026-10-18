@@ -18,4 +18,11 @@ class GuideIndexTest {
   fun `parts from different files each get their own file, and an unknown section falls back to the docs folder`() {
     assertThat(GuideIndex.where("Overview; Nowhere > Rate")).isEqualTo("docs/investigation-guide.md: Overview; docs: Nowhere > Rate")
   }
+
+  @Test
+  fun `the runtime sections point at runtime_md`() {
+    assertThat(GuideIndex.where("Virtual threads > Pinning")).isEqualTo("docs/runtime.md: Virtual threads > Pinning")
+    assertThat(GuideIndex.where("Garbage collection > GC pauses and tail latency; USE method in detail > Pitfalls"))
+      .isEqualTo("docs/runtime.md: Garbage collection > GC pauses and tail latency; docs/investigation-guide.md: USE method in detail > Pitfalls")
+  }
 }
