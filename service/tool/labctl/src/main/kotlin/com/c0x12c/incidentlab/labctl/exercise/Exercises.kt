@@ -3,7 +3,7 @@ package com.c0x12c.incidentlab.labctl.exercise
 import com.c0x12c.incidentlab.labctl.Terminal
 import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.LabProbe
-import com.c0x12c.incidentlab.labctl.quiz.Quiz
+import com.c0x12c.incidentlab.labctl.guide.GuideIndex
 import com.c0x12c.incidentlab.labctl.scenario.Answers
 import com.c0x12c.incidentlab.labctl.scenario.Baseline
 import com.c0x12c.incidentlab.labctl.scenario.ExerciseContext
@@ -324,7 +324,7 @@ class Exercises(
     terminal.out("EVIDENCE TO LOOK FOR (PromQL, paste into Grafana Explore or Prometheus)")
     scenario.evidence.forEach { terminal.out("  - $it") }
     terminal.out()
-    terminal.out("Read again in ${Quiz.GUIDE}: ${scenario.doc}")
+    terminal.out("Read again in ${GuideIndex.where(scenario.doc)}")
   }
 
   private fun finish(state: LabState, score: Double?, missed: List<String> = emptyList(), note: String = "") {
