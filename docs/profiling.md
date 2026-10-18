@@ -103,7 +103,7 @@ A CPU profile only sees threads that run. A request that waits for a lock, a soc
 - api, pricing and worker load the Pyroscope Java agent 2.9.2 at start, through `JAVA_TOOL_OPTIONS`. The agent runs async-profiler inside the JVM and uploads a JFR file every 10 seconds.
 - `service_name` in Pyroscope is the compose service name: `api`, `pricing` or `worker`.
 - The agent uses `itimer` because Docker's default seccomp profile blocks `perf_event_open`. The price: no kernel frames, and samples are not spread perfectly evenly between threads.
-- Request code in api and pricing runs on virtual threads. Virtual threads run on a few carrier threads, by default one per available core: 2 for a 2-core limit. In `top -H` and in thread dumps the carriers are named `ForkJoinPool-...-worker-...`.
+- Request code in api and pricing runs on virtual threads. Virtual threads run on a few carrier threads, by default one per available core: 2 for a 2-core limit. Thread dumps name the carriers `ForkJoinPool-N-worker-M`. `top -H` cuts a thread name to 15 characters, so there they all show as `ForkJoinPool-N-`.
 
 | Setting | Value | Meaning |
 |---|---|---|

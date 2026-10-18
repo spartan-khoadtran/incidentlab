@@ -22,7 +22,7 @@ The checklist is wide, not deep. It points at a resource. Then you look at that 
 | 6 | `iostat -xz 1` | Each disk with I/O | `r_await`, `w_await` (ms per request, queue time included), `aqu-sz`, `%util`. |
 | 7 | `free -m` | Memory in MiB | `available`, not `free`. |
 | 8 | `sar -n DEV 1` | Each network interface | `rxkB/s`, `txkB/s`, `%ifutil`. |
-| 9 | `sar -n TCP,ETCP 1` | TCP connections and errors | `active/s` (new outbound), `passive/s` (new inbound), `retrans/s`. |
+| 9 | `sar -n TCP,ETCP 1` | TCP connections and errors | `active/s` (new outbound), `passive/s` (new inbound), `retrans/s` (`retrseg/s` from sysstat 12.7.6). |
 | 10 | `top` | The overview, refreshed | The `%Cpu(s)` line, then the top processes. Press `1` for each CPU and `H` for threads. |
 
 Some details change how you read them:
@@ -30,7 +30,7 @@ Some details change how you read them:
 - The first line of `vmstat` and the first report of `iostat` are averages since boot. Read the lines after it.
 - `r` in `vmstat` counts tasks running or waiting to run. More than `nproc` for many seconds means tasks queue for a CPU.
 - `st` (steal) is time the hypervisor gave your virtual CPU to someone else.
-- `free` counts page cache as used. `available` estimates what a new program can get without swapping.
+- The `free` column leaves out the page cache, so it is low on a healthy machine. `available` estimates what a new program can get without swapping.
 - `%util` near 100 on one disk means it was always busy. A device that serves many requests at once, like an SSD, can still take more.
 
 ### From host to container
@@ -85,10 +85,10 @@ A host in trouble may not let you install anything. The package mirror may be do
 
 | Package (Ubuntu) | Gives you |
 |---|---|
-| `procps` | `ps`, `top`, `vmstat`, `free`, `uptime`, `pgrep`, `pidof`, `watch` |
+| `procps` | `ps`, `top`, `vmstat`, `free`, `uptime`, `pgrep`, `watch` |
 | `sysstat` | `mpstat`, `pidstat`, `iostat`, `sar` |
 | `iproute2` | `ip`, `ss`, `nstat` |
-| `util-linux` | `dmesg`, `nsenter`, `lsns`, `mount` |
+| `util-linux` | `dmesg`, `nsenter`, `lsns` |
 | `strace`, `lsof`, `tcpdump` | System calls, open files and sockets, packets |
 | `bpftrace` | Kernel tracing with one-line programs |
 | `linux-tools-common`, `linux-tools-generic` | `perf` |
@@ -102,7 +102,7 @@ Two tools depend on the kernel more than the others:
 
 ### Tracing one-liners
 
-`bpftrace` runs a small program in the kernel and prints a summary. The syntax below is for bpftrace 0.20, the version in Ubuntu 24.04. Older versions write `args->filename` instead of `args.filename`.
+`bpftrace` runs a small program in the kernel and prints a summary. The syntax below is for bpftrace 0.20, the version in Ubuntu 24.04. Versions before 0.19 write `args->filename` instead of `args.filename`.
 
 | One-liner | What it shows | Needs from the kernel |
 |---|---|---|

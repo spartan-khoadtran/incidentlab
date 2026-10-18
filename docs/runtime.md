@@ -16,7 +16,7 @@ Every lab service runs the Serial collector (`-XX:+UseSerialGC`). Serial does al
 | Heap at start | 25% of the limit: 128 MB for api. It grows when needed | `-XX:InitialRAMPercentage=25` |
 | Young generation | 1/3 of the heap: about 85 MB for api | `NewRatio=2`, the default |
 | Old generation | 2/3 of the heap: about 170 MB for api | Same |
-| Young split | Eden 68 MB, two survivor spaces of about 8 MB | `SurvivorRatio=8`, the default |
+| Young split | Eden 68 MB, two survivor spaces of about 8.5 MB | `SurvivorRatio=8`, the default |
 
 The heap has two parts. New objects go to the young generation. Objects that stay alive long enough move to the old generation.
 
