@@ -1,0 +1,9 @@
+#!/bin/sh
+# Ubuntu's /usr/bin/perf only runs the build that matches `uname -r`, and a Docker VM kernel never matches.
+for real in /usr/lib/linux-tools/*/perf /usr/lib/linux-tools-*/perf; do
+  if [ -x "$real" ]; then
+    exec "$real" "$@"
+  fi
+done
+echo "perf: no perf build found under /usr/lib/linux-tools" >&2
+exit 1

@@ -238,6 +238,22 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
 
+  # Shell on the Docker VM for the CLI-only exercises: `make shell`. It sees every process and cgroup, read-only.
+  toolbox:
+    build: ./config/toolbox
+    image: incidentlab-toolbox:latest
+    restart: unless-stopped
+    pid: host
+    cgroup: host
+    privileged: true
+    mem_limit: 512m
+    memswap_limit: 512m
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
   # ------------------------------------------------------------------ optional: Datadog (make up-datadog)
   datadog-agent:
     image: gcr.io/datadoghq/agent:7

@@ -1,0 +1,18 @@
+#!/bin/sh
+# Says which kernel features the tools need, and whether this Docker VM has them.
+check() {
+  label=$1
+  shift
+  if "$@" >/dev/null 2>&1; then echo "  ok    $label"; else echo "  FAIL  $label"; fi
+}
+echo "Kernel $(uname -r), $(nproc) CPUs"
+check "cgroup v2 (cpu.max, memory.current...)" test -f /sys/fs/cgroup/cgroup.controllers
+check "PSI (/proc/pressure/cpu, cpu.pressure)" cat /proc/pressure/cpu
+check "dmesg reads the kernel log" dmesg
+check "BTF (/sys/kernel/btf/vmlinux)" test -r /sys/kernel/btf/vmlinux
+check "tracefs (/sys/kernel/tracing/events)" test -d /sys/kernel/tracing/events
+check "bpftrace loads a BPF program" bpftrace -e 'BEGIN { exit(); }'
+check "bpftrace attaches a syscall tracepoint" bpftrace -e 'tracepoint:syscalls:sys_enter_openat { exit(); } interval:s:1 { exit(); }'
+check "bpftrace samples CPUs (profile)" bpftrace -e 'profile:hz:99 { exit(); }'
+check "perf counts cpu-clock" perf stat -e cpu-clock -- /usr/bin/true
+echo "A FAIL on the last five lines only takes away bpftrace or perf. Everything else in toolbox-help still works."
