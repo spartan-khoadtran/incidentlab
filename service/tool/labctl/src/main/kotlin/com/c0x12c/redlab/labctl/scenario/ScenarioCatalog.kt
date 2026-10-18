@@ -898,7 +898,8 @@ object ScenarioCatalog {
     ),
     evidence = listOf(
       "histogram_quantile(0.99, sum by (le) (rate(kafka_processing_seconds_bucket[1m])))",
-      "sum(rate(kafka_produced_total[1m])) and sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
+      "sum(rate(kafka_produced_total[1m]))",
+      "sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
       "max(kafka_consumer_lag_seconds)"
     ),
     doc = "RED at many layers > The async layer"
@@ -1076,7 +1077,7 @@ object ScenarioCatalog {
       "RED at the LB and api: api itself returns the 503s, so the LB is not the source.",
       "Postgres exec time is flat and pricing is healthy, so look inside api at its software resources.",
       "USE for the pool, errors first: Pool timeouts/s is above 0 while in use averages well under the max.",
-      "Read the config next to the metric: the pool is 2 and the acquire timeout is a few tens of ms, far below the 50 ms a checkout holds a connection.",
+      "Wait for a connection p99 sits flat at about 20 ms: nobody waits longer, they give up. That ceiling is the acquire timeout, far below the 50 ms a checkout holds a connection.",
       "The cause: the acquire timeout is too short, so a short burst that fills the pool turns into errors instead of a small wait."
     ),
     explain = { p ->
@@ -1090,7 +1091,9 @@ object ScenarioCatalog {
     },
     evidence = listOf(
       "rate(db_pool_timeouts_total{job=\"api\"}[1m])",
-      "avg_over_time(db_pool_in_use{job=\"api\"}[1m]), db_pool_max{job=\"api\"}",
+      "avg_over_time(db_pool_in_use{job=\"api\"}[1m])",
+      "db_pool_max{job=\"api\"}",
+      "histogram_quantile(0.99, sum by (le) (rate(db_pool_acquire_seconds_bucket{job=\"api\"}[1m])))",
       "sum by (route, status) (rate(http_server_requests_total{job=\"api\",status=~\"5..\"}[1m]))"
     ),
     doc = "USE method in detail > Software resources (connection pool errors); USE method in detail > Reading the numbers (errors above 0)"
@@ -1114,8 +1117,8 @@ object ScenarioCatalog {
     },
     decoy = 0.5,
     ticket = { p ->
-      "At ${p.startedAt}, /checkout traffic at api is up by a third or more, but the business sees no more orders than usual. " +
-        "The app shows some timeout errors."
+      "At ${p.startedAt}, /checkout traffic at api is up by a third or more, but there are no more shoppers than usual. " +
+        "The app shows some timeout errors, and support reports a few orders placed twice."
     },
     hints = listOf(
       "Compare the user requests at the client with the attempts it sends. Are they still equal?",
@@ -1130,8 +1133,8 @@ object ScenarioCatalog {
       partial = setOf("client_timeout", "downstream_slow")
     ),
     steps = listOf(
-      "Problem statement: /checkout traffic is up by a third or more with no more orders, and the app shows timeouts.",
-      "Rate up but orders flat: is this real demand? Compare user requests with attempts at the client: attempts are higher.",
+      "Problem statement: /checkout traffic is up by a third or more with no more shoppers, the app shows timeouts, and some orders are placed twice.",
+      "Rate up but shoppers flat: is this real demand? Compare user requests with attempts at the client: attempts are higher.",
       "The failed attempts at the client are timeouts, not 5xx. The server records 200s for them.",
       "Compare the server-side /checkout p99 with the client's timeout: part of the checkouts take longer than the timeout.",
       "Find the slow part: api's calls to pricing and pricing's own p99 rose. Part of the /price calls are slow.",
@@ -1143,9 +1146,10 @@ object ScenarioCatalog {
       "About ${p.percent("frac")} of /price calls are about ${p.int("extra")} ms slower, so those checkouts take longer than the client's " +
         "${p.int("timeout")} ms timeout. The client gives up and retries right away, up to ${p.int("retries")} times, and each retry has the same chance " +
         "to be slow. One user checkout becomes about ${p.fixed(attempts, 2)} attempts on average, so the rate at the LB and at api rises while the real demand " +
-        "is flat. The server finishes the abandoned attempts and records 200s, so api sees more traffic, not errors. This is the loop in the causal chain: " +
+        "is flat. The server finishes the abandoned attempts and records 200s, so api sees more traffic, not errors. " +
+        "Each abandoned attempt still writes its order, so a retry without an idempotency key also places duplicate orders. This is the loop in the causal chain: " +
         "slowness makes timeouts, timeouts make retries, retries make load. Fix: backoff and a retry budget, a timeout set from the server's real p99, " +
-        "and the slow path in pricing."
+        "an idempotency key on /checkout, and the slow path in pricing."
     },
     evidence = listOf(
       "sum(rate(client_attempts_total{endpoint=\"checkout\"}[1m])) / sum(rate(client_requests_total{endpoint=\"checkout\"}[1m]))",
@@ -1184,10 +1188,10 @@ object ScenarioCatalog {
     ),
     steps = listOf(
       "Problem statement: users say slow, a TV ad just went out, APM p99 is normal.",
-      "RED at the LB: the rate is up about 3 times. Split by tenant: every tenant grew, so it is real demand.",
+      "RED at the LB: the rate is up 2.5 to 3 times. Split by tenant: every tenant grew, so it is real demand.",
       "Compare the LB p99 with the api p99: the LB is much slower. The time is spent before the handler starts.",
       "USE for the admission gate: waiting is above 0, and the admission wait p99 matches the gap.",
-      "Little's Law: about 1 request in the handler at normal load becomes about 3 at the new rate, close to the limit of 4. Bursts queue.",
+      "Little's Law: about 1 request in the handler at normal load becomes 2.5 to 3 at the new rate, close to the limit of 4. Bursts queue.",
       "The cause: real load across every tenant. The limit is where it queues, which is why APM cannot see it."
     ),
     explain = { p ->
@@ -1231,13 +1235,15 @@ object ScenarioCatalog {
       "Compare 5xx at the LB with 5xx at api: only the LB has them.",
       "Envoy's healthy backends drop to 0 for about 2 s at a time, because api's /health fails now and then.",
       "With panic mode off, Envoy answers 503 itself while no backend is healthy, so api never sees those requests.",
-      "Ratio and count: a few % is small, but at 50 rps it is thousands of failed requests per day. Errors above 0 deserve a look.",
+      "Ratio and count: a few % is small, but at 50 rps it is thousands of failed requests per hour. Errors above 0 deserve a look.",
       "The cause: the LB produces the 503s because its only backend flaps between healthy and unhealthy."
     ),
     explain = { p ->
+      val failedPerHour = (p.double("prob") * BASE_RPS * SECONDS_PER_HOUR).roundToInt()
       "api's /health fails with probability ${p.percent("prob")}. Envoy checks every 2 s and treats a 503 from the health check as an immediate failure. " +
         "Each time, Envoy answers 503 itself until the next good check 2 s later, so users see short bursts of 503 that api never records. " +
-        "The ratio is small, but it adds up to many failed requests per hour. Same mechanism as the LB 503 exercise, with a much smaller and noisier " +
+        "The ratio is small, but at about $BASE_RPS requests/s it adds up to about $failedPerHour failed requests per hour. " +
+        "Same mechanism as the LB 503 exercise, with a much smaller and noisier " +
         "signal: watch both the ratio and the count."
     },
     evidence = listOf(
@@ -1321,7 +1327,7 @@ object ScenarioCatalog {
     },
     evidence = listOf(
       "cgroup_memory_usage_bytes{job=\"api\"} / cgroup_memory_limit_bytes{job=\"api\"}",
-      "deriv(cgroup_memory_usage_bytes{job=\"api\"}[5m]) * 60 / 1e6",
+      "deriv(cgroup_memory_usage_bytes{job=\"api\"}[5m]) * 60 / 1024 / 1024",
       "(cgroup_memory_limit_bytes{job=\"api\"} - cgroup_memory_usage_bytes{job=\"api\"}) / deriv(cgroup_memory_usage_bytes{job=\"api\"}[5m]) / 60"
     ),
     doc = "Applying on Datadog > Monitors (saturation that predicts an incident); USE at many layers > Layers and their metrics (container, cgroup)"
@@ -1333,7 +1339,7 @@ object ScenarioCatalog {
     level = 3,
     topics = listOf("layers", "host"),
     params = { random, context ->
-      mapOf("burners" to maxOf(MIN_HALF_BURNERS, (context.cpuCount ?: DEFAULT_CPU_COUNT) / 2), "extra" to random.nextInt(250, 351))
+      mapOf("burners" to ((context.cpuCount ?: DEFAULT_CPU_COUNT) / 2).coerceAtLeast(1), "extra" to random.nextInt(250, 351))
     },
     faults = { p ->
       FaultSpec(services = mapOf("noisy" to mapOf("burners" to p.int("burners")), "pricing" to mapOf("price_base_ms" to PRICE_BASE_MS + p.int("extra"))))
@@ -1418,7 +1424,8 @@ object ScenarioCatalog {
     },
     evidence = listOf(
       "histogram_quantile(0.99, sum by (le) (rate(kafka_processing_seconds_bucket[1m])))",
-      "sum(rate(kafka_produced_total[1m])) and sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
+      "sum(rate(kafka_produced_total[1m]))",
+      "sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
       "sum(kafka_consumer_lag_messages)",
       "sum by (source) (rate(kafka_produced_total[1m]))"
     ),
@@ -1430,9 +1437,9 @@ object ScenarioCatalog {
   private const val HUNDREDTHS = 100.0
   private const val THOUSANDTHS = 1_000.0
   private const val SECONDS_PER_MINUTE = 60
+  private const val SECONDS_PER_HOUR = 3_600
   private const val KB_PER_MB = 1_024.0
   private const val LEAK_HEADROOM_MB = 200.0
-  private const val MIN_HALF_BURNERS = 2
   private const val SLOW_WORKER_MS = 100
   private const val DRAIN_BACKFILL_RPS = 75
 
