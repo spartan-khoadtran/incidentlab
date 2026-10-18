@@ -1089,10 +1089,78 @@
       }
     },
     {
+      "type" : "heatmap",
+      "title" : "api latency heatmap (requests per bucket)",
+      "description" : "The whole distribution over time. A band far above the main one is a tail; dots are exemplars to open in Tempo.",
+      "id" : 21,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 16,
+        "y" : 45,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "sum by (le) (increase(http_server_duration_seconds_bucket{job=\"api\"}[$__rate_interval]))",
+          "format" : "heatmap",
+          "legendFormat" : "{{le}}",
+          "refId" : "A",
+          "exemplar" : true
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : { },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "calculate" : false,
+        "yAxis" : {
+          "axisPlacement" : "left",
+          "unit" : "s"
+        },
+        "rowsFrame" : {
+          "layout" : "auto"
+        },
+        "color" : {
+          "mode" : "scheme",
+          "scheme" : "Oranges",
+          "fill" : "dark-orange",
+          "scale" : "exponential",
+          "exponent" : 0.5,
+          "steps" : 64,
+          "reverse" : false
+        },
+        "filterValues" : {
+          "le" : 1.0E-9
+        },
+        "cellGap" : 1,
+        "showValue" : "never",
+        "legend" : {
+          "show" : true
+        },
+        "tooltip" : {
+          "mode" : "single",
+          "yHistogram" : false,
+          "showColorScale" : false
+        },
+        "exemplars" : {
+          "color" : "rgba(255,0,255,0.7)"
+        }
+      }
+    },
+    {
       "type" : "row",
       "title" : "4 · Downstream as seen from api",
       "collapsed" : false,
-      "id" : 21,
+      "id" : 22,
       "gridPos" : {
         "x" : 0,
         "y" : 53,
@@ -1105,7 +1173,7 @@
       "type" : "timeseries",
       "title" : "DB session p99 (pool wait + connection held)",
       "description" : "The 'DB span' as the app sees it: includes the wait for a connection.",
-      "id" : 22,
+      "id" : 23,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
@@ -1160,7 +1228,7 @@
       "type" : "timeseries",
       "title" : "Queries/s sent to Postgres",
       "description" : "",
-      "id" : 23,
+      "id" : 24,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
@@ -1215,7 +1283,7 @@
       "type" : "timeseries",
       "title" : "Mean query time as seen from the app",
       "description" : "Excludes the pool wait. Compare with exec time in row 5.",
-      "id" : 24,
+      "id" : 25,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
@@ -1270,7 +1338,7 @@
       "type" : "timeseries",
       "title" : "Calls to pricing: p99 as seen from api",
       "description" : "",
-      "id" : 25,
+      "id" : 26,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
@@ -1325,7 +1393,7 @@
       "type" : "timeseries",
       "title" : "Calls to pricing: outcomes/s",
       "description" : "",
-      "id" : 26,
+      "id" : 27,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
@@ -1380,7 +1448,7 @@
       "type" : "timeseries",
       "title" : "Cache hit ratio",
       "description" : "",
-      "id" : 27,
+      "id" : 28,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
@@ -1432,13 +1500,78 @@
       }
     },
     {
-      "type" : "row",
-      "title" : "5 · Downstream as seen by itself",
-      "collapsed" : false,
-      "id" : 28,
+      "type" : "timeseries",
+      "title" : "Calls to pricing: new TCP connections/s vs calls/s",
+      "description" : "With connection reuse, opens stay near 0 while calls flow. One open per call means every call pays a handshake.",
+      "id" : 29,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
       "gridPos" : {
         "x" : 0,
         "y" : 70,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "sum(rate(http_client_connections_total{job=\"api\",target=\"pricing\"}[$__rate_interval]))",
+          "legendFormat" : "connections opened/s",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "sum(rate(http_client_requests_total{job=\"api\",target=\"pricing\"}[$__rate_interval]))",
+          "legendFormat" : "calls/s",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      }
+    },
+    {
+      "type" : "row",
+      "title" : "5 · Downstream as seen by itself",
+      "collapsed" : false,
+      "id" : 30,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 78,
         "w" : 24,
         "h" : 1
       },
@@ -1448,14 +1581,14 @@
       "type" : "timeseries",
       "title" : "pricing: requests/s by route and status",
       "description" : "",
-      "id" : 29,
+      "id" : 31,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
       },
       "gridPos" : {
         "x" : 0,
-        "y" : 71,
+        "y" : 79,
         "w" : 8,
         "h" : 8
       },
@@ -1503,14 +1636,14 @@
       "type" : "timeseries",
       "title" : "pricing: p99 by route (server side)",
       "description" : "",
-      "id" : 30,
+      "id" : 32,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
       },
       "gridPos" : {
         "x" : 8,
-        "y" : 71,
+        "y" : 79,
         "w" : 8,
         "h" : 8
       },
@@ -1558,14 +1691,14 @@
       "type" : "timeseries",
       "title" : "Postgres: queries/s (counted by Postgres)",
       "description" : "",
-      "id" : 31,
+      "id" : 33,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
       },
       "gridPos" : {
         "x" : 16,
-        "y" : 71,
+        "y" : 79,
         "w" : 8,
         "h" : 8
       },
@@ -1613,14 +1746,14 @@
       "type" : "timeseries",
       "title" : "Postgres: mean exec time per query",
       "description" : "Measured inside Postgres: includes lock waits, excludes network and the app's pool wait.",
-      "id" : 32,
+      "id" : 34,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
       },
       "gridPos" : {
         "x" : 0,
-        "y" : 79,
+        "y" : 87,
         "w" : 8,
         "h" : 8
       },
@@ -1668,10 +1801,10 @@
       "type" : "row",
       "title" : "6 · Async (Kafka)",
       "collapsed" : false,
-      "id" : 33,
+      "id" : 35,
       "gridPos" : {
         "x" : 0,
-        "y" : 87,
+        "y" : 95,
         "w" : 24,
         "h" : 1
       },
@@ -1681,14 +1814,14 @@
       "type" : "timeseries",
       "title" : "Produce/s and consume/s",
       "description" : "",
-      "id" : 34,
+      "id" : 36,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
       },
       "gridPos" : {
         "x" : 0,
-        "y" : 88,
+        "y" : 96,
         "w" : 8,
         "h" : 8
       },
@@ -1756,14 +1889,14 @@
       "type" : "timeseries",
       "title" : "Processing time per message (p50, p99)",
       "description" : "",
-      "id" : 35,
+      "id" : 37,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
       },
       "gridPos" : {
         "x" : 8,
-        "y" : 88,
+        "y" : 96,
         "w" : 8,
         "h" : 8
       },
@@ -1821,14 +1954,14 @@
       "type" : "timeseries",
       "title" : "End-to-end p99: event created to processed",
       "description" : "",
-      "id" : 36,
+      "id" : 38,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
       },
       "gridPos" : {
         "x" : 16,
-        "y" : 88,
+        "y" : 96,
         "w" : 8,
         "h" : 8
       },
@@ -1876,14 +2009,14 @@
       "type" : "timeseries",
       "title" : "Lag by partition (messages)",
       "description" : "",
-      "id" : 37,
+      "id" : 39,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
       },
       "gridPos" : {
         "x" : 0,
-        "y" : 96,
+        "y" : 104,
         "w" : 8,
         "h" : 8
       },
@@ -1931,14 +2064,14 @@
       "type" : "timeseries",
       "title" : "Lag by partition (seconds)",
       "description" : "",
-      "id" : 38,
+      "id" : 40,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
       },
       "gridPos" : {
         "x" : 8,
-        "y" : 96,
+        "y" : 104,
         "w" : 8,
         "h" : 8
       },
@@ -1986,14 +2119,14 @@
       "type" : "timeseries",
       "title" : "Retries/s by partition",
       "description" : "",
-      "id" : 39,
+      "id" : 41,
       "datasource" : {
         "type" : "prometheus",
         "uid" : "prometheus"
       },
       "gridPos" : {
         "x" : 16,
-        "y" : 96,
+        "y" : 104,
         "w" : 8,
         "h" : 8
       },
