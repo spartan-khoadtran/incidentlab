@@ -353,6 +353,14 @@ class ScenarioCatalogTest {
     }
     assertThat(scenario.answer).isEqualTo(ScenarioCatalog.byId.getValue("cache_miss").answer)
     assertThat(scenario.decoy).isEqualTo(0.5)
+    val measured = scenario.params(Random(1), ExerciseContext(productDetailSeconds = 0.018))
+    assertThat(measured["query_ms"]).isEqualTo(18)
+    val params = Params(mapOf("ttl" to 200, "fork_rps" to 150, "query_ms" to 18), "14:05")
+    assertThat(scenario.ticket(params).contains("p99 did not move")).isTrue()
+    for (id in listOf("fork_decoy", "cache_miss")) {
+      val explain = ScenarioCatalog.byId.getValue(id).explain(params)
+      assertThat(explain.contains("p50 jumps from under 1 ms to about 18 ms")).isTrue()
+    }
   }
 
   @Test
