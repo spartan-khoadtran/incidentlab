@@ -43,4 +43,19 @@ class BoardsTest {
     assertThat(quantiles.isNotEmpty() && quantiles.all { it["exemplar"] == true }).isTrue()
     assertThat(others.none { it["exemplar"] == true }).isTrue()
   }
+
+  @Test
+  fun `the software resources row of the USE board ends with the inventory lock panels`() {
+    val panels = UseBoard.build().panels
+    val titles = panels.map { it["title"] as String }
+    val row = titles.indexOf("Software resources inside api")
+    val next = titles.indexOf("Runtime (process)")
+    assertThat(titles.subList(next - 3, next)).isEqualTo(
+      listOf("Inventory lock: wait p99", "Inventory lock: threads waiting (saturation)", "Inventory lock: utilization")
+    )
+    assertThat(row < next - 3).isTrue()
+    val expressions = panels.subList(next - 3, next).flatMap { (it["targets"] as List<*>) }.map { (it as Map<*, *>)["expr"] as String }
+    assertThat(expressions.any { it.contains("app_lock_wait_seconds_bucket") }).isTrue()
+    assertThat(expressions.any { it.contains("app_lock_held_seconds_total") }).isTrue()
+  }
 }

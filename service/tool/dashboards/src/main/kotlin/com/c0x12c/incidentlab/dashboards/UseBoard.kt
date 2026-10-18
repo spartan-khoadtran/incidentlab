@@ -31,6 +31,19 @@ object UseBoard {
     )
     b.stat("Admission limit", "app_admission_limit{job=\"api\"}", width = 4)
     b.timeseries("Admission wait p99", listOf(quantile(0.99, "app_admission_wait_seconds", selector = "{job=\"api\"}") to "wait p99"), "s", width = 10)
+    b.timeseries(
+      "Inventory lock: wait p99",
+      listOf(quantile(0.99, "app_lock_wait_seconds", selector = "{job=\"api\"}") to "lock wait p99"),
+      "s",
+      "Time a checkout waits for api's one inventory lock. Off-CPU time: the thread uses no CPU while it waits."
+    )
+    b.timeseries("Inventory lock: threads waiting (saturation)", listOf("app_lock_waiting{job=\"api\"}" to "waiting"), "short")
+    b.timeseries(
+      "Inventory lock: utilization",
+      listOf("100 * rate(app_lock_held_seconds_total{job=\"api\"}[RI])" to "held %"),
+      "percent",
+      "Share of time the lock is held. By M/M/1 the mean wait is utilization / (1 - utilization) times the hold time."
+    )
 
     b.row("Runtime (process)")
     b.timeseries(
