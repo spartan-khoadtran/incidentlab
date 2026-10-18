@@ -54,6 +54,7 @@ Development (Gradle lives in `service/`, needs a JDK on the host; Gradle downloa
 - `make logs S=api` (empty `S` means all services), `make ps`.
 - `make site` opens the handbook (http://localhost:4000, the `site` service).
 - The handbook alone: `cd site && npm ci && npm run dev` (Node 22). `npm run build`, `npm run lint`, `npm test`, `npm run check:data`.
+- The lab API for `npm run dev`: `cd service && LAB_STATE=/tmp/lab-state.json ./gradlew :tool:labctl:run --args=api` serves it on 8090 with its own state file and no control loop, so no fault is applied. Vite proxies `/api` to 8090. With the lab up, `LAB_API=http://localhost:4000 npm run dev` uses the real API through the site's nginx instead.
 
 Host ports: Envoy 8080 (admin 9901), Grafana 3000, Prometheus 9090, Pyroscope 4040, handbook 4000. Tempo has no host port: traces are read in Grafana. Service ports (api 8000, pricing 8001, worker 8002, loadgen 8003, pgobserver 8004, noisy 8005) are only reachable inside the compose network.
 
@@ -182,6 +183,10 @@ Changing one of these breaks the scenario named in brackets:
 - No spoilers. Per scenario the export holds only id, title, level, topics and the toolbox flag, the same as `make list`. The guide pointer stays out: it names the cause, and the CLI only prints it after the answer. `LabExportTest` checks the keys and scans for cause and signal keys, answer labels, guide pointers, tickets, hints, steps, explanations, evidence and cli lines. `test/spoilers.test.ts` also checks that no scenario's guide pointer is in lab.json or `dist/`. `npm run build` ends with `scripts/check-bundle.ts`, which reads the keys from Answers.kt and fails if one is in `dist/` (a key that is also a scenario id, or that the docs print, counts as public). Never add a field or a page that shows a cause, signal, location, nature, ticket, hint, explanation, evidence or cli command.
 - The request path diagram places its nodes in `src/lib/topology.ts`. Their facts come from docker-compose.yml, and `test/compose.test.ts` checks that every node is a compose service and that each hop named by a compose variable matches it.
 - `scripts/lib/groups.ts` groups the guide files. A new docs file shows up by itself under "More" until it gets a group.
+
+### The lab API (`labctl daemon`)
+
+The daemon also serves a JSON API for the handbook, on `LAB_API_PORT` (8090) with the JDK `HttpServer`. The site's nginx proxies `/api/` to `control:8090`, and 8090 is not published to the host. The decisions live in engines that return data: `ExerciseEngine` (incident and toolbox), `RampEngine`, `BenchEngine` and `QuizSessions`. `Exercises`, `RampExercise` and `BenchExercise` only prompt and print, and `api/LabApi` only checks input and writes JSON, so the CLI and the web score the same way. Every POST needs `Content-Type: application/json` and `X-Lab-Client: web`. OPTIONS is a 403 and no CORS header is ever sent, so another origin cannot drive the lab. Before the answer, no response shows a scenario's id, title, answer, explanation, steps, evidence, cli or guide pointer: `ActiveView` has no field for them, and `NoSpoilerTest` opens every scenario through the API to check. The CLI and the API both write `state.json`, so `StateStore` holds an exclusive lock on `state.json.lock` around every read-modify-write. The contract is `service/tool/labctl/API.md`.
 
 ### Data and state
 
