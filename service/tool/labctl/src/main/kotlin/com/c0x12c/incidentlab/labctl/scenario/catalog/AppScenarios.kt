@@ -60,6 +60,10 @@ internal object AppScenarios {
       "sum(rate(db_client_queries_total{job=\"api\",query=\"product_by_id\"}[1m])) / sum(rate(http_server_requests_total{job=\"api\",route=\"/checkout\"}[1m]))",
       "sum by (query) (rate(pg_query_calls_total[1m]))"
     ),
+    cli = listOf(
+      "for i in 1 2; do curl -s http://api:8000/metrics | grep -E '^(db_client_queries_total.*product_by_id|http_server_requests_total.*/checkout)'; sleep 10; done   # product_by_id grows many times faster than /checkout",
+      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"select calls, left(query, 60) as query from pg_stat_statements order by calls desc limit 5\"   # the product lookup leads by calls"
+    ),
     doc = "RED at many layers > Why Rate differs (fan-out)"
   )
 
@@ -102,6 +106,11 @@ internal object AppScenarios {
       "histogram_quantile(0.99, sum by (le) (rate(event_loop_lag_seconds_bucket{job=\"api\"}[1m])))",
       "rate(cgroup_cpu_throttled_periods_total{job=\"api\"}[1m]) / rate(cgroup_cpu_periods_total{job=\"api\"}[1m])"
     ),
+    cli = listOf(
+      "pidstat -t -p $(pgrep -f checkout-api) 5 1 | grep Average | sort -k9 -nr | head -4   # one thread takes most of the process CPU, under one core",
+      "cat $(cg $(pgrep -f checkout-api))/cpu.max; grep -E 'nr_periods|nr_throttled' $(cg $(pgrep -f checkout-api))/cpu.stat   # 200000 100000 is 2 cores, and nr_throttled stays flat",
+      "bpftrace -e 'profile:hz:99 { @[comm] = count(); } interval:s:10 { exit(); }'   # needs BPF: one thread name gets most of the samples"
+    ),
     doc = "USE method in detail > Pitfalls (total CPU hides one core)"
   )
 
@@ -137,6 +146,10 @@ internal object AppScenarios {
     evidence = listOf(
       "sum(rate(cache_requests_total{result=\"hit\"}[1m])) / sum(rate(cache_requests_total[1m]))",
       "sum by (query) (rate(pg_query_calls_total[1m]))"
+    ),
+    cli = listOf(
+      "for i in 1 2; do curl -s http://api:8000/metrics | grep '^cache_requests_total'; sleep 10; done   # miss grows almost as fast as all lookups",
+      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"select calls, round(total_exec_time::numeric) as total_ms, left(query, 60) as query from pg_stat_statements order by total_exec_time desc limit 5\"   # the reviews scan leads by total time"
     ),
     doc = "RED at many layers > Why Rate differs (cache)"
   )

@@ -48,7 +48,12 @@ object GuideIndex {
         "CPU profiling",
         "Off-CPU profiling",
         "Profiles in this lab"
-      ).associateWith { "profiling.md" }
+      ).associateWith { "profiling.md" } +
+      listOf(
+        "The 60-second checklist",
+        "Crisis tools",
+        "The toolbox in this lab"
+      ).associateWith { "toolbox.md" }
 
   /** The pointer with its file in front of each part, or one file in front of the whole pointer when every part shares it. */
   fun where(doc: String): String {

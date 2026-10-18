@@ -200,6 +200,72 @@ class ExercisesTest {
   }
 
   @Test
+  fun `toolbox mode picks only scenarios with commands and keeps Grafana out of the ticket`(@TempDir dir: Path) {
+    val withCli = ScenarioCatalog.all.filter { it.cli.isNotEmpty() }.map { it.id }.toSet()
+    repeat(PICKS) { round ->
+      val terminal = ScriptedTerminal(ArrayDeque())
+      val store = StateStore(dir.resolve("state-$round.json"))
+      val exercises = Exercises(store, probe, annotator, terminal, random = Random(round), now = { NOW })
+
+      assertThat(exercises.newExercise(NewOptions(mode = Exercises.TOOLBOX))).isEqualTo(0)
+
+      val active = store.load().active!!
+      assertThat(active.id in withCli).isTrue()
+      assertThat(active.mode).isEqualTo(Exercises.TOOLBOX)
+      assertThat(terminal.lines).contains(Exercises.TOOLBOX_RULES)
+      assertThat(terminal.lines.none { it.contains("localhost:3000") }).isTrue()
+    }
+  }
+
+  @Test
+  fun `toolbox mode refuses an id without commands`(@TempDir dir: Path) {
+    val withoutCli = ScenarioCatalog.all.first { it.cli.isEmpty() }
+    val terminal = ScriptedTerminal(ArrayDeque())
+    val exercises = exercises(dir, terminal)
+
+    assertThat(exercises.newExercise(NewOptions(id = withoutCli.id, mode = Exercises.TOOLBOX))).isEqualTo(1)
+    assertThat(terminal.lines.last()).contains("has no CLI proof yet")
+    assertThat(StateStore(dir.resolve("state.json")).load().active).isNull()
+  }
+
+  @Test
+  fun `the explanation prints the commands after the PromQL and history keeps the mode`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal(ArrayDeque(listOf("y")))
+    val exercises = exercises(dir, terminal)
+    val scenario = ScenarioCatalog.byId.getValue("pool_hold")
+
+    exercises.newExercise(NewOptions(id = scenario.id, mode = Exercises.TOOLBOX))
+    exercises.reveal()
+
+    val evidence = terminal.lines.indexOfFirst { it.startsWith("EVIDENCE TO LOOK FOR") }
+    val commands = terminal.lines.indexOfFirst { it.startsWith("COMMANDS THAT PROVE IT") }
+    assertThat(evidence in 0 until commands).isTrue()
+    assertThat(terminal.lines.subList(commands + 1, commands + 1 + scenario.cli.size)).isEqualTo(scenario.cli.map { "  $ $it" })
+    val entry = StateStore(dir.resolve("state.json")).load().history.single()
+    assertThat(entry.mode).isEqualTo(Exercises.TOOLBOX)
+    terminal.lines.clear()
+    exercises.history()
+    assertThat(terminal.lines.single { it.startsWith("#1") }).contains("${scenario.title} (toolbox)")
+  }
+
+  @Test
+  fun `an incident without commands prints no command block, and list tags the toolbox scenarios`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal(ArrayDeque(listOf("y")))
+    val exercises = exercises(dir, terminal)
+
+    exercises.newExercise(NewOptions(id = ScenarioCatalog.all.first { it.cli.isEmpty() }.id))
+    exercises.reveal()
+    assertThat(terminal.lines.none { it.startsWith("COMMANDS THAT PROVE IT") }).isTrue()
+
+    terminal.lines.clear()
+    exercises.list()
+    for (scenario in ScenarioCatalog.all) {
+      val line = terminal.lines.single { it.startsWith("  - ${scenario.id} ") }
+      assertThat(line.endsWith("[toolbox]")).isEqualTo(scenario.cli.isNotEmpty())
+    }
+  }
+
+  @Test
   fun `every title fits the list column`() {
     for (scenario in ScenarioCatalog.all) {
       assertThat(scenario.title.length <= Exercises.TITLE_COLUMN).isTrue()
@@ -224,5 +290,6 @@ class ExercisesTest {
   private companion object {
     const val NOW = 1_700_000_000.0
     const val MARKER_LEAD_SECONDS = 180
+    const val PICKS = 20
   }
 }

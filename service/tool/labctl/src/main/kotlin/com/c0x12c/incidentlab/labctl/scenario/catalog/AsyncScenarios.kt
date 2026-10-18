@@ -54,6 +54,10 @@ internal object AsyncScenarios {
       "sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
       "max(kafka_consumer_lag_seconds)"
     ),
+    cli = listOf(
+      "for i in 1 2; do curl -s http://worker:8002/metrics | grep '^kafka_consumer_lag_messages'; sleep 15; done   # lag grows on every partition",
+      "for i in 1 2; do curl -s http://api:8000/metrics | grep '^kafka_produced_total.*outcome=\"ok\"'; sleep 10; done   # source=backfill grows much faster than source=checkout"
+    ),
     doc = "RED at many layers > The async layer"
   )
 
@@ -94,6 +98,10 @@ internal object AsyncScenarios {
       "sum(rate(kafka_consumed_total{outcome=\"ok\"}[1m]))",
       "max(kafka_consumer_lag_seconds)"
     ),
+    cli = listOf(
+      "for i in 1 2; do curl -s http://worker:8002/metrics | grep -E '^kafka_processing_seconds_(sum|count)'; sleep 30; done   # (sum2 - sum1) / (count2 - count1) is the time per message, far above 0.025 s",
+      "for i in 1 2; do curl -s http://api:8000/metrics | grep '^kafka_produced_total.*outcome=\"ok\"'; sleep 10; done   # only source=checkout grows: the producer did not change"
+    ),
     doc = "RED at many layers > The async layer"
   )
 
@@ -127,6 +135,9 @@ internal object AsyncScenarios {
     evidence = listOf(
       "kafka_consumer_lag_messages",
       "sum by (partition) (rate(kafka_consumer_retries_total[1m]))"
+    ),
+    cli = listOf(
+      "for i in 1 2; do curl -s http://worker:8002/metrics | grep -E '^kafka_consumer_(lag_messages|retries_total)'; sleep 15; done   # one partition: its lag and its retries grow, the others stay flat"
     ),
     doc = "RED at many layers > The async layer (poison message)"
   )
@@ -225,9 +236,9 @@ internal object AsyncScenarios {
       "rate(cgroup_cpu_throttled_periods_total{job=\"worker\"}[1m]) / rate(cgroup_cpu_periods_total{job=\"worker\"}[1m])"
     ),
     cli = listOf(
-      "docker stats --no-stream incidentlab-worker-1",
-      "docker exec incidentlab-worker-1 sh -c 'for t in /proc/1/task/*; do echo \"$(sed \"s/.*) //\" \$t/stat | cut -d\" \" -f12) $(cat \$t/comm)\"; done | sort -nr | head -3'",
-      "curl -s 'http://localhost:9090/api/v1/query?query=sum(kafka_consumer_lag_messages)'"
+      "top -H -b -n 1 -p $(pgrep -f orders-worker) | head -12   # one thread near 100% CPU: the Kafka poll loop spins",
+      "cat $(cg $(pgrep -f orders-worker))/cpu.stat   # nr_throttled climbs: the worker uses its whole 1-core limit",
+      "curl -s http://worker:8002/metrics | grep ^kafka_consumer_lag_messages   # lag near 0: there is no work waiting"
     ),
     doc = "CPU busy with no work > Busy polling"
   )

@@ -6,7 +6,7 @@ GRADLE   = cd service && ./gradlew
 
 .DEFAULT_GOAL := help
 .PHONY: help up up-datadog wait new hint answer reveal clear status list history quiz load \
-        open logs ps stop down nuke check build test lint format dashboards
+        toolbox shell open logs ps stop down nuke check build test lint format dashboards
 
 help: ## List the commands
 	@echo "incidentlab: incident investigation lab"
@@ -78,6 +78,13 @@ quiz: ## Theory drills from the guide (N=50, KIND=numbers|concepts|all). Does no
 
 load: ## Change the background load: X=1.5 (times the default 50 rps)
 	@$(CTL) load $(or $(X),1)
+
+toolbox: ## New CLI-only exercise: prove the cause from `make shell`, no Grafana. Options: LEVEL TOPIC ID FORCE
+	@$(CTL) new --mode toolbox $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(ID),--id $(ID)) $(if $(FORCE),--force)
+
+shell: ## Root shell on the Docker VM with the Linux tools (vmstat, pidstat, psql, bpftrace...)
+	@$(COMPOSE) up -d --no-deps toolbox
+	@$(COMPOSE) exec toolbox bash -l
 
 # ----------------------------------------------------------------------------- tools
 open: ## Open Grafana in the browser (macOS)

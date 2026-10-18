@@ -78,6 +78,11 @@ internal object DatabaseScenarios {
       "db_pool_in_use{job=\"api\"}, db_pool_waiting{job=\"api\"}, db_pool_max{job=\"api\"}",
       "pg_connections{state=\"idle in transaction\"}"
     ),
+    cli = listOf(
+      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"select state, count(*) from pg_stat_activity where datname = 'lab' group by state\"   # idle in transaction shows up",
+      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"select pid, now() - xact_start as open_for, left(query, 50) as last_query from pg_stat_activity where state = 'idle in transaction'\"   # transactions stay open while api waits for pricing",
+      "curl -s http://api:8000/metrics | grep -E '^db_pool_(in_use|waiting|max)'   # in_use at max, waiting above 0"
+    ),
     doc = "End-to-end investigation example; Linking RED and USE > Little's Law"
   )
 
@@ -120,6 +125,10 @@ internal object DatabaseScenarios {
       "db_pool_max{job=\"api\"}, db_pool_in_use{job=\"api\"}, db_pool_waiting{job=\"api\"}",
       "histogram_quantile(0.99, sum by (le, op) (rate(db_client_session_seconds_bucket{job=\"api\"}[1m])))",
       "sum by (query) (rate(pg_query_exec_seconds_total[1m])) / sum by (query) (rate(pg_query_calls_total[1m]))"
+    ),
+    cli = listOf(
+      "curl -s http://api:8000/metrics | grep -E '^db_pool_(in_use|waiting|max)'   # max is 1, waiting above 0",
+      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"select state, count(*) from pg_stat_activity where datname = 'lab' group by state\"   # almost every backend is idle: Postgres is not the limit"
     ),
     doc = "USE at many layers > Common examples (pool full while the DB idles); USE at many layers > How to do it (write the limit next to the metric)"
   )
@@ -207,6 +216,11 @@ internal object DatabaseScenarios {
       "sum by (query) (rate(pg_query_exec_seconds_total[1m])) / sum by (query) (rate(pg_query_calls_total[1m]))",
       "pg_lock_waiters",
       "pg_connections"
+    ),
+    cli = listOf(
+      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"select pid, wait_event_type, wait_event, pg_blocking_pids(pid) as blocked_by, left(query, 40) as query from pg_stat_activity where wait_event_type = 'Lock'\"   # backends wait on transactionid or tuple, each blocked by another one",
+      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"select locktype, mode, count(*) from pg_locks where not granted group by 1, 2\"   # lock requests waiting to be granted",
+      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"select calls, round(mean_exec_time::numeric, 1) as mean_ms, left(query, 60) as query from pg_stat_statements order by mean_exec_time desc limit 5\"   # the inventory update has the highest mean time"
     ),
     doc = "USE method in detail > Software resources (mutex, lock); End-to-end investigation example (compare with it)"
   )

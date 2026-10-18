@@ -53,6 +53,18 @@ class ScenarioCatalogTest {
   }
 
   @Test
+  fun `the CLI proofs cover the core scenarios and say what to read`() {
+    val withCli = ScenarioCatalog.all.filter { it.cli.isNotEmpty() }
+    assertThat(withCli.size >= MIN_TOOLBOX_SCENARIOS).isTrue()
+    assertThat(TOOLBOX_CORE.filter { ScenarioCatalog.byId.getValue(it).cli.isEmpty() }).isEmpty()
+    for (command in withCli.flatMap { it.cli }) {
+      assertThat(command.isNotBlank()).isTrue()
+      assertThat(command.substringBefore(COMMENT).isNotBlank() && command.substringAfter(COMMENT, "").isNotBlank()).isTrue()
+      assertThat(command.contains("\${")).isFalse()
+    }
+  }
+
+  @Test
   fun `every real cause and every signal is the answer of at least one scenario`() {
     val usedCauses = ScenarioCatalog.all.map { it.answer.cause }.toSet()
     val usedSignals = ScenarioCatalog.all.flatMap { it.answer.signal }.toSet()
@@ -259,5 +271,13 @@ class ScenarioCatalogTest {
     }
     assertThat(scenario.answer).isEqualTo(ScenarioCatalog.byId.getValue("cache_miss").answer)
     assertThat(scenario.decoy).isEqualTo(0.5)
+  }
+
+  private companion object {
+    const val MIN_TOOLBOX_SCENARIOS = 11
+    const val COMMENT = "   # "
+    val TOOLBOX_CORE = listOf(
+      "cpu_throttle", "noisy_neighbor", "single_thread_cpu", "pricing_cpu", "oom", "slow_leak", "pool_hold", "pool_shrunk", "db_lock", "consumer_backlog", "n_plus_one"
+    )
   }
 }

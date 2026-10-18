@@ -5,6 +5,7 @@ import assertk.assertThat
 import assertk.assertions.hasMessage
 import assertk.assertions.isEqualTo
 import assertk.assertions.isInstanceOf
+import com.c0x12c.incidentlab.labctl.exercise.Exercises
 import com.c0x12c.incidentlab.labctl.exercise.NewOptions
 import com.c0x12c.incidentlab.labctl.quiz.QuizKind
 import org.junit.jupiter.api.Test
@@ -16,6 +17,14 @@ class CommandLineTest {
     val options = CommandLine.newOptions(listOf("--level", "2", "--topic", "async", "--id", "pool_hold", "--force"))
 
     assertThat(options).isEqualTo(NewOptions(level = 2, topic = "async", id = "pool_hold", force = true))
+  }
+
+  @Test
+  fun `the mode flag takes incident or toolbox and nothing else`() {
+    assertThat(CommandLine.newOptions(listOf("--mode", "toolbox", "--level", "2"))).isEqualTo(NewOptions(level = 2, mode = Exercises.TOOLBOX))
+    assertThat(CommandLine.newOptions(emptyList()).mode).isEqualTo(Exercises.INCIDENT)
+    assertFailure { CommandLine.newOptions(listOf("--mode", "grafana")) }.hasMessage("MODE must be one of incident, toolbox.")
+    assertFailure { CommandLine.newOptions(listOf("--mode")) }.isInstanceOf(UsageError::class)
   }
 
   @Test
