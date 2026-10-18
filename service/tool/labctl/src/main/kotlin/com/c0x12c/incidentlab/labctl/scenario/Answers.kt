@@ -41,7 +41,8 @@ object Answers {
     "memory_restarts" to "Container memory against its limit (sawtooth) and the restart count",
     "host_cpu" to "Host CPU and load, split by container",
     "consumer_lag" to "Produce rate against consume rate, processing time, lag over time",
-    "lag_per_partition" to "Lag and retries per partition"
+    "lag_per_partition" to "Lag and retries per partition",
+    "cpu_profile" to "A CPU profile of api: one code path owns most of the samples"
   )
 
   /** Causes by layer, outermost first. The prompt prints one header per layer. */
@@ -63,7 +64,8 @@ object Answers {
       "n_plus_one" to "N+1 queries: each request sends far too many queries",
       "cache_miss" to "Cache misses rose, load shifted to the DB",
       "gc_pause" to "Long GC pauses stop the JVM",
-      "memory_leak" to "Memory grows without limit (a leak) and will hit the limit"
+      "memory_leak" to "Memory grows without limit (a leak) and will hit the limit",
+      "hot_code_path" to "A hot code path burns CPU on every request: a serializer, a regex, a formatter"
     ),
     "DB client and Postgres" to listOf(
       "pool_exhausted" to "Connection pool exhausted: hold time too long, or the pool too small",
