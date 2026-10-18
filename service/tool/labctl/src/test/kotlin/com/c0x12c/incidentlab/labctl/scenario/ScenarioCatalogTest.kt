@@ -445,6 +445,25 @@ class ScenarioCatalogTest {
   }
 
   @Test
+  fun `the logging band puts 0_19 to 0_3 cores of system time on api and its texts do the per-line arithmetic`() {
+    assertThat(JvmScenarios.logSystemCores(JvmScenarios.MIN_LOG_LINES)).isBetween(0.19, 0.3)
+    assertThat(JvmScenarios.logSystemCores(JvmScenarios.MAX_LOG_LINES)).isBetween(0.19, 0.3)
+    val scenario = ScenarioCatalog.byId.getValue("sync_logging")
+    val random = Random(2)
+    repeat(30) {
+      val lines = scenario.params(random, ExerciseContext())["lines"] as Int
+      assertThat(lines).isBetween(JvmScenarios.MIN_LOG_LINES, JvmScenarios.MAX_LOG_LINES)
+    }
+    // 2000 × 50 = 100,000 lines/s; × 1.9 µs = 0.19 cores system, × 3.4 µs = 0.34 cores user; 2000 × 5.3 µs = 10.6 ms per request
+    val params = Params(mapOf("lines" to 2000), "14:05")
+    val explain = scenario.explain(params)
+    assertThat(explain.contains("100000 lines/s")).isTrue()
+    assertThat(explain.contains("0.34 cores of user time and 0.19 cores of system time")).isTrue()
+    assertThat(explain.contains("≈ 11 ms of extra work")).isTrue()
+    assertThat(scenario.ticket(params).contains("about 11 ms")).isTrue()
+  }
+
+  @Test
   fun `the GC store stays inside the calibrated band`() {
     val scenario = ScenarioCatalog.byId.getValue("gc_pressure")
     val random = Random(6)

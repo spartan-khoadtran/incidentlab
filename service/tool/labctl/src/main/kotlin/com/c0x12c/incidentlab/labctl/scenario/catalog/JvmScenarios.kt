@@ -1,6 +1,7 @@
 package com.c0x12c.incidentlab.labctl.scenario.catalog
 
 import com.c0x12c.incidentlab.labctl.scenario.Answer
+import com.c0x12c.incidentlab.labctl.scenario.Baseline.API_CORES_AT_BASE
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.BASE_CHECKOUT_HOLD_MS
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.BASE_RPS
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.CHECKOUTS_PER_SECOND
@@ -47,6 +48,12 @@ internal object JvmScenarios {
     val service = (BASE_CHECKOUT_HOLD_MS + holdMs) / MILLIS_PER_SECOND
     return carrierBusyChance(holdMs) / (CARRIERS / service - CHECKOUTS_PER_SECOND)
   }
+
+  /** CPU one request spends on its own log lines, from the per-line cost measured on the lab. */
+  fun logMsPerRequest(lines: Int): Double = lines * (SYSTEM_US_PER_LINE + USER_US_PER_LINE) / MICROS_PER_MILLI
+
+  /** Cores of system time the log lines take at the base rate. */
+  fun logSystemCores(lines: Int): Double = lines * BASE_RPS * SYSTEM_US_PER_LINE / MICROS_PER_SECOND
 
   private fun gcPressure() = Scenario(
     id = "gc_pressure",
@@ -179,13 +186,13 @@ internal object JvmScenarios {
     title = "DEBUG logging turned on for a support case",
     level = 2,
     topics = listOf("runtime", "use", "cpu"),
-    params = { random, _ -> mapOf("lines" to random.nextInt(400, 801)) },
+    params = { random, _ -> mapOf("lines" to random.nextInt(MIN_LOG_LINES / LOG_LINES_STEP, MAX_LOG_LINES / LOG_LINES_STEP + 1) * LOG_LINES_STEP) },
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("debug_log_lines" to p.int("lines")))) },
     marker = { "Config change: api log level DEBUG for a support case" },
     decoy = 0.3,
     ticket = { p ->
-      "Since ${p.startedAt}, api uses several times more CPU than usual, with the same traffic. p99 is a little higher. " +
-        "Someone proposes giving api a third core."
+      "Since ${p.startedAt}, api uses several times more CPU than usual, well over half a core, with the same traffic. " +
+        "/products, normally under a millisecond at the median, now takes about ${logMsPerRequest(p.int("lines")).roundToInt()} ms. Someone proposes giving api a third core."
     },
     hints = listOf(
       "Traffic is flat and CPU is up. Where does the extra CPU go: into api's own code, or into the kernel working for api?",
@@ -197,29 +204,36 @@ internal object JvmScenarios {
       val lines = p.int("lines")
       val perSecond = lines * BASE_RPS
       val megabytes = perSecond * LINE_BYTES / BYTES_PER_MB.toDouble()
-      "The log level change makes api write about $lines DEBUG lines per request. At $BASE_RPS requests/s that is $lines × $BASE_RPS = $perSecond lines/s, " +
+      val system = perSecond * SYSTEM_US_PER_LINE / MICROS_PER_SECOND
+      val user = perSecond * USER_US_PER_LINE / MICROS_PER_SECOND
+      val perRequestMs = logMsPerRequest(lines)
+      "The log level change makes api write $lines DEBUG lines per request. At $BASE_RPS requests/s that is $lines × $BASE_RPS = $perSecond lines/s, " +
         "about ${p.fixed(megabytes, 1)} MB/s of log at about $LINE_BYTES bytes per line. The console appender flushes after every line, so each line " +
         "is its own write syscall to stdout, a pipe that Docker reads, and each write happens under the appender's lock. " +
-        "That is $perSecond syscalls per second: the kernel does that work, so system time grows with user time and its share of the CPU goes up. " +
-        "Requests also queue for the one lock, so p99 rises a little. CPU is far from the 2-core limit and not throttled, so a third core changes nothing. " +
+        "On the lab one line costs about ${p.fixed(USER_US_PER_LINE, 1)} µs of user CPU (formatting) and ${p.fixed(SYSTEM_US_PER_LINE, 1)} µs of system CPU (the write). " +
+        "So the logging alone takes about ${p.fixed(user, 2)} cores of user time and ${p.fixed(system, 2)} cores of system time, against about " +
+        "${p.fixed(API_CORES_AT_BASE, 2)} cores for the whole of api before. System time used to be a small slice, and now it is about a third of api's CPU. " +
+        "Each request does $lines × ${p.fixed(SYSTEM_US_PER_LINE + USER_US_PER_LINE, 1)} µs ≈ ${p.fixed(perRequestMs, 0)} ms of extra work on its own thread, " +
+        "so the /products median goes from under 1 ms to about that. /checkout already takes about 70 ms, so its p99 moves only a little. " +
+        "CPU is far from the 2-core limit and not throttled, so a third core changes nothing. The Docker daemon also spends CPU reading the pipe, outside api's cgroup. " +
         "Fix: put the log level back to INFO, log less per request, or use an asynchronous appender that batches the writes."
     },
     steps = listOf(
-      "Problem statement: CPU up several times, traffic flat, p99 a little higher, and a config change just before.",
+      "Problem statement: CPU up several times, traffic flat, /products median up by 10 ms or more, and a config change just before.",
       "RED: the rate is flat and errors are zero. The extra cost comes from inside api, not from load.",
       "USE for the container: CPU is up but far from the 2-core limit, with no throttling. More cores would not help.",
-      "Split the CPU by mode: system time rose as much as user time or more. Something now makes many more syscalls per request.",
-      "api's log has hundreds of DEBUG lines per request. Each line is one flushed write to stdout under the appender's lock.",
+      "Split the CPU by mode: system time grew from a sliver to about a third of api's CPU. Something now makes many more syscalls per request.",
+      "api's log has thousands of DEBUG lines per request. Each line is one flushed write to stdout under the appender's lock.",
       "The cause: verbose synchronous logging. Put the level back, or log asynchronously in batches."
     ),
     evidence = listOf(
       "sum by (mode) (rate(cgroup_cpu_mode_seconds_total{job=\"api\"}[1m]))",
       "rate(cgroup_cpu_mode_seconds_total{job=\"api\",mode=\"system\"}[1m]) / ignoring(mode) rate(cgroup_cpu_usage_seconds_total{job=\"api\"}[1m])",
       "rate(process_cpu_seconds_total{job=\"api\"}[1m])",
-      "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\"}[1m])))"
+      "histogram_quantile(0.5, sum by (le, route) (rate(http_server_duration_seconds_bucket{job=\"api\"}[1m])))"
     ),
     cli = listOf(
-      "grep -E '^(user|system)_usec' $(cg $(pgrep -f checkout-api))/cpu.stat; sleep 10; grep -E '^(user|system)_usec' $(cg $(pgrep -f checkout-api))/cpu.stat   # system_usec grows about as fast as user_usec: time spent in syscalls",
+      "grep -E '^(user|system)_usec' $(cg $(pgrep -f checkout-api))/cpu.stat; sleep 10; grep -E '^(user|system)_usec' $(cg $(pgrep -f checkout-api))/cpu.stat   # system_usec grows about half as fast as user_usec: time spent in syscalls",
       "grep ^syscw /proc/$(pgrep -f checkout-api)/io; sleep 10; grep ^syscw /proc/$(pgrep -f checkout-api)/io   # write syscalls: the rise / 10 / 50 is about the lines per request"
     ),
     doc = "System time > Logging costs"
@@ -229,6 +243,15 @@ internal object JvmScenarios {
   private const val KB_PER_MB = 1_024.0
   private const val MILLION = 1_000_000.0
   private const val LINE_BYTES = 100
+
+  // Measured on the lab at 427 lines per request: system time rose 0.041 cores and user time 0.073 cores for 21,350 lines/s.
+  private const val SYSTEM_US_PER_LINE = 1.9
+  private const val USER_US_PER_LINE = 3.4
+  private const val MICROS_PER_SECOND = 1_000_000.0
+  private const val MICROS_PER_MILLI = 1_000.0
+  internal const val MIN_LOG_LINES = 2_000
+  internal const val MAX_LOG_LINES = 3_000
+  private const val LOG_LINES_STEP = 100
   private const val PERCENT = 100
 
   // Measured on the live lab: full GCs about every 22 s, pauses about 0.3 s.
