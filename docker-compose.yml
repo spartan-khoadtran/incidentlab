@@ -122,6 +122,10 @@ services:
       - pg_stat_statements.track=all
       - -c
       - max_connections=200
+      - -c
+      - track_io_timing=on
+      - -c
+      - track_wal_io_timing=on
     volumes:
       - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - pgdata:/var/lib/postgresql/data
@@ -182,6 +186,9 @@ services:
       SERVICE_LAUNCHER: /run/app/noisy/bin/noisy
       SERVICE_NAME: noisy
       PORT: "8005"
+    # Same disk as pgdata: every named volume lives under the Docker data root.
+    volumes:
+      - noisyio:/data
 
   # Lab controller: applies the faults of the current exercise. `make new/hint/answer` run inside it.
   control:
@@ -196,9 +203,17 @@ services:
       GRAFANA_URL: http://grafana:3000
       PROMETHEUS_URL: http://prometheus:9090
       LAB_STATE: /state/state.json
+      CGROUP_ROOT: /host/cgroup
+      HOST_VOLUMES: /host/volumes
+      HOST_SYS: /host/sys
+    # Privileged with the host cgroup tree: the disk IOPS exercise writes postgres's io.max, which the Docker API cannot change.
+    privileged: true
     volumes:
       - labstate:/state
       - /var/run/docker.sock:/var/run/docker.sock
+      - /sys/fs/cgroup:/host/cgroup:rw
+      - /var/lib/docker/volumes:/host/volumes:ro
+      - /sys:/host/sys:ro
 
   # ------------------------------------------------------------------ observability
   prometheus:
@@ -311,3 +326,4 @@ volumes:
   tempodata:
   pyroscopedata:
   labstate:
+  noisyio:

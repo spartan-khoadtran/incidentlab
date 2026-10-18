@@ -14,4 +14,4 @@ app:
     url: ${DB_URL:`jdbc:postgresql://postgres:5432/lab`}
     username: ${DB_USERNAME:lab}
     password: ${DB_PASSWORD:lab}
-    pool-max: 2
+    pool-max: 4

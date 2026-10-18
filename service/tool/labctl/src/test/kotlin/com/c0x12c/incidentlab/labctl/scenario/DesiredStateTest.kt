@@ -6,6 +6,7 @@ import com.c0x12c.incidentlab.labctl.control.DesiredState
 import com.c0x12c.incidentlab.labctl.ramp.RampCatalog
 import com.c0x12c.incidentlab.labctl.ramp.RampExercise
 import com.c0x12c.incidentlab.labctl.scenario.catalog.LoadScenarios
+import com.c0x12c.incidentlab.labctl.control.Services
 import com.c0x12c.incidentlab.labctl.state.ActiveExercise
 import com.c0x12c.incidentlab.labctl.state.LabState
 import org.junit.jupiter.api.Test
@@ -13,12 +14,12 @@ import org.junit.jupiter.api.Test
 class DesiredStateTest {
 
   @Test
-  fun `with no exercise every service gets an empty override and the api keeps 2 cores`() {
+  fun `with no exercise every service gets an empty override, the api keeps 2 cores and postgres has no IOPS limit`() {
     val desired = DesiredState.of(LabState())
 
-    assertThat(desired.faults.keys).isEqualTo(setOf("api", "pricing", "worker", "loadgen", "noisy"))
+    assertThat(desired.faults.keys).isEqualTo(setOf("api", "pricing", "worker", "loadgen", "noisy", "pgobserver"))
     assertThat(desired.faults.values.all { it.isEmpty() }).isEqualTo(true)
-    assertThat(desired.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0)))
+    assertThat(desired.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0), "postgres" to mapOf("write_iops" to "max")))
   }
 
   @Test
@@ -31,7 +32,7 @@ class DesiredStateTest {
     val desired = DesiredState.of(state)
 
     assertThat(desired.faults.getValue("loadgen")).isEqualTo(mapOf<String, Any?>("rate_multiplier" to 1.5))
-    assertThat(desired.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 0.3)))
+    assertThat(desired.docker.getValue("api")).isEqualTo(mapOf("cpus" to 0.3))
   }
 
   @Test
@@ -50,8 +51,8 @@ class DesiredStateTest {
   fun `cpu credits keep the api at 2 cores until the credits run out`() {
     val state = LabState(active = ActiveExercise(id = "cpu_credits", params = mapOf("credit_seconds" to 180, "cpus" to 0.08), started = 1_000.0, n = 1))
 
-    assertThat(DesiredState.of(state, now = 1_179.0).docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0)))
-    assertThat(DesiredState.of(state, now = 1_181.0).docker).isEqualTo(mapOf("api" to mapOf("cpus" to 0.08)))
+    assertThat(DesiredState.of(state, now = 1_179.0).docker.getValue("api")).isEqualTo(mapOf("cpus" to 2.0))
+    assertThat(DesiredState.of(state, now = 1_181.0).docker.getValue("api")).isEqualTo(mapOf("cpus" to 0.08))
   }
 
   @Test
@@ -62,7 +63,7 @@ class DesiredStateTest {
 
     assertThat(desired.faults.getValue("api")).isEqualTo(mapOf<String, Any?>("render_ms" to 27))
     assertThat(desired.faults.filterKeys { it != "api" }.values.all { it.isEmpty() }).isEqualTo(true)
-    assertThat(desired.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0)))
+    assertThat(desired.docker.getValue("api")).isEqualTo(mapOf("cpus" to 2.0))
   }
 
   @Test
@@ -97,7 +98,7 @@ class DesiredStateTest {
     val desired = DesiredState.of(state)
 
     assertThat(desired.faults.getValue("api")).isEqualTo(emptyMap<String, Any?>())
-    assertThat(desired.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0)))
+    assertThat(desired.docker).isEqualTo(Services.BASE_DOCKER)
   }
 
   @Test
@@ -110,9 +111,9 @@ class DesiredStateTest {
 
     assertThat(during.faults.getValue("loadgen")).isEqualTo(mapOf<String, Any?>("surge_multiplier" to 3.0))
     assertThat(during.faults.getValue("api")).isEqualTo(mapOf<String, Any?>("pool_max" to 24))
-    assertThat(during.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 0.3)))
+    assertThat(during.docker.getValue("api")).isEqualTo(mapOf("cpus" to 0.3))
     assertThat(after.faults.values.all { it.isEmpty() }).isEqualTo(true)
-    assertThat(after.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0)))
+    assertThat(after.docker.getValue("api")).isEqualTo(mapOf("cpus" to 2.0))
   }
 
   @Test
@@ -127,6 +128,6 @@ class DesiredStateTest {
 
     val desired = DesiredState.of(state)
 
-    assertThat(desired.docker).isEqualTo(mapOf("api" to mapOf("cpus" to 2.0, "netem" to mapOf("target" to "pricing", "delay_ms" to 0, "loss_pct" to 2.0))))
+    assertThat(desired.docker.getValue("api")).isEqualTo(mapOf("cpus" to 2.0, "netem" to mapOf("target" to "pricing", "delay_ms" to 0, "loss_pct" to 2.0)))
   }
 }

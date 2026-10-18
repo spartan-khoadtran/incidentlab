@@ -31,7 +31,7 @@ class BoardsTest {
         assertThat((left["x"] as Int) + (left["w"] as Int) <= (right["x"] as Int)).isTrue()
       }
     }
-    val expressions = panels.flatMap { (it["targets"] as? List<*>).orEmpty() }.map { (it as Map<*, *>)["expr"] as String }
+    val expressions = panels.flatMap { (it["targets"] as? List<*>).orEmpty() }.mapNotNull { (it as Map<*, *>)["expr"] as String? }
     assertThat(expressions.none { it.contains("[RI]") }).isTrue()
   }
 
@@ -43,6 +43,17 @@ class BoardsTest {
     assertThat(flames.all { it["datasource"] == Board.PROFILES_DATASOURCE }).isTrue()
     assertThat(targets.all { it["profileTypeId"] == "process_cpu:cpu:nanoseconds:cpu:nanoseconds" && it["queryType"] == "profile" }).isTrue()
     assertThat(targets.map { it["labelSelector"] }).isEqualTo(listOf("{service_name=\"api\"}", "{service_name=\"pricing\"}"))
+  }
+
+  @Test
+  fun `the USE board has the host disk row and the Postgres row reads disk waits`() {
+    val panels = UseBoard.build().panels
+    val rows = panels.filter { it["type"] == "row" }.map { it["title"] }
+    val expressions = panels.flatMap { (it["targets"] as? List<*>).orEmpty() }.mapNotNull { (it as Map<*, *>)["expr"] as String? }
+
+    assertThat("Disk (host, node-exporter)" in rows).isTrue()
+    assertThat(listOf("pg_wait_events", "pg_wal_sync_seconds_total", "pg_checkpoints_total", "node_disk_io_time_weighted_seconds_total").all { name -> expressions.any { it.contains(name) } }).isTrue()
+    assertThat(expressions.none { it.contains("[RI]") }).isTrue()
   }
 
   @Test
@@ -64,7 +75,7 @@ class BoardsTest {
       listOf("Inventory lock: wait p99", "Inventory lock: threads waiting (saturation)", "Inventory lock: utilization")
     )
     assertThat(row < next - 3).isTrue()
-    val expressions = panels.subList(next - 3, next).flatMap { (it["targets"] as List<*>) }.map { (it as Map<*, *>)["expr"] as String }
+    val expressions = panels.subList(next - 3, next).flatMap { (it["targets"] as List<*>) }.mapNotNull { (it as Map<*, *>)["expr"] as String? }
     assertThat(expressions.any { it.contains("app_lock_wait_seconds_bucket") }).isTrue()
     assertThat(expressions.any { it.contains("app_lock_held_seconds_total") }).isTrue()
   }

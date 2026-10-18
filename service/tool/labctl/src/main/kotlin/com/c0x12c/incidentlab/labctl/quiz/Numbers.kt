@@ -3,6 +3,7 @@ package com.c0x12c.incidentlab.labctl.quiz
 import com.c0x12c.incidentlab.labctl.quiz.numbers.BenchmarkingNumbers
 import com.c0x12c.incidentlab.labctl.quiz.numbers.CapacityNumbers
 import com.c0x12c.incidentlab.labctl.quiz.numbers.CpuNumbers
+import com.c0x12c.incidentlab.labctl.quiz.numbers.DiskNumbers
 import com.c0x12c.incidentlab.labctl.quiz.numbers.FoundationsNumbers
 import com.c0x12c.incidentlab.labctl.quiz.numbers.InvestigationNumbers
 import com.c0x12c.incidentlab.labctl.quiz.numbers.MethodsNumbers
@@ -19,6 +20,7 @@ object Numbers {
     BenchmarkingNumbers.generators,
     CapacityNumbers.generators,
     CpuNumbers.generators,
+    DiskNumbers.generators,
     FoundationsNumbers.generators,
     MethodsNumbers.generators,
     MonitoringNumbers.generators,

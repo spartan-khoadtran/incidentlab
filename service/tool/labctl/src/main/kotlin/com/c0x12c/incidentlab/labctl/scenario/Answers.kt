@@ -46,7 +46,8 @@ object Answers {
     "lock_wait" to "Lock wait time and threads waiting on a lock inside api, while CPU, pool and downstream stay flat",
     "cpu_profile" to "A CPU profile of api: one code path owns most of the samples",
     "tcp_retransmits" to "TCP retransmits and RTO timeouts counted inside api, against pricing's own p99 which stays flat",
-    "tcp_connections" to "New TCP connections per second and TIME_WAIT count at api against its call rate"
+    "tcp_connections" to "New TCP connections per second and TIME_WAIT count at api against its call rate",
+    "disk_io" to "Disk await and busy share on the host against Postgres wait events (WAL sync, checkpoint) and exec time by query"
   )
 
   /** Causes by layer, outermost first. The prompt prints one header per layer. */
@@ -96,7 +97,10 @@ object Answers {
       "dns_slow" to "Slow or failing DNS lookups"
     ),
     "Disk and storage" to listOf(
-      "disk_full" to "Disk full or disk I/O saturated on the DB host"
+      "disk_full" to "Disk full: writes fail with 'No space left on device'",
+      "disk_io_contention" to "Another process saturates the disk Postgres writes its WAL to",
+      "checkpoint_bursts" to "Checkpoints write their dirty pages in short bursts: periodic I/O spikes",
+      "iops_limit" to "The volume hit its IOPS limit: a quota sits between the database and an idle disk"
     ),
     "Container and host" to listOf(
       "cpu_throttle" to "CPU throttling from the container's CPU limit",

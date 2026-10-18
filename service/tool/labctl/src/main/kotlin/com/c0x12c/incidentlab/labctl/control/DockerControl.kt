@@ -21,8 +21,9 @@ fun interface ContainerExec {
 
 /**
  * What the controller does through the Docker socket: resize the api container's CPU limit for
- * the throttling exercise, and run the netem script inside it for the network exercises. Raw
- * engine API calls over the unix socket; the containers are found by the labels compose puts on them.
+ * the throttling exercise, run the netem script inside it for the network exercises, and find a
+ * container's id for the cgroup applier. Raw engine API calls over the unix socket; the containers
+ * are found by the labels compose puts on them.
  */
 class DockerControl(
   private val project: String,
@@ -73,7 +74,7 @@ class DockerControl(
     throw IllegalStateException("docker exec $execId still running")
   }
 
-  private fun containerId(service: String): String? {
+  fun containerId(service: String): String? {
     val filters = LabJson.mapper.writeValueAsString(
       mapOf("label" to listOf("com.docker.compose.project=$project", "com.docker.compose.service=$service"))
     )

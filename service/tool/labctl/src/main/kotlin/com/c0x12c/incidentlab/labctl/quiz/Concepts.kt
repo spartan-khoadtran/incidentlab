@@ -3,6 +3,7 @@ package com.c0x12c.incidentlab.labctl.quiz
 import com.c0x12c.incidentlab.labctl.quiz.concepts.BenchmarkingConcepts
 import com.c0x12c.incidentlab.labctl.quiz.concepts.CapacityConcepts
 import com.c0x12c.incidentlab.labctl.quiz.concepts.CpuConcepts
+import com.c0x12c.incidentlab.labctl.quiz.concepts.DiskConcepts
 import com.c0x12c.incidentlab.labctl.quiz.concepts.FoundationsConcepts
 import com.c0x12c.incidentlab.labctl.quiz.concepts.InvestigationConcepts
 import com.c0x12c.incidentlab.labctl.quiz.concepts.MethodsConcepts
@@ -18,6 +19,7 @@ object Concepts {
     BenchmarkingConcepts.all,
     CapacityConcepts.all,
     CpuConcepts.all,
+    DiskConcepts.all,
     FoundationsConcepts.all,
     MethodsConcepts.all,
     MonitoringConcepts.all,

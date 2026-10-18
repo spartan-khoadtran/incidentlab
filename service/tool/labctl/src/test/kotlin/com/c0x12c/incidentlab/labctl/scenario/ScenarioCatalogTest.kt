@@ -14,6 +14,7 @@ import com.c0x12c.incidentlab.labctl.scenario.catalog.AppScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.AsyncScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.ContainerHostScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.DatabaseScenarios
+import com.c0x12c.incidentlab.labctl.scenario.catalog.DiskScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.DownstreamScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.EdgeScenarios
 import com.c0x12c.incidentlab.labctl.scenario.catalog.LoadScenarios
@@ -31,7 +32,8 @@ class ScenarioCatalogTest {
   private val layers = listOf(
     LoadScenarios.all, EdgeScenarios.all, AppScenarios.all, DatabaseScenarios.all, DownstreamScenarios.all, AsyncScenarios.all, ContainerHostScenarios.all,
     ProfilingScenarios.all,
-    NetworkScenarios.all
+    NetworkScenarios.all,
+    DiskScenarios.all
   )
 
   @Test
@@ -114,6 +116,7 @@ class ScenarioCatalogTest {
         val spec = scenario.faults(params)
         assertThat(spec.services.keys.all { it in Services.ENDPOINTS }).isTrue()
         assertThat(spec.docker.keys.all { it in Services.BASE_DOCKER }).isTrue()
+        assertThat(spec.docker.all { (container, settings) -> settings.keys.all { it in Services.BASE_DOCKER.getValue(container) || (it == "netem" && container in Services.NETEM_CONTAINERS) } }).isTrue()
         val ticket = scenario.ticket(params)
         val explain = scenario.explain(params)
         assertThat(ticket.contains("14:05")).isTrue()
@@ -190,6 +193,45 @@ class ScenarioCatalogTest {
     assertThat(scenario.explain(fixed).contains("about 68% busy")).isTrue()
     assertThat(scenario.answer.partial).containsOnly("single_thread_cpu")
     assertThat(scenario.cli).isNotEmpty()
+  }
+
+  @Test
+  fun `the disk scenarios drive noisy, pgobserver and the postgres write IOPS`() {
+    val random = Random(9)
+    val wal = ScenarioCatalog.byId.getValue("wal_fsync_contention")
+    val walSpec = wal.faults(Params(wal.params(random, ExerciseContext()), "14:05"))
+    assertThat(walSpec.services.keys).containsOnly("noisy")
+    assertThat((walSpec.services.getValue("noisy")["fsync_mb_per_s"] as Int)).isBetween(40, 120)
+
+    val bursts = ScenarioCatalog.byId.getValue("checkpoint_bursts")
+    val pg = bursts.faults(Params(bursts.params(random, ExerciseContext()), "14:05")).services.getValue("pgobserver")
+    assertThat(pg["checkpoint_timeout_s"]).isEqualTo(30)
+    assertThat(pg["checkpoint_completion_target"]).isEqualTo(0.1)
+    assertThat(pg["max_wal_size_mb"]).isEqualTo(64)
+    assertThat((pg["stats_rows_per_s"] as Int)).isBetween(250, 400)
+
+    val iops = ScenarioCatalog.byId.getValue("iops_limit")
+    val iopsSpec = iops.faults(Params(iops.params(random, ExerciseContext()), "14:05"))
+    assertThat(iopsSpec.services).isEmpty()
+    assertThat((iopsSpec.docker.getValue("postgres")["write_iops"] as Int)).isBetween(40, 60)
+    assertThat(iops.answer.partial).containsOnly("disk_io_contention")
+    assertThat("disk_full" in Answers.DISTRACTORS).isTrue()
+  }
+
+  @Test
+  fun `cli entries are toolbox commands that say what to read`() {
+    val entries = ScenarioCatalog.all.flatMap { it.cli }
+    assertThat(entries.all { it.contains("   # ") && !it.contains("docker exec") && !it.contains("docker compose") && !it.contains("\${") }).isTrue()
+  }
+
+  @Test
+  fun `the checkpoint explanation works out the dirty pages and the burst window`() {
+    val explain = ScenarioCatalog.byId.getValue("checkpoint_bursts").explain(Params(mapOf("rows" to 300), "14:05"))
+
+    // 300 × 30 = 9000 updates; 2560 × (1 − e^(−9000/2560)) = 2484 pages = 19.4 MB; 30 × 0.1 = 3 s → 6.5 MB/s
+    assertThat(explain.contains("9000 updates")).isTrue()
+    assertThat(explain.contains("2484 pages (19.4 MB)")).isTrue()
+    assertThat(explain.contains("= 3 s (about 6.5 MB/s)")).isTrue()
   }
 
   @Test

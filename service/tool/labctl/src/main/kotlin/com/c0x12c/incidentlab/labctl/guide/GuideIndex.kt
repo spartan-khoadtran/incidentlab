@@ -35,6 +35,11 @@ object GuideIndex {
         "Off-CPU time"
       ).associateWith { "cpu.md" } +
       listOf(
+        "Disk math",
+        "Postgres and the disk",
+        "Disk panels in this lab"
+      ).associateWith { "disk.md" } +
+      listOf(
         "Statistics for latency",
         "Latency time scales",
         "Modeling and scaling laws"

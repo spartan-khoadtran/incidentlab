@@ -1,6 +1,7 @@
 package com.c0x12c.incidentlab.labctl
 
 import com.c0x12c.incidentlab.labctl.bench.BenchExercise
+import com.c0x12c.incidentlab.labctl.control.CgroupApplier
 import com.c0x12c.incidentlab.labctl.control.ContainerCpuApplier
 import com.c0x12c.incidentlab.labctl.control.ControlDaemon
 import com.c0x12c.incidentlab.labctl.control.DockerControl
@@ -45,9 +46,10 @@ object Main : Logging {
         "daemon" -> {
           val docker = DockerControl.ifAvailable(System.getenv("COMPOSE_PROJECT") ?: "incidentlab", Path.of(System.getenv("DOCKER_SOCK") ?: "/var/run/docker.sock"))
           if (docker == null) {
-            info { "docker socket not found: CPU-limit and network exercises are disabled" }
+            info { "docker socket not found: CPU-limit, network and disk IOPS exercises are disabled" }
           }
-          val appliers = listOfNotNull(ServiceFaultApplier(http), docker?.let { ContainerCpuApplier(it) }, docker?.let { NetemApplier(it) })
+          val cgroups = docker?.let { CgroupApplier.ifAvailable(it::containerId, hostPath("CGROUP_ROOT", "/host/cgroup"), hostPath("HOST_VOLUMES", "/host/volumes"), hostPath("HOST_SYS", "/host/sys")) }
+          val appliers = listOfNotNull(ServiceFaultApplier(http), docker?.let { ContainerCpuApplier(it) }, docker?.let { NetemApplier(it) }, cgroups)
           ControlDaemon(store, appliers).run()
           0
         }
@@ -75,6 +77,8 @@ object Main : Logging {
       USAGE_EXIT
     }
   }
+
+  private fun hostPath(variable: String, default: String): Path = Path.of(System.getenv(variable) ?: default)
 
   private fun usage(): Int {
     println(

@@ -7,13 +7,15 @@ group "com.c0x12c.incidentlab.noisy"
 version "1.0-SNAPSHOT"
 
 // noisy: a batch job sharing the same machine. Idle unless an exercise turns its burners
-// on; compose gives it a high CPU weight so it wins most of the host when it runs.
+// on (compose gives it a high CPU weight, so it wins most of the host when it runs) or its
+// fsync writer, which writes to a volume on the same disk as Postgres.
 dependencies {
   implementation(libs.kotlin.stdlib)
 
   implementation(project(":shared:module-infra"))
   implementation(project(":core:module-faults"))
   implementation(project(":core:module-logging"))
+  implementation(project(":core:module-metrics"))
 
   implementation(mn.micronaut.kotlin.runtime)
   implementation(mn.micronaut.runtime)
