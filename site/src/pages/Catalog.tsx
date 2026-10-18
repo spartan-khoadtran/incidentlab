@@ -18,12 +18,19 @@ function matches(s: Scenario, level: number | null, topic: string | null, toolbo
   return true;
 }
 
+const TOPIC_COUNTS: Record<string, number> = Object.fromEntries(lab.topics.map((t) => [t, lab.scenarios.filter((s) => s.topics.includes(t)).length]));
+const TOPICS = lab.topics.filter((t) => TOPIC_COUNTS[t] > 0);
+/** A topic no incident carries, with the modes whose guide file is named after it (capacity: ramp and bench). */
+const NO_INCIDENT = lab.topics
+  .filter((t) => TOPIC_COUNTS[t] === 0)
+  .map((t) => ({ topic: t, modes: lab.modes.filter((m) => m.guide_file === `${t}.md`).map((m) => m.id) }));
+
 export function Catalog() {
   const [params, setParams] = useSearchParams();
   const levelParam = Number(params.get("level"));
   const level = lab.levels.includes(levelParam) ? levelParam : null;
   const topicParam = params.get("topic");
-  const topic = topicParam && lab.topics.includes(topicParam) ? topicParam : null;
+  const topic = topicParam && TOPICS.includes(topicParam) ? topicParam : null;
   const toolbox = params.get("toolbox") === "1";
   const q = params.get("q") ?? "";
 
@@ -35,7 +42,6 @@ export function Catalog() {
   };
 
   const shown = useMemo(() => lab.scenarios.filter((s) => matches(s, level, topic, toolbox, q)), [level, topic, toolbox, q]);
-  const topicCounts = useMemo(() => Object.fromEntries(lab.topics.map((t) => [t, lab.scenarios.filter((s) => s.topics.includes(t)).length])), []);
   const filterArgs = [level !== null ? `LEVEL=${level}` : null, topic ? `TOPIC=${topic}` : null].filter(Boolean).join(" ");
   const randomCmd = `make ${toolbox ? "toolbox" : "new"}${filterArgs ? ` ${filterArgs}` : ""}`;
 
@@ -64,13 +70,36 @@ export function Catalog() {
         </fieldset>
         <fieldset className="chips">
           <legend>Topic</legend>
-          {lab.topics.map((t) => (
-            <button key={t} type="button" className="chip" aria-pressed={topic === t} onClick={() => set("topic", topic === t ? null : t)} disabled={topicCounts[t] === 0}>
+          {TOPICS.map((t) => (
+            <button key={t} type="button" className="chip" aria-pressed={topic === t} onClick={() => set("topic", topic === t ? null : t)}>
               {t}
-              <span className="chip-count">{topicCounts[t]}</span>
+              <span className="chip-count">{TOPIC_COUNTS[t]}</span>
             </button>
           ))}
         </fieldset>
+        {NO_INCIDENT.length ? (
+          <p className="filters-note">
+            {NO_INCIDENT.map(({ topic: t, modes }, i) => (
+              <span key={t}>
+                {i > 0 ? " " : ""}
+                No incident has the topic <code>{t}</code>
+                {modes.length ? (
+                  <>
+                    : {modes.map((m, j) => (
+                      <span key={m}>
+                        {j > 0 ? " and " : ""}
+                        <code>make {m}</code>
+                      </span>
+                    ))}{" "}
+                    {modes.length > 1 ? "train" : "trains"} it.
+                  </>
+                ) : (
+                  "."
+                )}
+              </span>
+            ))}
+          </p>
+        ) : null}
         <div className="filters-row">
           <label className="switch">
             <input type="checkbox" checked={toolbox} onChange={(e) => set("toolbox", e.target.checked ? "1" : null)} />

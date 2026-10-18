@@ -1,19 +1,11 @@
 import { useState } from "react";
-import { lab, service, type ComposeService } from "../lib/data";
+import { lab, service } from "../lib/data";
+import { facts } from "../lib/facts";
 import { useReducedMotion } from "../lib/motion";
-import { EDGES, edgePath, labelPoint, NODE_H, NODE_W, NODES, STAGES, VIEW_H, VIEW_W } from "../lib/topology";
+import { EDGES, edgePath, labelPoint, NODE_H, NODE_PAD, NODE_W, NODES, STAGES, VIEW_H, VIEW_W } from "../lib/topology";
 
 const STAGE_SECONDS = 0.7;
 const CYCLE = STAGES * STAGE_SECONDS + 1.2;
-
-export function facts(s: ComposeService | undefined): string {
-  if (!s) return "";
-  const port = s.port ?? s.ports[0]?.container ?? null;
-  const image = s.launcher ? null : s.image?.split("/").pop() ?? null;
-  const parts = [port ? `:${port}` : image, s.cpus ? `${s.cpus} cpu` : null, s.memLimit].filter(Boolean);
-  while (parts.length > 1 && parts.join(" · ").length > 22) parts.pop();
-  return parts.join(" · ");
-}
 
 function Packet({ path, stage }: { path: string; stage: number }) {
   const start = (stage * STAGE_SECONDS) / CYCLE;
@@ -57,7 +49,7 @@ export function RequestPath({ selected, onSelect }: { selected?: string | null; 
           return (
             <g key={`${e.from}-${e.to}`} className={`edge ${lit ? "" : "is-dim"}`}>
               <path d={edgePath(e)} markerEnd="url(#rp-arrow)" />
-              <text x={p.x} y={p.y} className="edge-label" textAnchor={e.from === "worker" ? "start" : "middle"}>
+              <text x={p.x} y={p.y} className="edge-label" textAnchor={p.anchor}>
                 {e.label}
               </text>
             </g>
@@ -87,10 +79,10 @@ export function RequestPath({ selected, onSelect }: { selected?: string | null; 
               onMouseLeave={() => setHover(null)}
             >
               <rect width={NODE_W} height={NODE_H} rx="7" />
-              <text x="12" y="22" className="node-name">
+              <text x={NODE_PAD} y="22" className="node-name">
                 {n.id}
               </text>
-              <text x="12" y="40" className="node-facts">
+              <text x={NODE_PAD} y="40" className="node-facts">
                 {facts(s) || n.role}
               </text>
             </g>
