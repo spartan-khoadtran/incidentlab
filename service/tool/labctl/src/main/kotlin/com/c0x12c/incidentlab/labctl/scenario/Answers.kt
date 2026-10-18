@@ -41,7 +41,9 @@ object Answers {
     "memory_restarts" to "Container memory against its limit (sawtooth) and the restart count",
     "host_cpu" to "Host CPU and load, split by container",
     "consumer_lag" to "Produce rate against consume rate, processing time, lag over time",
-    "lag_per_partition" to "Lag and retries per partition"
+    "lag_per_partition" to "Lag and retries per partition",
+    "tcp_retransmits" to "TCP retransmits and RTO timeouts counted inside api, against pricing's own p99 which stays flat",
+    "tcp_connections" to "New TCP connections per second and TIME_WAIT count at api against its call rate"
   )
 
   /** Causes by layer, outermost first. The prompt prints one header per layer. */
@@ -82,7 +84,10 @@ object Answers {
       "slow_drain" to "The fix worked, but the backlog drains slowly: too little headroom"
     ),
     "Network" to listOf(
-      "packet_loss" to "Packet loss or a slow network between services"
+      "packet_loss" to "Packet loss between two services: a lost segment waits for a retransmit",
+      "rtt_amplified" to "A small network delay multiplied by many sequential round trips per request",
+      "no_keepalive" to "Connections are not reused: every call pays a handshake and leaves a TIME_WAIT socket",
+      "dns_slow" to "Slow or failing DNS lookups"
     ),
     "Disk and storage" to listOf(
       "disk_full" to "Disk full or disk I/O saturated on the DB host"
@@ -99,7 +104,7 @@ object Answers {
   val CAUSE_GROUPS: Map<String, String> = CAUSES_BY_LAYER.flatMap { (group, causes) -> causes.map { it.first to group } }.toMap()
 
   /** Causes no scenario has. They keep the cause list from being a copy of the catalog. */
-  val DISTRACTORS: Set<String> = setOf("gc_pause", "missing_index", "packet_loss", "disk_full")
+  val DISTRACTORS: Set<String> = setOf("gc_pause", "missing_index", "disk_full", "dns_slow")
 
   val DECOYS: List<String> = listOf(
     "Deploy worker v1.8: logging library update",
