@@ -323,6 +323,11 @@ class Exercises(
     terminal.out()
     terminal.out("EVIDENCE TO LOOK FOR (PromQL, paste into Grafana Explore or Prometheus)")
     scenario.evidence.forEach { terminal.out("  - $it") }
+    if (scenario.cli.isNotEmpty()) {
+      terminal.out()
+      terminal.out("FROM THE SHELL (the same proof without Grafana)")
+      scenario.cli.forEach { terminal.out("  $ $it") }
+    }
     terminal.out()
     terminal.out("Read again in ${GuideIndex.where(scenario.doc)}")
   }
