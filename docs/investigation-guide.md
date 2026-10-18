@@ -381,11 +381,12 @@ Where each layer of this guide lives in the dashboards:
 | Downstream, seen by itself | Dashboard 01, row 5. pricing's own rate and p99; Postgres queries/s and mean exec time, counted by Postgres |
 | Async | Dashboard 01, row 6. Produce/s and consume/s, processing time, end-to-end p99, lag and retries by partition |
 | Software resources | Dashboard `02 · USE by layer`, row 1. DB pool in use, max and waiting, acquire wait p99, pool timeouts, admission waiting and wait p99 |
-| Runtime | Dashboard 02, row 2. Event loop lag p99, process CPU in cores, RSS, restarts |
+| Runtime | Dashboard 02, row 2. Event loop lag p99, process CPU in cores, RSS, restarts, CPU user against system |
 | Container, cgroup | Dashboard 02, row 3. CPU usage against the limit, share of throttled periods, memory against the limit, PSI, OOM kills |
 | Host | Dashboard 02, row 4. CPU by mode, load against the CPU count, PSI, memory available, steal time |
 | Postgres | Dashboard 02, row 5. Connections by state against max, backends waiting on a lock, exec seconds per second |
 | Kafka consumer | Dashboard 02, row 6. Lag in seconds by partition, messages in worker memory, processing errors |
+| JVM | Dashboard 02, row 7. Heap by pool, GC pause p99 and heatmap, GC runs by cause, allocation rate, live data after GC, pinned virtual threads. `docs/runtime.md` explains them |
 | Traces | Grafana, Explore > Tempo. A dot on a latency panel is an exemplar: click it to open one real request |
 | Change events | The orange lines are annotations. Some are real deploys, some are decoys, and a ticket that says "nobody deployed" can be wrong |
 
