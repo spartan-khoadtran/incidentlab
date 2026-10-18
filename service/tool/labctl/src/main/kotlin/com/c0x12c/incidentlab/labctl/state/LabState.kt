@@ -36,3 +36,10 @@ data class LabState(
   val history: List<HistoryEntry> = emptyList(),
   val base: Map<String, Map<String, Any?>> = emptyMap()
 )
+
+/** The state with [note] on the latest history entry numbered [n]. An empty note changes nothing. */
+fun LabState.withNote(n: Int, note: String): LabState {
+  val index = history.indexOfLast { it.n == n }
+  if (note.isEmpty() || index < 0) return this
+  return copy(history = history.toMutableList().also { it[index] = it[index].copy(note = note) })
+}
