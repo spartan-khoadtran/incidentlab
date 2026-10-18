@@ -37,7 +37,9 @@ A pause stops every request at the same moment. Most requests finish before or a
 - Read pauses as a histogram, not an average. `jvm_gc_pause_seconds_bucket` uses the same buckets as the request latency. In PromQL: `histogram_quantile(0.99, sum by (le) (rate(jvm_gc_pause_seconds_bucket{job="api"}[5m])))`.
 - Time in GC is pause seconds per second: `rate(jvm_gc_pause_seconds_sum[5m])`. A value of 0.02 means the app stood still 2% of the time.
 - Count the pauses by collector and cause: `sum by (gc, cause) (rate(jvm_gc_pause_seconds_count[5m]))`. Many full GCs is the warning sign. Young GCs are normal.
-- On the api latency heatmap, a pause is a short column of slow requests. p99 by route jumps on every route at the same moments. A slow downstream slows only the routes that call it.
+- A pause hits every route at the same moments. A slow downstream slows only the routes that call it.
+- Read the pause at the LB, not in the app. api starts its timer when a request reaches its filter. During a pause no thread reads the socket, so a new request waits there and api never counts that wait.
+- Only the one or two requests already inside api count the pause. So api's own p99 stays flat, while p99.9 at the LB jumps to about the pause length.
 
 ### Allocation rate and live data
 
@@ -47,7 +49,7 @@ Three numbers explain most GC trouble.
 |---|---|---|
 | Allocation rate | `rate(jvm_gc_memory_allocated_bytes_total[5m])` | How fast Eden fills, so how often young GCs come |
 | Promotion rate | `rate(jvm_gc_memory_promoted_bytes_total[5m])` | How fast the old generation fills, so how often full GCs come |
-| Live data after GC | `jvm_gc_live_data_size_bytes` | What a full GC could not free. Compare it with the old generation max, `jvm_memory_max_bytes{id="Tenured Gen"}` |
+| Live data after GC | `jvm_gc_live_data_size_bytes` | What a full GC could not free. Compare it with the old generation max, `jvm_gc_max_data_size_bytes` |
 
 How long an object lives decides where it costs:
 
@@ -56,6 +58,8 @@ How long an object lives decides where it costs:
 - Medium-lived objects are the expensive ones. They survive a few young GCs, move to the old generation, then die there. They fill the old generation with garbage, and only a full GC can free it.
 
 Time between full GCs is about the free room in the old generation divided by the promotion rate. Example: old max 170 MB, live data 140 MB, promotion 1.5 MB/s. That gives (170 − 140) / 1.5 = 20 s.
+
+In PromQL, the share of the old generation that stays live is `jvm_gc_live_data_size_bytes / jvm_gc_max_data_size_bytes`. Dividing by `jvm_memory_max_bytes{id="Tenured Gen"}` returns nothing, because that series has the extra labels `area` and `id`.
 
 Read live data after GC over time:
 

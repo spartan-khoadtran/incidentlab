@@ -44,12 +44,13 @@ internal object JvmScenarios {
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("retain_mb" to p.int("retain"), "churn_kb" to p.int("churn")))) },
     decoy = 0.5,
     ticket = { p ->
-      "Since ${p.startedAt}, api's p99 jumps up in short spikes, again and again, while p50 stays flat. " +
-        "Traffic is normal and nothing was deployed. api memory went up a little at the start and has been flat since, with no restarts."
+      "Since ${p.startedAt}, users say a page sometimes hangs for a moment, then works. At the LB, p99.9 and the slowest requests jump in short spikes, " +
+        "again and again, while p50 stays flat. api's own p99 looks normal. Traffic is normal and nothing was deployed. " +
+        "api memory went up a little at the start and has been flat since, with no restarts."
     },
     hints = listOf(
-      "Are all requests a little slower, or a few requests a lot slower? Compare p50 with p99 and look at the api latency heatmap.",
-      "What can stop every request in api at the same moment, for a fraction of a second, with no deploy and no downstream change?",
+      "Are all requests a little slower, or a few requests a lot slower? Compare p50, p99 and p99.9 at the LB, then the same at api.",
+      "The LB sees the wait and api barely does. What stops every thread in api, its network thread too, for a fraction of a second, with no deploy?",
       "In the JVM row: GC pause p99 and full GCs per second, against live data after GC and the old gen max."
     ),
     answer = Answer(nature = setOf("arch"), location = setOf("api"), signal = setOf("jvm_gc"), cause = "gc_pause", partial = setOf("memory_leak")),
@@ -64,26 +65,31 @@ internal object JvmScenarios {
         "An object lives about $retain / ${p.fixed(writeMbPerSecond, 1)} = ${lifetime.roundToInt()} s on average, long enough to survive a few young GCs " +
         "and be promoted, then it dies in the old generation. The heap max is $HEAP_MAX_MB MB and the old generation about $OLD_GEN_MAX_MB MB. " +
         "With the store plus the app's own data, the old generation is mostly live: a full GC frees little, so the next one comes within " +
-        "tens of seconds. The Serial collector marks every live object on one thread while every request waits, so each full GC is a pause of " +
-        "a hundred milliseconds or more. The requests in flight during a pause are the p99 spikes, and p50 does not move. " +
+        "tens of seconds. The Serial collector marks every live object on one thread while every thread waits, so each full GC is a pause of " +
+        "a few hundred milliseconds. The share of requests that arrive during a pause is the pause over the time between pauses: " +
+        "a $EXAMPLE_PAUSE_MS ms pause every $EXAMPLE_GC_INTERVAL_S s is ${p.fixed(EXAMPLE_PAUSE_MS / MILLIS_PER_SECOND / EXAMPLE_GC_INTERVAL_S * PERCENT, 1)}% of requests. " +
+        "So p50 does not move, p99 rises a little, and p99.9 and the slowest requests jump to about the pause length. " +
+        "api's own histogram misses most of it: its timer starts when a request reaches the filter, and during a pause no thread reads the socket. " +
+        "Only the one or two requests already inside api count the pause. The LB's clock keeps running, so the LB shows the full wait. " +
         "It is not a leak: live data after GC is high but flat, and nothing restarts. " +
         "Fix: keep less on the heap (a smaller cache, or one off heap), or give the heap room for its live set plus the garbage between GCs."
     },
     steps = listOf(
-      "Problem statement: p99 spikes again and again, p50 flat, traffic normal, nothing deployed, memory flat.",
-      "RED: the rate is flat and the LB p99 tracks api's p99. Postgres and pricing are flat, so the time is spent inside api.",
-      "The api latency heatmap: a few requests at a time jump far above the main band, on every route at the same moments.",
-      "Something stops the whole process. The JVM row: full GCs (MarkSweepCompact) come every few dozen seconds, with pauses above 100 ms.",
+      "Problem statement: a few requests hang in bursts, p50 flat, traffic normal, nothing deployed, memory flat.",
+      "RED at the LB: p99.9 and the slowest requests jump every few dozen seconds, on every route at the same moments. Postgres and pricing are flat.",
+      "Compare the LB with api: api's own p99 barely moves. The wait happens before api's timer starts, or while the whole process stands still.",
+      "The JVM row: full GCs (MarkSweepCompact) come every few dozen seconds, with pauses of a few hundred ms, at the moments of the LB spikes.",
       "Live data after full GC takes most of the old gen max: each GC frees little, so GCs come often.",
       "Not a leak: live data is high but flat, RSS is flat and nothing restarts.",
-      "The cause: a large on-heap store that keeps changing. Its objects are promoted and then die, and every full GC pause lands in p99."
+      "The cause: a large on-heap store that keeps changing. Its objects are promoted and then die, and every full GC stops api, network thread included."
     ),
     evidence = listOf(
-      "histogram_quantile(0.99, sum by (le) (rate(jvm_gc_pause_seconds_bucket{job=\"api\"}[5m])))",
+      "histogram_quantile(0.99, sum by (le) (rate(jvm_gc_pause_seconds_bucket{job=\"api\",gc=\"MarkSweepCompact\"}[5m])))",
       "sum by (gc, cause) (rate(jvm_gc_pause_seconds_count{job=\"api\"}[5m]))",
-      "jvm_gc_live_data_size_bytes{job=\"api\"} / jvm_memory_max_bytes{job=\"api\",id=\"Tenured Gen\"}",
+      "jvm_gc_live_data_size_bytes{job=\"api\"} / jvm_gc_max_data_size_bytes{job=\"api\"}",
       "rate(jvm_gc_pause_seconds_sum{job=\"api\"}[5m])",
-      "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\"}[1m])))"
+      "histogram_quantile(0.999, sum by (le) (rate(envoy_http_downstream_rq_time_bucket{envoy_http_conn_manager_prefix=\"ingress\"}[5m]))) / 1000",
+      "histogram_quantile(0.999, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\"}[5m])))"
     ),
     cli = listOf(
       "curl -s http://api:8000/metrics | grep ^jvm_gc_pause_seconds_count   # the MarkSweepCompact count climbs every few dozen seconds",
@@ -202,4 +208,9 @@ internal object JvmScenarios {
   private const val KB_PER_MB = 1_024.0
   private const val MILLION = 1_000_000.0
   private const val LINE_BYTES = 100
+  private const val PERCENT = 100
+
+  // Measured on the live lab: full GCs about every 22 s, pauses about 0.3 s.
+  private const val EXAMPLE_PAUSE_MS = 300
+  private const val EXAMPLE_GC_INTERVAL_S = 22
 }

@@ -427,5 +427,8 @@ class ScenarioCatalogTest {
     assertThat(explain.contains("4.2 million")).isTrue()
     assertThat(explain.contains("3.1 MB/s")).isTrue()
     assertThat(explain.contains("26 s")).isTrue()
+    // 300 ms / 22 s = 1.4% of requests arrive during a pause
+    assertThat(explain.contains("1.4% of requests")).isTrue()
+    assertThat(scenario.evidence.none { it.contains("jvm_memory_max_bytes") }).isTrue()
   }
 }
