@@ -4,6 +4,7 @@ import { copyText, onCopied } from "../lib/copy";
 import { lab } from "../lib/data";
 import { useTheme } from "../lib/theme";
 import { AutoIcon, CloseIcon, MenuIcon, MoonIcon, SearchIcon, SunIcon } from "./Icons";
+import { PageBoundary } from "./PageBoundary";
 import { SearchDialog } from "./SearchDialog";
 
 const NAV = [
@@ -163,14 +164,16 @@ export function Layout() {
         </div>
       </header>
       <main id="main" tabIndex={-1}>
-        <Suspense fallback={<PageLoading />}>
-          <Outlet />
-        </Suspense>
+        <PageBoundary key={location.pathname}>
+          <Suspense fallback={<PageLoading />}>
+            <Outlet />
+          </Suspense>
+        </PageBoundary>
       </main>
       <footer className="footer">
         <div className="footer-inner">
           <p>
-            <strong>For training only.</strong> The services break on purpose. This handbook shows {lab.counts.scenarios} scenarios by title only: the answers stay in the CLI.
+            <strong>For training only.</strong> The services break on purpose. The catalog shows {lab.counts.scenarios} scenarios by title only. An answer shows only after you answer or reveal.
           </p>
           <p className="footer-meta">
             Built from the repo's <code>docs/</code>, <code>Makefile</code>, <code>docker-compose.yml</code> and <code>labctl export</code>.

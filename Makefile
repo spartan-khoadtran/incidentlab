@@ -75,7 +75,7 @@ history: ## History and scores
 
 quiz: ## Theory drills from the guide (N=50, KIND=numbers|concepts|all). Does not need the lab running
 	@$(COMPOSE) build -q control
-	@docker run --rm -i$(shell [ -t 0 ] && echo t) --network none incidentlab-svc:latest $(LABCTL) quiz -n $(or $(N),50) --kind $(or $(KIND),all)
+	@docker run --rm -i$(shell [ -t 0 ] && echo t) --network none --memory 256m incidentlab-svc:latest $(LABCTL) quiz -n $(or $(N),50) --kind $(or $(KIND),all)
 
 load: ## Change the background load: X=1.5 (times the default 50 rps)
 	@$(CTL) load $(or $(X),1)
