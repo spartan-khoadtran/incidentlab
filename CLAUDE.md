@@ -15,6 +15,7 @@ Everything in the repo is English: code, comments, log lines, learner-facing tex
 - `cpu.md`: CPU shares and quotas, CPU busy with no work, off-CPU time.
 - `profiling.md`: CPU and off-CPU profiling, and the profiles in this lab.
 - `toolbox.md`: the 60-second checklist, crisis tools, and the toolbox mode.
+- `capacity.md`: capacity from a ramp test and closed-loop clients, for `make ramp` and `make bench`.
 
 Scenario and quiz `doc` fields point at their headings as `Section > Subsection (note)`. `GuideIndex` (`labctl/guide`) maps every `## ` section title to its file, so a section title must be unique across the docs files, and `GuideIndex.where(doc)` is what the "Read again in" line prints. `GuidePointersTest` reads every `docs/*.md`, checks the uniqueness, checks that the index matches the files, and checks that every pointer resolves, so a heading rename or a new section must update the pointers and the index too.
 
