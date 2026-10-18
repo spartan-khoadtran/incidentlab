@@ -41,7 +41,9 @@ object Answers {
     "memory_restarts" to "Container memory against its limit (sawtooth) and the restart count",
     "host_cpu" to "Host CPU and load, split by container",
     "consumer_lag" to "Produce rate against consume rate, processing time, lag over time",
-    "lag_per_partition" to "Lag and retries per partition"
+    "lag_per_partition" to "Lag and retries per partition",
+    "worker_cpu_vs_lag" to "Worker process CPU against its lag and consume rate: busy while there is no work",
+    "lock_wait" to "Lock wait time and threads waiting on a lock inside api, while CPU, pool and downstream stay flat"
   )
 
   /** Causes by layer, outermost first. The prompt prints one header per layer. */
@@ -63,7 +65,8 @@ object Answers {
       "n_plus_one" to "N+1 queries: each request sends far too many queries",
       "cache_miss" to "Cache misses rose, load shifted to the DB",
       "gc_pause" to "Long GC pauses stop the JVM",
-      "memory_leak" to "Memory grows without limit (a leak) and will hit the limit"
+      "memory_leak" to "Memory grows without limit (a leak) and will hit the limit",
+      "app_lock" to "A lock inside the app serializes requests: they wait for each other, not for a resource"
     ),
     "DB client and Postgres" to listOf(
       "pool_exhausted" to "Connection pool exhausted: hold time too long, or the pool too small",
@@ -79,7 +82,8 @@ object Answers {
       "consumer_backlog" to "The producer sends more than the consumer can handle, backlog grows",
       "consumer_slow" to "The consumer got slower per message, throughput dropped",
       "poison_message" to "A poison message blocks one partition",
-      "slow_drain" to "The fix worked, but the backlog drains slowly: too little headroom"
+      "slow_drain" to "The fix worked, but the backlog drains slowly: too little headroom",
+      "busy_poll" to "The consumer polls with no wait and spins on an empty queue"
     ),
     "Network" to listOf(
       "packet_loss" to "Packet loss or a slow network between services"
@@ -90,7 +94,8 @@ object Answers {
     "Container and host" to listOf(
       "cpu_throttle" to "CPU throttling from the container's CPU limit",
       "oom" to "Memory limit hit: OOM kill, then restart",
-      "noisy_neighbor" to "Another process takes the host's CPU"
+      "noisy_neighbor" to "Another process takes the host's CPU",
+      "cpu_credits" to "A burstable VM ran out of CPU credits and fell to its baseline CPU"
     )
   )
 

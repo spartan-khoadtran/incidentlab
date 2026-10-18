@@ -101,6 +101,7 @@ The quiz data sits next to the docs file it drills: `quiz/numbers/InvestigationN
 - `http_client_*`: api calling pricing (`target`, `route`). `db_client_session_seconds{op}`: pool wait plus hold. `db_client_duration_seconds{query}`: the statement only. `db_pool_*`, `app_admission_*`: software resources inside api.
 - `pg_*` come from pgobserver, which names queries from the `/* q=name */` comment at the start of each SQL string in `module-repository`. A new statement must carry that comment or it will not show up.
 - `kafka_*`: produce (api) and consume, lag, retries (worker). `client_*`: loadgen. Prometheus job names equal compose service names.
+- `app_lock_wait_seconds`, `app_lock_waiting`, `app_lock_held_seconds_total` (rate() is utilization): api's inventory lock. `app_price_fallback_total`: checkouts priced without pricing. `orders_value_total{tenant}`: sum of order totals, so `orders_value_total / orders_total` is the mean order value. `noisy_forks_total`: short processes noisy started.
 
 ### Design choices the exercises depend on
 
@@ -117,6 +118,11 @@ Changing one of these breaks the scenario named in brackets:
 - `noisy` has `cpu_shares: 65536`. [`noisy_neighbor`]
 - No index on `reviews.product_id`; the Redis cache keeps `product_detail` cheap. The cache key includes the TTL, so a config change starts with an empty cache. [`cache_miss`, `tenant_spike`]
 - The worker processes each partition in order and retries a failed message for ever. [`poison_message`, `consumer_backlog`]
+- `cpu_credits` sets no fault until `credit_seconds` have passed, then lowers api's CPU quota like `cpu_throttle`. The lab has no hypervisor, so the quota stands in for a burstable VM at its baseline. [`cpu_credits`]
+- The worker polls Kafka with `poll_ms` (default 500), read on every poll. 0 is `poll(Duration.ZERO)`: the loop spins on one core while lag stays at 0. [`busy_poll`]
+- `lock_ms` (default 0) makes every checkout take one fair `ReentrantLock` in `InventoryCache` before any DB session or pricing call. Hold times are exponential around `lock_ms`, so with Poisson arrivals the lock is M/M/1 and the explanation's numbers hold. Above 90% utilization the p99 passes loadgen's 3 s timeout. [`app_lock`]
+- `price_fallback` (default false) turns a `DownstreamException` from `/price` into a 200 at the list prices, without pricing's 5% discount. [`unexplained_win`]
+- `fork_rps` (default 0, cap 200) makes noisy start and reap `/usr/bin/true` that many times a second. [`fork_decoy`]
 
 ### Data and state
 
