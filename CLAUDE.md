@@ -6,7 +6,12 @@ How the lab is built, how to run it, and the design choices the exercises depend
 
 incidentlab is a local training lab for incident investigation: comparing layers, Little's Law and queueing, tail latency, retry loops, Kafka lag, trend prediction, traces and false leads. Docker Compose runs a small checkout system (Envoy, api, pricing, Postgres, Redis, Kafka, worker) plus Prometheus, Grafana and Tempo. A controller injects a random fault. The learner investigates with the dashboards, submits an answer and gets a score.
 
-Everything in the repo is English: code, comments, log lines, learner-facing text, Makefile help. The study guide the learners read lives under `docs/`, today one file, `docs/investigation-guide.md`. Scenario and quiz `doc` fields point at its headings as `Section > Subsection (note)`. `GuideIndex` (`labctl/guide`) maps every `## ` section title to its file, so a section title must be unique across the docs files, and `GuideIndex.where(doc)` is what the "Read again in" line prints. `GuidePointersTest` reads every `docs/*.md`, checks the uniqueness, checks that the index matches the files, and checks that every pointer resolves, so a heading rename or a new section must update the pointers and the index too.
+Everything in the repo is English: code, comments, log lines, learner-facing text, Makefile help. The study guide the learners read lives under `docs/`:
+- `investigation-guide.md`: RED and USE, the layers, Little's Law, how the lab maps to the guide.
+- `foundations.md`: statistics for latency, the latency time scales, Amdahl, USL and the queue models.
+- `monitoring.md`: counters and gauges, the PromQL traps, the metrics that lie.
+
+Scenario and quiz `doc` fields point at their headings as `Section > Subsection (note)`. `GuideIndex` (`labctl/guide`) maps every `## ` section title to its file, so a section title must be unique across the docs files, and `GuideIndex.where(doc)` is what the "Read again in" line prints. `GuidePointersTest` reads every `docs/*.md`, checks the uniqueness, checks that the index matches the files, and checks that every pointer resolves, so a heading rename or a new section must update the pointers and the index too.
 
 `service/tool/labctl/src/main/kotlin/com/c0x12c/incidentlab/labctl/scenario/catalog/` holds the answers, one file per layer. The README tells learners not to read it.
 
@@ -88,7 +93,7 @@ Each `Scenario` has: `id`, `title`, `level` (1 to 3), `topics`; `params(random, 
 
 Scoring: nature 1, location 1, signal 1, cause 2 (partial 1), minus 0.5 per hint; 5 points max. After scoring, `make answer` asks for a one-line note, kept in history with the missed questions. `make new` skips the last 5 played ids. `ScenarioCatalogTest` renders every scenario with a seeded random and checks the fault targets, so run it after any catalog change.
 
-The quiz data sits next to the docs file it drills: `quiz/numbers/InvestigationNumbers.kt` (the generators) and `quiz/concepts/InvestigationConcepts.kt` (the questions) for `docs/investigation-guide.md`. `Numbers.generators` and `Concepts.all` join the per-file lists with `+`, and `GuidePointersTest` checks that the drills cover every subsection.
+The quiz data sits next to the docs file it drills: `quiz/numbers/InvestigationNumbers.kt` (the generators) and `quiz/concepts/InvestigationConcepts.kt` (the questions) for `docs/investigation-guide.md`, `FoundationsNumbers` and `FoundationsConcepts` for `docs/foundations.md`, `MonitoringNumbers` and `MonitoringConcepts` for `docs/monitoring.md`. `quiz/numbers/Formulas.kt` holds the closed forms the foundations drills share (means, Amdahl, USL, the queue waits), so `FormulasTest` can check them with known values. `Numbers.generators` and `Concepts.all` join the per-file lists with `+`, and `GuidePointersTest` checks that the drills cover every subsection.
 
 ### Metric conventions
 
