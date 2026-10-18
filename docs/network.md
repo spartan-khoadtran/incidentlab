@@ -43,6 +43,7 @@ Calls that run one after another each pay the full RTT. Calls that run in parall
 
 - Example: a request sends 40 queries one after another. Postgres moves to another zone, and the RTT grows by 3 ms. The request is 40 × 3 = 120 ms slower, and Postgres reports nothing new.
 - The delay hides from both sides. The database sees fast queries. The network team sees a normal 3 ms.
+- Count the measured cost, not the delay alone. On the lab, the mean query time at api went from 0.94 ms to 4.8 ms with 3 ms of added delay.
 - If the request holds a pool connection during those round trips, the hold time grows too. By Little's Law, more connections are in use, and the pool can saturate.
 - The fix is fewer round trips: one batch query instead of 40, reused connections instead of new ones. Moving the server back is rarely needed.
 

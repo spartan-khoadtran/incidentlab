@@ -13,7 +13,7 @@ internal object RuntimeConcepts {
       others = listOf(
         "The JVM keeps 86 MB free for metaspace inside the heap",
         "The metric is wrong: Tenured Gen always equals the heap max",
-        "Docker gives the JVM only 170 MB of the 512 MB limit"
+        "Docker gives the JVM only 170 MB of the 768 MB limit"
       ),
       explanation = "Tenured Gen is the old generation. Eden and the two survivor spaces hold the other third.",
       doc = "Garbage collection > Heap and GC in this lab"
@@ -49,6 +49,17 @@ internal object RuntimeConcepts {
         "Yes, but only in p50"
       ),
       explanation = "The share of requests a pause hits is about pause time over the time between pauses: 0.05 / 600 is under 0.01%.",
+      doc = "Garbage collection > GC pauses and tail latency"
+    ),
+    ChoiceQuestion(
+      text = "Full GCs pause api for 0.3 s every 20 s. p99.9 at the LB jumps at those moments, but api's own p99.9 barely moves. Why?",
+      answer = "api's timer starts when a request reaches its filter, and during a pause no thread reads the socket",
+      others = listOf(
+        "api's histogram drops the slow requests on purpose",
+        "The LB adds its own 0.3 s timeout to every request",
+        "A GC pause only stops the threads that allocate"
+      ),
+      explanation = "A request that arrives during the pause waits in the socket buffer, where api's clock does not run. Only the few requests already inside api count the pause.",
       doc = "Garbage collection > GC pauses and tail latency"
     ),
     ChoiceQuestion(

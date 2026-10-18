@@ -75,10 +75,10 @@ internal object NetworkScenarios {
       "histogram_quantile(0.5, sum by (le) (rate(http_client_duration_seconds_bucket{job=\"api\",target=\"pricing\",route=\"/price\"}[1m])))"
     ),
     cli = listOf(
-      "nsenter -t $(pgrep -f checkout-api) -n nstat -az TcpRetransSegs TcpExtTCPTimeouts TcpExtTCPLossProbes   # run twice 10 s apart: TcpRetransSegs and the timeouts or probes grow",
-      "nsenter -t $(pgrep -f checkout-api) -n ss -tin '( dport = :8001 )'   # retrans:x/y above 0 and rto:200 or more on the sockets to pricing",
+      "nsenter -t $(pid api) -n nstat -az TcpRetransSegs TcpExtTCPTimeouts TcpExtTCPLossProbes   # run twice 10 s apart: TcpRetransSegs and the timeouts or probes grow",
+      "nsenter -t $(pid api) -n ss -tin '( dport = :8001 )'   # retrans:x/y above 0 and rto:200 or more on the sockets to pricing",
       "curl -s http://api:8000/metrics | grep ^net_tcp_retrans   # net_tcp_retrans_segs_total keeps rising",
-      "nsenter -t $(pgrep -f checkout-api) -n tc -s qdisc show dev eth0   # the netem leaf with loss and its dropped count: the loss is on api's way out"
+      "nsenter -t $(pid api) -n tc -s qdisc show dev eth0   # the netem leaf with loss and its dropped count: the loss is on api's way out"
     ),
     doc = "TCP behaviour you feel in p99 > Retransmits and the minimum RTO"
   )
@@ -88,10 +88,10 @@ internal object NetworkScenarios {
     title = "A few milliseconds of network, many round trips",
     level = 3,
     topics = listOf("network", "layers", "db"),
-    // The query count follows the delay, so the pool lands between about 60% and 85% busy whatever the draw.
+    // The query count follows the delay, so the pool lands between about 2.1 and 2.9 of 4 connections whatever the draw.
     params = { random, _ ->
       val delay = random.nextInt(3, 9)
-      val trips = random.nextInt(AMPLIFIED_MS_MIN, AMPLIFIED_MS_MAX + 1) / delay.toDouble()
+      val trips = random.nextInt(AMPLIFIED_MS_MIN, AMPLIFIED_MS_MAX + 1) / (delay + TRIP_OVERHEAD_MS)
       mapOf("delay" to delay, "k" to ((trips - ORDER_TRIPS) / AVERAGE_BASKET).roundToInt().coerceAtLeast(MIN_REPEATS))
     },
     faults = { p ->
@@ -113,24 +113,28 @@ internal object NetworkScenarios {
       val k = p.int("k")
       val queries = AVERAGE_BASKET * k
       val trips = queries + ORDER_TRIPS
-      val addedMs = trips * delay
-      val fullBasketMs = (MAX_BASKET * k + ORDER_TRIPS) * delay
+      val tripMs = delay + TRIP_OVERHEAD_MS
+      val addedMs = trips * tripMs
+      val fullBasketMs = (MAX_BASKET * k + ORDER_TRIPS) * tripMs
       val inUse = inUse(p)
       "Postgres now sits about $delay ms away from api, so every query costs about $delay ms more, outside Postgres. Exec time stays flat. " +
+        "Measured on the lab, one round trip then costs api about $delay + ${p.fixed(TRIP_OVERHEAD_MS, 1)} = ${p.fixed(tripMs, 1)} ms: the delay plus " +
+        "the query, the driver and the TCP stack. " +
         "One checkout loads prices one product at a time, $k times per product: about ${p.fixed(queries, 0)} queries for an average basket " +
         "of $AVERAGE_BASKET items, then $ORDER_TRIPS more round trips to write the order. They run one after another, so the delay adds up: " +
-        "about ${p.fixed(trips, 0)} x $delay ms = ${p.fixed(addedMs, 0)} ms per checkout on average, and $fullBasketMs ms for a basket of $MAX_BASKET. " +
+        "about ${p.fixed(trips, 0)} x ${p.fixed(tripMs, 1)} ms = ${p.fixed(addedMs, 0)} ms per checkout on average, and ${p.fixed(fullBasketMs, 0)} ms for a basket of $MAX_BASKET. " +
         "A connection is held during every one of those round trips. By Little's Law the pool goes from about ${p.fixed(BASE_CONNECTIONS_IN_USE, 2)} to about " +
         "${p.fixed(inUse, 1)} of $POOL_MAX connections in use (${p.fixed(inUse / POOL_MAX * PERCENT, 0)}%), so checkouts also wait for a connection " +
-        "and p99 grows more than the sum. /products pays $delay ms once, and only on a cache miss. The N+1 was cheap on a fast network. " +
-        "One batch query (WHERE id = ANY(...)) gives back about ${p.fixed((queries - 1) * delay, 0)} ms per checkout. Moving Postgres back is not needed."
+        "now and then and p99 grows more than the sum. The pool is busy but not full, so this is not a pool too small for the load. " +
+        "/products pays one round trip, and only on a cache miss. The N+1 was cheap on a fast network. " +
+        "One batch query (WHERE id = ANY(...)) gives back about ${p.fixed((queries - 1) * tripMs, 0)} ms per checkout. Moving Postgres back is not needed."
     },
     steps = listOf(
       "Problem statement: /checkout p99 is up a lot, /products a little, and the DBA says exec time is flat.",
       "Compare two layers at the DB: the mean query time seen from api rose by a few ms, exec time inside Postgres did not. The app's query time excludes the pool wait, so the gap is the network.",
       "Count round trips: product_by_id per /checkout is far above 1, so one checkout makes many round trips in a row.",
       "Multiply: round trips per checkout times the extra ms per round trip gives most of the added checkout time.",
-      "Little's Law on the pool: the connection is held for all of it, so connections in use climb toward the max of $POOL_MAX and checkouts start to wait.",
+      "Little's Law on the pool: the connection is held for all of it, so connections in use climb to 2 or 3 of $POOL_MAX and checkouts sometimes wait.",
       "/products pays the delay once, on a cache miss only, so it moves a little.",
       "The cause: a small network delay multiplied by sequential round trips. Fix the round trips with one batch query."
     ),
@@ -142,8 +146,8 @@ internal object NetworkScenarios {
       "histogram_quantile(0.99, sum by (le, op) (rate(db_client_session_seconds_bucket{job=\"api\"}[1m])))"
     ),
     cli = listOf(
-      "nsenter -t $(pgrep -f checkout-api) -n ss -tin '( dport = :5432 )'   # rtt: a few ms on every connection to Postgres, where the compose network alone is well under 1 ms",
-      "nsenter -t $(pgrep -f checkout-api) -n tc qdisc show dev eth0   # the netem leaf with a delay towards Postgres"
+      "nsenter -t $(pid api) -n ss -tin '( dport = :5432 )'   # rtt: a few ms on every connection to Postgres, where the compose network alone is well under 1 ms",
+      "nsenter -t $(pid api) -n tc qdisc show dev eth0   # the netem leaf with a delay towards Postgres"
     ),
     doc = "Network math > Round trips add up"
   )
@@ -197,11 +201,11 @@ internal object NetworkScenarios {
       "histogram_quantile(0.5, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"pricing\",route=\"/price\"}[1m])))"
     ),
     cli = listOf(
-      "nsenter -t $(pgrep -f checkout-api) -n ss -s   # timewait near calls/s x 60",
-      "nsenter -t $(pgrep -f checkout-api) -n ss -tan state time-wait '( dport = :8001 )'   # the TIME_WAIT sockets all point at pricing on port 8001",
-      "nsenter -t $(pgrep -f checkout-api) -n nstat -az TcpActiveOpens   # run twice 10 s apart: it grows by about the pricing calls in those 10 s",
+      "nsenter -t $(pid api) -n ss -s   # timewait near calls/s x 60",
+      "nsenter -t $(pid api) -n ss -tan state time-wait '( dport = :8001 )'   # the TIME_WAIT sockets all point at pricing on port 8001",
+      "nsenter -t $(pid api) -n nstat -az TcpActiveOpens   # run twice 10 s apart: it grows by about the pricing calls in those 10 s",
       "curl -s http://api:8000/metrics | grep ^net_tcp_time_wait   # net_tcp_time_wait near calls/s x 60",
-      "nsenter -t $(pgrep -f checkout-api) -n tc qdisc show dev eth0   # the netem leaf with a delay towards pricing: the zone hop"
+      "nsenter -t $(pid api) -n tc qdisc show dev eth0   # the netem leaf with a delay towards pricing: the zone hop"
     ),
     doc = "TCP behaviour you feel in p99 > Connections and TIME_WAIT"
   )
@@ -209,7 +213,7 @@ internal object NetworkScenarios {
   /** Connections in use by Little's Law: the hold of the price session plus the order session, at the checkout rate. */
   internal fun inUse(p: Params): Double {
     val delay = p.int("delay")
-    val holdMs = BASE_CHECKOUT_HOLD_MS + (AVERAGE_BASKET * p.int("k") + ORDER_TRIPS) * delay
+    val holdMs = BASE_CHECKOUT_HOLD_MS + (AVERAGE_BASKET * p.int("k") + ORDER_TRIPS) * (delay + TRIP_OVERHEAD_MS)
     return CHECKOUTS_PER_SECOND * holdMs / MILLIS_PER_SECOND
   }
 
@@ -223,8 +227,11 @@ internal object NetworkScenarios {
   private const val MAX_BASKET = 4
   private const val MIN_REPEATS = 4
   private const val POOL_MAX = 4
-  private const val AMPLIFIED_MS_MIN = 110
-  private const val AMPLIFIED_MS_MAX = 170
+  private const val AMPLIFIED_MS_MIN = 95
+  private const val AMPLIFIED_MS_MAX = 135
+
+  // Measured with a 3 ms netem delay: api's mean query time went from 0.94 ms to 4.8 ms, so delay + 1.8 ms per round trip.
+  internal const val TRIP_OVERHEAD_MS = 1.8
 
   private const val TIME_WAIT_SECONDS = SECONDS_PER_MINUTE
   private const val EPHEMERAL_PORTS = 60_999 - 32_768 + 1

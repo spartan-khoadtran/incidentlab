@@ -34,7 +34,7 @@ internal object DiskScenarios {
     hints = listOf(
       "Which routes slowed down, and what does each one do in Postgres: read or write?",
       "Postgres row: which wait event grew? Compare the mean WAL sync time with exec time by query.",
-      "Host disk row: await and busy share. Postgres sends the same traffic as before, so who else writes to that disk?"
+      "Host disk row: bytes written per second. Postgres sends the same traffic as before, so who else writes to that disk, and how often does it fsync?"
     ),
     answer = Answer(nature = setOf("arch"), location = setOf("disk"), signal = setOf("disk_io"), cause = "disk_io_contention"),
     explain = { p ->
@@ -44,7 +44,8 @@ internal object DiskScenarios {
         "and each commit waits for its WAL flush. Those small flushes now queue behind the export's megabytes, so the mean WAL sync time and IO / WALSync grow. " +
         "/checkout commits, so it slows down. /products reads from Redis and never waits for WAL, so it stays fast. " +
         "No query plan changed and no lock is held, which is why the DBA saw nothing in the query view. " +
-        "The host disk row shows the busy share and the await up while Postgres's own traffic is flat. " +
+        "The host disk row shows the bytes written per second jump while Postgres's own traffic is flat. On a fast SSD the host await moves only a little, " +
+        "so the clear signals are the mean WAL sync time and the export's fsync rate. " +
         "Fix: move the export to another disk, or limit its I/O (ionice, a cgroup io.max), or run it outside peak hours."
     },
     steps = listOf(
@@ -52,7 +53,7 @@ internal object DiskScenarios {
       "RED: the rate is flat, so suspect architecture. Only the route that writes slowed down.",
       "Postgres: exec time by query is flat and pg_lock_waiters stays at 0. Postgres times each statement, not the WAL flush at its commit.",
       "Wait events: IO / WALSync grew, and the mean WAL sync time is many times its baseline. Commits wait for the disk.",
-      "Host disk row: busy share and await up, while Postgres sends the same work as before. Someone else uses the disk.",
+      "Host disk row: bytes written per second jump while Postgres sends the same work as before. Someone else uses the disk. The await may barely move on a fast SSD.",
       "Throughput by device and the noisy job's fsync rate: the nightly export makes most of the disk's write traffic.",
       "The cause: another process saturates the disk under the WAL. Commits pay for it, cached reads do not."
     ),
@@ -66,7 +67,7 @@ internal object DiskScenarios {
       "rate(noisy_fsync_total[1m])"
     ),
     cli = listOf(
-      "iostat -xz 1 5   # %util and w_await of the disk under the volumes climb while the export runs",
+      "iostat -xz 1 5   # wkB/s of the disk under the volumes jumps by tens of MB/s while the export runs, w_await moves only a little",
       "pidstat -d -l 1 5   # the noisy java process writes tens of MB/s (kB_wr/s), postgres writes little",
       "PGPASSWORD=lab psql -h postgres -U lab lab -c \"SELECT wait_event_type, wait_event, count(*) FROM pg_stat_activity WHERE wait_event IS NOT NULL GROUP BY 1, 2 ORDER BY 3 DESC\"   # IO WALSync shows up again and again, no Lock rows",
       "PGPASSWORD=lab psql -h postgres -U lab lab -c 'SELECT wal_sync, wal_sync_time FROM pg_stat_wal'   # run it twice a minute apart: sync time grows much faster than the sync count"
@@ -86,7 +87,6 @@ internal object DiskScenarios {
           "pgobserver" to mapOf(
             "checkpoint_timeout_s" to CHECKPOINT_TIMEOUT_S,
             "checkpoint_completion_target" to CHECKPOINT_TARGET,
-            "max_wal_size_mb" to MAX_WAL_SIZE_MB,
             "stats_rows_per_s" to p.int("rows")
           )
         )
@@ -95,7 +95,7 @@ internal object DiskScenarios {
     marker = { "Config change: postgres checkpoint tuning" },
     decoy = 0.3,
     ticket = { p ->
-      "Since ${p.startedAt}, /checkout p99 spikes about every half minute, then drops back. p50 is flat. " +
+      "Since ${p.startedAt}, /checkout p99 spikes about every half minute on a 20 s window, then drops back. p50 is flat. " +
         "At the same time the DBA applied new Postgres settings for faster crash recovery and moved the review stats job onto this database. " +
         "That job ran for months on the old host without trouble."
     },
@@ -110,14 +110,15 @@ internal object DiskScenarios {
       val pages = (STATS_PAGES * (1 - exp(-perInterval.toDouble() / STATS_PAGES))).roundToInt()
       val mb = pages * PAGE_KB / KB_PER_MB
       val window = CHECKPOINT_TIMEOUT_S * CHECKPOINT_TARGET
-      "The DBA set checkpoint_timeout to $CHECKPOINT_TIMEOUT_S s (from 300), checkpoint_completion_target to $CHECKPOINT_TARGET (from 0.9) " +
-        "and max_wal_size to $MAX_WAL_SIZE_MB MB (from 1024), and reloaded. The review stats job rewrites ${p.int("rows")} random rows per second. " +
+      "The DBA set checkpoint_timeout to $CHECKPOINT_TIMEOUT_S s (from 300) and checkpoint_completion_target to $CHECKPOINT_TARGET (from 0.9), " +
+        "and reloaded. The review stats job rewrites ${p.int("rows")} random rows per second. " +
         "In $CHECKPOINT_TIMEOUT_S s that is $perInterval updates over about $STATS_PAGES pages, so about $pages pages (${p.fixed(mb, 1)} MB) are dirty at each checkpoint. " +
         "Before, a checkpoint spread its writes over 300 x 0.9 = 270 s. Now it writes them in $CHECKPOINT_TIMEOUT_S x $CHECKPOINT_TARGET = ${p.fixed(window, 0)} s " +
         "(about ${p.fixed(mb / window, 1)} MB/s) and flushes them at once, every $CHECKPOINT_TIMEOUT_S s. " +
-        "Right after each checkpoint, the first change to every page also writes a full page image to the WAL, so the WAL jumps too. " +
-        "The commits that land in that window wait behind the burst: p99 spikes every $CHECKPOINT_TIMEOUT_S s and p50 does not move. " +
-        "The small max_wal_size can also make the WAL request a checkpoint before the timer fires, so some may show as requested. " +
+        "Right after each checkpoint starts, the first change to every page also writes a full page image to the WAL: about ${p.fixed(mb, 0)} MB of WAL, " +
+        "most of it in the first 10 s or so, and every commit must flush its WAL behind it. " +
+        "The commits that land in those seconds wait behind the burst. Only a few percent of checkouts do, so p50 does not move, and p99 spikes " +
+        "every $CHECKPOINT_TIMEOUT_S s. Read it on a short window such as 20 s: a 1-minute window holds two bursts and looks flat and high. " +
         "The job alone writes at a steady rate: a steady load cannot make a 30 s pattern, the checkpoint timer does. " +
         "Fix: put the three settings back (or at least a completion target near 0.9 and a timeout of minutes), with a reload."
     },
@@ -131,8 +132,8 @@ internal object DiskScenarios {
       "The cause: checkpoint bursts. Each checkpoint writes and flushes its pages at once, and the commits in that window wait."
     ),
     evidence = listOf(
-      "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\",route=\"/checkout\"}[1m])))",
-      "histogram_quantile(0.5, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\",route=\"/checkout\"}[1m])))",
+      "histogram_quantile(0.99, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\",route=\"/checkout\"}[20s])))",
+      "histogram_quantile(0.5, sum by (le) (rate(http_server_duration_seconds_bucket{job=\"api\",route=\"/checkout\"}[20s])))",
       "increase(pg_checkpoints_total[1m])",
       "rate(pg_wal_bytes_total[1m])",
       "rate(pg_checkpoint_sync_seconds_total[1m])",
@@ -140,8 +141,8 @@ internal object DiskScenarios {
       "100 * rate(node_disk_io_time_seconds_total[1m])"
     ),
     cli = listOf(
-      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"SELECT name, setting, sourcefile FROM pg_settings WHERE name IN ('checkpoint_timeout', 'checkpoint_completion_target', 'max_wal_size')\"   # 30, 0.1 and 64, set in postgresql.auto.conf",
-      "for i in 1 2; do PGPASSWORD=lab psql -h postgres -U lab lab -c 'SELECT checkpoints_timed, checkpoints_req, checkpoint_write_time, checkpoint_sync_time, buffers_checkpoint FROM pg_stat_bgwriter'; sleep 60; done   # about two more checkpoints a minute later, a few thousand buffers each",
+      "PGPASSWORD=lab psql -h postgres -U lab lab -c \"SELECT name, setting, sourcefile FROM pg_settings WHERE name IN ('checkpoint_timeout', 'checkpoint_completion_target')\"   # 30 and 0.1, set in postgresql.auto.conf",
+      "for i in 1 2; do PGPASSWORD=lab psql -h postgres -U lab lab -c 'SELECT checkpoints_timed, checkpoints_req, checkpoint_write_time, checkpoint_sync_time, buffers_checkpoint FROM pg_stat_bgwriter'; sleep 60; done   # about two more checkpoints a minute later, about 16,000 buffers each",
       "iostat -xz 1 60   # writes to the disk come in bursts every 30 s, quiet in between"
     ),
     doc = "Postgres and the disk > Checkpoints; Disk panels in this lab > The Postgres row"
@@ -194,7 +195,7 @@ internal object DiskScenarios {
       "pg_wait_events{type=\"IO\"}"
     ),
     cli = listOf(
-      "cat $(cg $(pgrep -o -x postgres))/io.max   # a line <maj:min> ... wiops=N: the write quota on the postgres cgroup",
+      "cat $(cg $(pid postgres))/io.max   # a line <maj:min> ... wiops=N: the write quota on the postgres cgroup",
       "iostat -xz 1 5   # w_await and %util of that disk stay low: the device is idle",
       "PGPASSWORD=lab psql -h postgres -U lab lab -c \"SELECT wait_event_type, wait_event, count(*) FROM pg_stat_activity WHERE wait_event IS NOT NULL GROUP BY 1, 2 ORDER BY 3 DESC\"   # IO WALSync shows up again and again although the disk is idle"
     ),
@@ -211,12 +212,11 @@ internal object DiskScenarios {
 
   private const val CHECKPOINT_TIMEOUT_S = 30
   private const val CHECKPOINT_TARGET = 0.1
-  private const val MAX_WAL_SIZE_MB = 64
-  private const val MIN_STATS_ROWS = 250
-  private const val MAX_STATS_ROWS = 400
+  private const val MIN_STATS_ROWS = 2_000
+  private const val MAX_STATS_ROWS = 3_000
 
-  // review_stats: 200,000 rows at fillfactor 50, about 78 rows per 8 kB page.
-  private const val STATS_PAGES = 2_560
+  // review_stats: 1,280,000 rows at fillfactor 50, about 78 rows per 8 kB page.
+  private const val STATS_PAGES = 16_410
   private const val PAGE_KB = 8.0
   private const val KB_PER_MB = 1_024.0
 

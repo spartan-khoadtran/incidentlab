@@ -3,10 +3,13 @@ package com.c0x12c.incidentlab.labctl.scenario.catalog
 import com.c0x12c.incidentlab.labctl.scenario.Answer
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.AVERAGE_BASKET
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.CHECKOUTS_PER_SECOND
+import com.c0x12c.incidentlab.labctl.scenario.Baseline.DEFAULT_PRODUCT_DETAIL_SECONDS
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.MILLIS_PER_SECOND
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.PERCENT
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.PRODUCTS_PER_SECOND
+import com.c0x12c.incidentlab.labctl.scenario.ExerciseContext
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
+import com.c0x12c.incidentlab.labctl.scenario.Params
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
 import kotlin.math.roundToInt
 
@@ -107,8 +110,8 @@ internal object AppScenarios {
       "rate(cgroup_cpu_throttled_periods_total{job=\"api\"}[1m]) / rate(cgroup_cpu_periods_total{job=\"api\"}[1m])"
     ),
     cli = listOf(
-      "pidstat -t -p $(pgrep -f checkout-api) 5 1 | grep Average | sort -k9 -nr | head -4   # one thread takes most of the process CPU, under one core",
-      "cat $(cg $(pgrep -f checkout-api))/cpu.max; grep -E 'nr_periods|nr_throttled' $(cg $(pgrep -f checkout-api))/cpu.stat   # 200000 100000 is 2 cores, and nr_throttled stays flat",
+      "pidstat -t -p $(pid api) 5 1 | grep Average | sort -k9 -nr | head -4   # one thread takes most of the process CPU, under one core",
+      "cat $(cg $(pid api))/cpu.max; grep -E 'nr_periods|nr_throttled' $(cg $(pid api))/cpu.stat   # 200000 100000 is 2 cores, and nr_throttled stays flat",
       "bpftrace -e 'profile:hz:99 { @[comm] = count(); } interval:s:10 { exit(); }'   # needs BPF: one thread name gets most of the samples"
     ),
     doc = "USE method in detail > Pitfalls (total CPU hides one core)"
@@ -119,7 +122,7 @@ internal object AppScenarios {
     title = "Cache misses push the load onto the DB",
     level = 2,
     topics = listOf("layers", "red"),
-    params = { random, _ -> mapOf("ttl" to random.nextInt(100, 401)) },
+    params = { random, context -> mapOf("ttl" to random.nextInt(100, 401), "query_ms" to queryMs(context)) },
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("cache_ttl_ms" to p.int("ttl")))) },
     marker = { "Deploy checkout-api v2.34: configuration moved to the new config service" },
     decoy = 0.5,
@@ -132,7 +135,8 @@ internal object AppScenarios {
     answer = Answer(nature = setOf("amplified", "arch"), location = setOf("cache", "api"), signal = setOf("cache_hit_ratio", "query_rate_by_name"), cause = "cache_miss"),
     explain = { p ->
       "The cache TTL was set to ${p.int("ttl")} ms, so almost every /products misses and runs the product_detail query (a scan over reviews). " +
-        "The API rate is flat, the product_detail query rate at the DB climbs, and /products latency follows. " +
+        "The API rate is flat, and the product_detail query rate at the DB climbs from a few per second to near the /products rate of " +
+        "$PRODUCTS_PER_SECOND per second. ${missLatency(p)} " +
         "This is rate rising at a lower layer because of the cache, not because of users. The missing index on reviews was always there; " +
         "the cache is what kept it cheap, and the cache is what changed."
     },
@@ -216,17 +220,20 @@ internal object AppScenarios {
     title = "A fork storm on the host, slower product pages",
     level = 3,
     topics = listOf("host", "layers"),
-    params = { random, _ -> mapOf("ttl" to random.nextInt(100, 401), "fork_rps" to random.nextInt(MIN_FORK_RPS, MAX_FORK_RPS + 1)) },
+    params = { random, context ->
+      mapOf("ttl" to random.nextInt(100, 401), "fork_rps" to random.nextInt(MIN_FORK_RPS, MAX_FORK_RPS + 1), "query_ms" to queryMs(context))
+    },
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("cache_ttl_ms" to p.int("ttl")), "noisy" to mapOf("fork_rps" to p.int("fork_rps")))) },
     marker = { "Deploy checkout-api v2.34: configuration moved to the new config service" },
     decoy = 0.5,
     ticket = { p ->
       "At ${p.startedAt}, ops saw the host's fork rate (node_forks_total) jump to more than 100 per second, far above normal. " +
-        "They ask whether that is why /products p99 went up at the same time. top shows nothing unusual."
+        "They ask whether that is why /products got slower at the same time: its p50 is many times higher than before, though its p99 did not move. " +
+        "top shows nothing unusual."
     },
     hints = listOf(
       "Two things are true at once: the host forks a lot, and api is slower. Does the first explain the second? Check host saturation: load, PSI, api's throttled share.",
-      "/products is the slow route, and it never touches the host's process table. What does a /products request pass through before the DB?",
+      "/products is the slow route, and it never touches the host's process table. Why would p50 jump while p99 stays? What does a /products request pass through before the DB?",
       "The cache hit ratio fell at the same minute and product_detail queries at Postgres climbed. The fork storm is a batch job on noisy and hurts nobody."
     ),
     answer = Answer(nature = setOf("amplified", "arch"), location = setOf("cache", "api"), signal = setOf("cache_hit_ratio", "query_rate_by_name"), cause = "cache_miss"),
@@ -235,14 +242,15 @@ internal object AppScenarios {
         "that much. Each process lives a few milliseconds, so top never catches one. The whole storm costs a fraction of a core: load stays under the CPU count, " +
         "PSI stays low and api is not throttled. That lead is real but harmless. The slowness has another source: a config change set the cache TTL to " +
         "${p.int("ttl")} ms, so almost every /products misses and runs the product_detail query, a scan over reviews. The API rate is flat while the query rate at " +
-        "Postgres climbs, and /products pays the query on almost every call. " +
+        "Postgres climbs to near the /products rate of $PRODUCTS_PER_SECOND per second. ${missLatency(p)} " +
         "The hit ratio and the query rate by name prove the cache miss. The host's saturation numbers clear the fork storm: busy is not saturated."
     },
     steps = listOf(
       "Problem statement: the host's fork rate jumped to more than 100 per second, and /products got slower at the same time.",
       "Check whether the host lead explains the slowness: load against the CPU count, PSI and api's throttled share are all flat. Busy is not saturated.",
       "Ask which container forks: the noisy batch job. Short processes never show in top, only in node_forks_total.",
-      "RED by route: /products is the slow one, and it never depends on the process table. Follow the request path instead: cache, then DB.",
+      "RED by route: /products is the slow one. Its p50 jumped and its p99 stayed: the typical request now costs what only the slowest did. It never depends on the process table.",
+      "Follow the request path instead: cache, then DB.",
       "The cache hit ratio fell and the product_detail query rate at Postgres climbed while the API rate stayed flat.",
       "The cause: a config change made the cache TTL tiny. The fork storm is a second, harmless change. The first thing you find is not always the problem."
     ),
@@ -255,6 +263,14 @@ internal object AppScenarios {
     ),
     doc = "RED at many layers > Why Rate differs (cache); CPU busy with no work > Short-lived processes"
   )
+
+  private fun queryMs(context: ExerciseContext): Int =
+    ((context.productDetailSeconds ?: DEFAULT_PRODUCT_DETAIL_SECONDS) * MILLIS_PER_SECOND).roundToInt().coerceAtLeast(1)
+
+  private fun missLatency(p: Params): String =
+    "A hit is a Redis read of under 1 ms, and a miss pays the query, about ${p.int("query_ms")} ms. Before, about 1 request in 10 missed, " +
+      "so the misses set the p99 and the hits set the p50. Now most requests miss: the /products p50 jumps from under 1 ms to about " +
+      "${p.int("query_ms")} ms, while the p99 barely moves, because it was a miss already."
 
   // The lock's utilization at 15 checkouts/s. Above 0.9 the p99 at the lock passes loadgen's 3 s timeout.
   private const val MIN_LOCK_UTILIZATION = 0.75

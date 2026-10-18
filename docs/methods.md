@@ -86,8 +86,8 @@ Check the configuration with no load at all. Versions, limits, pool sizes, timeo
 
 | Layer | What to read | In the lab |
 |---|---|---|
-| Container | CPU and memory limits, swap | `cpus: "2.0"`, `mem_limit: 512m` and `memswap_limit: 512m` for api in `docker-compose.yml` |
-| JVM | GC, heap as a share of the limit, thread stack size | `-XX:+UseSerialGC`, `-XX:MaxRAMPercentage=50.0`, `-Xss512k` in `service/Dockerfile` |
+| Container | CPU and memory limits, swap | `cpus: "2.0"`, `mem_limit: 768m` and `memswap_limit: 768m` for api in `docker-compose.yml` |
+| JVM | GC, heap size, thread stack size | `-XX:+UseSerialGC`, `-Xmx256m`, `-Xss512k` in api's `JAVA_OPTS` in `docker-compose.yml` |
 | App pools | Pool size, timeout while waiting for a connection | `pool_max` default 4 in front of a Hikari pool of 24 |
 | Timeouts | Client timeout against server time | A client that gives up at 1 s while the server answers in 1.2 s wastes every request |
 | Postgres | `max_connections`, memory settings, missing indexes | `max_connections=200`, no index on `reviews.product_id` |
@@ -127,7 +127,7 @@ Five questions before any dashboard. The answers decide where to look first, and
 | Has this system ever worked well? | A system that was always slow needs tuning, not an incident | Yes: the minutes before the ticket, on the same chart |
 | What changed recently? | Deploy, config, traffic, data size. Most incidents start at a change | The orange lines on the charts. Some are decoys, and a ticket that says nobody deployed can be wrong |
 | Who is affected? | One tenant, one endpoint, one region, or everyone | `sum by (tenant) (rate(client_requests_total[1m]))` |
-| What is the environment? | Versions, limits, the load right now | 50 rps, pool 4, api at 2 cores and 512 MB |
+| What is the environment? | Versions, limits, the load right now | 50 rps, pool 4, api at 2 cores and 768 MB |
 
 Write the answers down. The combined process in the guide starts with this step, and the later steps read from it. Take this problem statement: p99 of `/checkout` only, since 20:00, all tenants, deploy at 19:40. It already rules out half of the system.
 

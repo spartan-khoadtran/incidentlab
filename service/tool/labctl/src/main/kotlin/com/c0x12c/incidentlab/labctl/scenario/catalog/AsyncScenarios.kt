@@ -236,8 +236,8 @@ internal object AsyncScenarios {
       "rate(cgroup_cpu_throttled_periods_total{job=\"worker\"}[1m]) / rate(cgroup_cpu_periods_total{job=\"worker\"}[1m])"
     ),
     cli = listOf(
-      "top -H -b -n 1 -p $(pgrep -f orders-worker) | head -12   # one thread near 100% CPU: the Kafka poll loop spins",
-      "cat $(cg $(pgrep -f orders-worker))/cpu.stat   # nr_throttled climbs: the worker uses its whole 1-core limit",
+      "top -H -b -n 1 -p $(pid worker) | head -12   # one thread near 100% CPU: the Kafka poll loop spins",
+      "cat $(cg $(pid worker))/cpu.stat   # nr_throttled climbs: the worker uses its whole 1-core limit",
       "curl -s http://worker:8002/metrics | grep ^kafka_consumer_lag_messages   # lag near 0: there is no work waiting"
     ),
     doc = "CPU busy with no work > Busy polling"

@@ -65,9 +65,11 @@ services:
       PRICING_URL: http://pricing:8001
       REDIS_HOST: redis
       PYROSCOPE_APPLICATION_NAME: api
+      # A fixed 256 MB heap. The profiler agent, JFR, metaspace and threads take about 410 MB outside it.
+      JAVA_OPTS: "-Xms128m -Xmx256m -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+UseSerialGC -Xss512k"
     cpus: "2.0"
-    mem_limit: 512m
-    memswap_limit: 512m
+    mem_limit: 768m
+    memswap_limit: 768m
     # The verbose-logging exercise writes a few MB of log per second; rotation caps it at 60 MB.
     logging:
       driver: json-file
@@ -126,6 +128,9 @@ services:
       - pg_stat_statements.track=all
       - -c
       - max_connections=200
+      # Room for the 128 MB review_stats table that the checkpoint exercise rewrites.
+      - -c
+      - shared_buffers=256MB
       - -c
       - track_io_timing=on
       - -c

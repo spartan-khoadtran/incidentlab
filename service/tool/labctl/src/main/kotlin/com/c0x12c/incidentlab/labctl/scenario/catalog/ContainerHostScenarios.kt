@@ -60,9 +60,9 @@ internal object ContainerHostScenarios {
       "sum(rate(node_cpu_seconds_total{mode!=\"idle\"}[1m])) / count(node_cpu_seconds_total{mode=\"idle\"})"
     ),
     cli = listOf(
-      "cat $(cg $(pgrep -f checkout-api))/cpu.max   # quota and period in microseconds: 8000 100000 is 0.08 cores",
-      "grep -E 'nr_periods|nr_throttled' $(cg $(pgrep -f checkout-api))/cpu.stat; sleep 10; grep -E 'nr_periods|nr_throttled' $(cg $(pgrep -f checkout-api))/cpu.stat   # nr_throttled grows with nr_periods",
-      "pidstat -p $(pgrep -f checkout-api) 1 5   # %CPU sits at the quota, under 10% of one core",
+      "cat $(cg $(pid api))/cpu.max   # quota and period in microseconds: 8000 100000 is 0.08 cores",
+      "grep -E 'nr_periods|nr_throttled' $(cg $(pid api))/cpu.stat; sleep 10; grep -E 'nr_periods|nr_throttled' $(cg $(pid api))/cpu.stat   # nr_throttled grows with nr_periods",
+      "pidstat -p $(pid api) 1 5   # %CPU sits at the quota, under 10% of one core",
       "mpstat 1 5   # %idle stays high: the VM has CPU to spare"
     ),
     doc = "USE at many layers > One layer hides another"
@@ -84,14 +84,16 @@ internal object ContainerHostScenarios {
     ),
     answer = Answer(nature = setOf("arch"), location = setOf("container", "api"), signal = setOf("memory_restarts"), cause = "oom"),
     explain = { p ->
-      "Each request keeps about ${p.int("leak")} KB for ever (a memory leak). At about 50 requests/s memory grows by a few MB per second until it " +
-        "reaches the container's 512 MB limit: the kernel OOM-kills the process, Docker restarts api, and Envoy answers 503 while api is down. " +
+      val perSecond = p.int("leak") * BASE_RPS / KB_PER_MB
+      "Each request keeps about ${p.int("leak")} KB for ever (a memory leak). At about $BASE_RPS requests/s memory grows by about ${p.fixed(perSecond, 1)} MB per second. " +
+        "api idles at about $IDLE_RSS_TEXT of its $API_LIMIT_MB MB limit, so the leak fills the last ${LEAK_HEADROOM_MB.roundToInt()} MB or so in about " +
+        "${(LEAK_HEADROOM_MB / perSecond).roundToInt()} seconds. Then the kernel OOM-kills the process, Docker restarts api, and Envoy answers 503 while api is down. " +
         "These are errors at the cgroup layer (USE). The sawtooth memory curve and the restart count are the main evidence."
     },
     steps = listOf(
       "Problem statement: about once a minute there is a burst of 503s that clears on its own. Nobody deployed.",
       "During the errors, is api still up? Look at the restart count from process_start_time_seconds.",
-      "Watch the api container memory against its 512 MB limit right before each restart: it climbs in a sawtooth.",
+      "Watch the api container memory against its $API_LIMIT_MB MB limit right before each restart: it climbs in a sawtooth.",
       "Memory reaches the limit, the kernel OOM-kills the process, Docker restarts api, and Envoy answers 503 while api is down.",
       "The cause: a memory leak hits the container limit. These are errors at the cgroup layer in USE terms."
     ),
@@ -103,7 +105,7 @@ internal object ContainerHostScenarios {
     cli = listOf(
       "dmesg -T | grep -i 'killed process' | tail -5   # Memory cgroup out of memory: Killed process ... (java), about once a minute",
       "curl -s --unix-socket /var/run/docker.sock http://localhost/containers/incidentlab-api-1/json | jq '{RestartCount, StartedAt: .State.StartedAt}'   # RestartCount climbs, StartedAt is less than a minute ago",
-      "cat $(cg $(pgrep -f checkout-api))/memory.max; for i in 1 2 3 4 5 6; do cat $(cg $(pgrep -f checkout-api))/memory.current; sleep 5; done   # climbs to the limit, then starts low again"
+      "cat $(cg $(pid api))/memory.max; for i in 1 2 3 4 5 6; do cat $(cg $(pid api))/memory.current; sleep 5; done   # climbs to the limit, then starts low again"
     ),
     doc = "USE at many layers > Layers and their metrics (container, cgroup)"
   )
@@ -113,7 +115,7 @@ internal object ContainerHostScenarios {
     title = "Memory climbs slowly after a deploy",
     level = 2,
     topics = listOf("use", "container"),
-    params = { random, _ -> mapOf("leak" to random.nextInt(2, 4)) },
+    params = { random, _ -> mapOf("leak" to random.nextInt(MIN_SLOW_LEAK_KB, MAX_SLOW_LEAK_KB + 1)) },
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("leak_kb" to p.int("leak")))) },
     marker = { "Deploy checkout-api v2.35: product page keeps rendered fragments in memory" },
     decoy = 0.5,
@@ -126,7 +128,7 @@ internal object ContainerHostScenarios {
     answer = Answer(nature = setOf("arch"), location = setOf("container", "api"), signal = setOf("memory_restarts"), cause = "memory_leak", partial = setOf("oom")),
     steps = listOf(
       "Problem statement: memory climbs since a deploy, no errors yet, the question is how long until it breaks.",
-      "USE for the container: memory against the 512 MB limit rises in a straight line and never drops. No restarts yet.",
+      "USE for the container: memory against the $API_LIMIT_MB MB limit rises in a straight line and never drops. No restarts yet.",
       "RED is clean: no errors, normal latency. The problem is in the future, not now.",
       "Measure the growth: two points a few minutes apart give MB per minute.",
       "Predict: (limit − used) / growth gives the minutes until the OOM kill.",
@@ -135,8 +137,9 @@ internal object ContainerHostScenarios {
     explain = { p ->
       val perMinute = p.int("leak") * BASE_RPS * SECONDS_PER_MINUTE / KB_PER_MB
       "Each request keeps about ${p.int("leak")} KB for ever. At about $BASE_RPS requests/s that is about ${p.fixed(perMinute, 1)} MB per minute. " +
-        "Memory against the 512 MB limit climbs in a straight line with no drop, which is how a leak looks before it becomes an outage. " +
-        "Time to the OOM kill = (limit − used) / growth: with about 200 MB left, about ${(LEAK_HEADROOM_MB / perMinute).roundToInt()} minutes. " +
+        "Memory against the $API_LIMIT_MB MB limit climbs in a straight line with no drop, which is how a leak looks before it becomes an outage. " +
+        "Time to the OOM kill = (limit − used) / growth. api idles at about $IDLE_RSS_TEXT, so about ${LEAK_HEADROOM_MB.roundToInt()} MB are left: " +
+        "about ${(LEAK_HEADROOM_MB / perMinute).roundToInt()} minutes. " +
         "This is saturation that predicts a certain incident, the kind worth a page even though no user is affected yet. " +
         "Fix: roll back v2.35, then find what keeps the memory."
     },
@@ -146,8 +149,8 @@ internal object ContainerHostScenarios {
       "(cgroup_memory_limit_bytes{job=\"api\"} - cgroup_memory_usage_bytes{job=\"api\"}) / deriv(cgroup_memory_usage_bytes{job=\"api\"}[5m]) / 60"
     ),
     cli = listOf(
-      "pidstat -r -p $(pgrep -f checkout-api) 60 3   # RSS grows by about the same amount every minute and never drops",
-      "cat $(cg $(pgrep -f checkout-api))/memory.current; sleep 60; cat $(cg $(pgrep -f checkout-api))/memory.current $(cg $(pgrep -f checkout-api))/memory.max   # minutes left = (max - now) / growth per minute",
+      "pidstat -r -p $(pid api) 60 3   # RSS grows by about the same amount every minute and never drops",
+      "cat $(cg $(pid api))/memory.current; sleep 60; cat $(cg $(pid api))/memory.current $(cg $(pid api))/memory.max   # minutes left = (max - now) / growth per minute",
       "curl -s --unix-socket /var/run/docker.sock http://localhost/containers/incidentlab-api-1/json | jq .RestartCount   # no OOM kill yet"
     ),
     doc = "Applying on Datadog > Monitors (saturation that predicts an incident); USE at many layers > Layers and their metrics (container, cgroup)"
@@ -187,9 +190,9 @@ internal object ContainerHostScenarios {
     ),
     cli = listOf(
       "nproc; vmstat 1 5   # r far above the CPU count, id near 0",
-      "pidstat -p $(pgrep -f /run/app/noisy) 1 5   # one batch job takes several cores",
-      "cat $(cg $(pgrep -f /run/app/noisy))/cpu.weight $(cg $(pgrep -f checkout-api))/cpu.weight   # noisy weighs far more than the default 100",
-      "cat $(cg $(pgrep -f checkout-api))/cpu.pressure   # some avg10 rises: api waits for a CPU"
+      "pidstat -p $(pid noisy) 1 5   # one batch job takes several cores",
+      "cat $(cg $(pid noisy))/cpu.weight $(cg $(pid api))/cpu.weight   # noisy weighs far more than the default 100",
+      "cat $(cg $(pid api))/cpu.pressure   # some avg10 rises: api waits for a CPU"
     ),
     doc = "USE at many layers > Layers and their metrics (hypervisor, host)"
   )
@@ -245,12 +248,16 @@ internal object ContainerHostScenarios {
   private const val MAX_THROTTLE_CPUS = 0.1
   private const val CFS_PERIOD_MS = 100
 
-  // api idles near 300 of its 512 MB, so at 50 requests/s this leak reaches the limit about once a minute.
-  private const val MIN_LEAK_KB = 90
-  private const val MAX_LEAK_KB = 130
+  // api idles at 450 to 500 of its 768 MB, so at 50 requests/s this leak fills the rest in 35 to 50 s.
+  internal const val MIN_LEAK_KB = 120
+  internal const val MAX_LEAK_KB = 170
+  internal const val MIN_SLOW_LEAK_KB = 2
+  internal const val MAX_SLOW_LEAK_KB = 3
+  internal const val API_LIMIT_MB = 768
+  internal const val LEAK_HEADROOM_MB = 280.0
+  private const val IDLE_RSS_TEXT = "450 to 500 MB"
   private const val MIN_BURNERS = 4
-  private const val KB_PER_MB = 1_024.0
-  private const val LEAK_HEADROOM_MB = 200.0
+  internal const val KB_PER_MB = 1_024.0
 
   // How long the VM runs at full speed before its credits are gone.
   private const val MIN_CREDIT_SECONDS = 120

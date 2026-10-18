@@ -54,13 +54,15 @@ object RedBoard {
       "Envoy counts the 503s it generates itself in upstream_rq_5xx, so compare with the errors api counts."
     )
     b.timeseries(
-      "Latency p99: LB vs api",
+      "Latency p99 and p99.9: LB vs api",
       listOf(
         quantile(0.99, "envoy_http_downstream_rq_time", selector = "{$LB}") + " / 1000" to "LB (Envoy) p99",
-        quantile(0.99, "http_server_duration_seconds", selector = "{job=\"api\"}") to "api (APM) p99"
+        quantile(0.99, "http_server_duration_seconds", selector = "{job=\"api\"}") to "api (APM) p99",
+        quantile(0.999, "envoy_http_downstream_rq_time", selector = "{$LB}") + " / 1000" to "LB (Envoy) p99.9",
+        quantile(0.999, "http_server_duration_seconds", selector = "{job=\"api\"}") to "api (APM) p99.9"
       ),
       "s",
-      "The gap between the two lines is time spent in between: network, the queue ahead of the app."
+      "The gap between the LB and api is time spent in between: network, the queue ahead of the app, a process that stood still."
     )
     b.timeseries(
       "Healthy backends per Envoy",

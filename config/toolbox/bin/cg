@@ -2,7 +2,7 @@
 # Prints the cgroup v2 directory of a process. The toolbox shares the host cgroup namespace, so the path is absolute.
 pid=$1
 if [ -z "$pid" ]; then
-  echo "usage: cg PID   (example: cg \$(pgrep -f checkout-api))" >&2
+  echo "usage: cg PID   (example: cg \$(pid api))" >&2
   exit 2
 fi
 path=$(sed -n 's/^0:://p' "/proc/$pid/cgroup" 2>/dev/null)

@@ -4,6 +4,7 @@ import assertk.assertThat
 import assertk.assertions.containsOnly
 import assertk.assertions.hasSize
 import assertk.assertions.isBetween
+import assertk.assertions.isCloseTo
 import assertk.assertions.isEmpty
 import assertk.assertions.isEqualTo
 import assertk.assertions.isFalse
@@ -83,13 +84,12 @@ class ScenarioCatalogTest {
   fun `a cause is no longer a one-to-one key for a scenario`() {
     val scenariosPerCause = ScenarioCatalog.all.groupingBy { it.answer.cause }.eachCount()
     assertThat(scenariosPerCause.getValue("pool_exhausted")).isEqualTo(2)
-    assertThat(scenariosPerCause.getValue("downstream_slow")).isEqualTo(3)
+    assertThat(scenariosPerCause.getValue("downstream_slow")).isEqualTo(4)
     assertThat(scenariosPerCause.getValue("lb_no_healthy")).isEqualTo(2)
     assertThat(scenariosPerCause.getValue("global_load")).isEqualTo(2)
     assertThat(scenariosPerCause.getValue("single_thread_cpu")).isEqualTo(2)
     assertThat(scenariosPerCause.getValue("client_timeout")).isEqualTo(2)
     assertThat(scenariosPerCause.getValue("cache_miss")).isEqualTo(2)
-    assertThat(scenariosPerCause.getValue("downstream_errors")).isEqualTo(2)
   }
 
   @Test
@@ -209,8 +209,8 @@ class ScenarioCatalogTest {
     val pg = bursts.faults(Params(bursts.params(random, ExerciseContext()), "14:05")).services.getValue("pgobserver")
     assertThat(pg["checkpoint_timeout_s"]).isEqualTo(30)
     assertThat(pg["checkpoint_completion_target"]).isEqualTo(0.1)
-    assertThat(pg["max_wal_size_mb"]).isEqualTo(64)
-    assertThat((pg["stats_rows_per_s"] as Int)).isBetween(250, 400)
+    assertThat(pg.containsKey("max_wal_size_mb")).isFalse()
+    assertThat((pg["stats_rows_per_s"] as Int)).isBetween(2000, 3000)
 
     val iops = ScenarioCatalog.byId.getValue("iops_limit")
     val iopsSpec = iops.faults(Params(iops.params(random, ExerciseContext()), "14:05"))
@@ -224,16 +224,22 @@ class ScenarioCatalogTest {
   fun `cli entries are toolbox commands that say what to read`() {
     val entries = ScenarioCatalog.all.flatMap { it.cli }
     assertThat(entries.all { it.contains("   # ") && !it.contains("docker exec") && !it.contains("docker compose") && !it.contains("\${") }).isTrue()
+    assertThat(entries.filter { it.contains("pgrep") }).isEmpty()
+    val services = entries.flatMap { line -> Regex("""\$\(pid ([a-z]+)\)""").findAll(line).map { it.groupValues[1] }.toList() }.toSet()
+    assertThat(services.isNotEmpty() && services.all { it in Services.ENDPOINTS || it == "postgres" }).isTrue()
   }
 
   @Test
   fun `the checkpoint explanation works out the dirty pages and the burst window`() {
-    val explain = ScenarioCatalog.byId.getValue("checkpoint_bursts").explain(Params(mapOf("rows" to 300), "14:05"))
+    val scenario = ScenarioCatalog.byId.getValue("checkpoint_bursts")
+    val explain = scenario.explain(Params(mapOf("rows" to 2500), "14:05"))
 
-    // 300 × 30 = 9000 updates; 2560 × (1 − e^(−9000/2560)) = 2484 pages = 19.4 MB; 30 × 0.1 = 3 s → 6.5 MB/s
-    assertThat(explain.contains("9000 updates")).isTrue()
-    assertThat(explain.contains("2484 pages (19.4 MB)")).isTrue()
-    assertThat(explain.contains("= 3 s (about 6.5 MB/s)")).isTrue()
+    // 2500 × 30 = 75000 updates; 16410 × (1 − e^(−75000/16410)) = 16240 pages = 126.9 MB; 30 × 0.1 = 3 s → 42.3 MB/s
+    assertThat(explain.contains("75000 updates")).isTrue()
+    assertThat(explain.contains("16240 pages (126.9 MB)")).isTrue()
+    assertThat(explain.contains("= 3 s (about 42.3 MB/s)")).isTrue()
+    val pgobserver = scenario.faults(Params(mapOf("rows" to 2500), "14:05")).services.getValue("pgobserver")
+    assertThat(pgobserver.keys).containsOnly("checkpoint_timeout_s", "checkpoint_completion_target", "stats_rows_per_s")
   }
 
   @Test
@@ -268,6 +274,27 @@ class ScenarioCatalogTest {
   }
 
   @Test
+  fun `the oom leak fills api's headroom in under a minute and the slow leak takes half an hour or more`() {
+    val headroom = ContainerHostScenarios.LEAK_HEADROOM_MB
+    val oom = ScenarioCatalog.byId.getValue("oom")
+    val slow = ScenarioCatalog.byId.getValue("slow_leak")
+    val random = Random(3)
+    repeat(30) {
+      val fast = oom.params(random, ExerciseContext())["leak"] as Int
+      val secondsToLimit = headroom / (fast * Baseline.BASE_RPS / ContainerHostScenarios.KB_PER_MB)
+      assertThat(secondsToLimit).isBetween(30.0, 50.0)
+      val slowKb = slow.params(random, ExerciseContext())["leak"] as Int
+      val minutesToLimit = headroom / (slowKb * Baseline.BASE_RPS * Baseline.SECONDS_PER_MINUTE / ContainerHostScenarios.KB_PER_MB)
+      assertThat(minutesToLimit).isBetween(30.0, 50.0)
+    }
+    // 150 KB × 50/s = 7.3 MB/s, 280 / 7.3 = 38 s; 2 KB × 50 × 60 = 5.9 MB/min, 280 / 5.9 = 48 min
+    assertThat(oom.explain(Params(mapOf("leak" to 150), "14:05")).contains("about 7.3 MB per second")).isTrue()
+    assertThat(oom.explain(Params(mapOf("leak" to 150), "14:05")).contains("about 38 seconds")).isTrue()
+    assertThat(slow.explain(Params(mapOf("leak" to 2), "14:05")).contains("about 48 minutes")).isTrue()
+    assertThat(oom.explain(Params(mapOf("leak" to 150), "14:05")).contains("768 MB")).isTrue()
+  }
+
+  @Test
   fun `the busy poll sets the worker's poll timeout to zero and nothing else`() {
     val scenario = ScenarioCatalog.byId.getValue("busy_poll")
     val spec = scenario.faults(Params(scenario.params(Random(1), ExerciseContext()), "14:05"))
@@ -297,12 +324,28 @@ class ScenarioCatalogTest {
   }
 
   @Test
-  fun `the unexplained win hides pricing errors behind api's fallback`() {
+  fun `the unexplained win slows pricing first and hides it behind a short timeout and a fallback after the deploy`() {
     val scenario = ScenarioCatalog.byId.getValue("unexplained_win")
-    val spec = scenario.faults(Params(scenario.params(Random(1), ExerciseContext()), "14:05"))
-    assertThat(spec.services.getValue("api")).isEqualTo(mapOf<String, Any?>("price_fallback" to true))
-    assertThat(spec.services.getValue("pricing")["error_rate"]).isEqualTo(1.0)
-    assertThat(scenario.answer).isEqualTo(ScenarioCatalog.byId.getValue("downstream_errors").answer)
+    val random = Random(1)
+    repeat(20) {
+      val values = scenario.params(random, ExerciseContext())
+      val base = values["base"] as Int
+      assertThat(base).isBetween(250, 400)
+      // the fastest call after the 25% jitter still passes the timeout, so every call falls back
+      assertThat(base * 0.75 > DownstreamScenarios.FALLBACK_TIMEOUT_MS).isTrue()
+      val before = scenario.faults(Params(values, "14:05", elapsedSeconds = DownstreamScenarios.DEPLOY_AFTER_SECONDS - 1.0))
+      val after = scenario.faults(Params(values, "14:05", elapsedSeconds = DownstreamScenarios.DEPLOY_AFTER_SECONDS.toDouble()))
+      assertThat(before.services).isEqualTo(mapOf("pricing" to mapOf<String, Any?>("price_base_ms" to base)))
+      assertThat(after.services.getValue("pricing")).isEqualTo(mapOf<String, Any?>("price_base_ms" to base))
+      assertThat(after.services.getValue("api")).isEqualTo(mapOf<String, Any?>("price_fallback" to true, "pricing_timeout_s" to 0.15))
+    }
+    assertThat(scenario.answer.cause).isEqualTo("downstream_slow")
+    assertThat(scenario.answer.partial).containsOnly("downstream_errors")
+    assertThat(scenario.marker == null).isTrue()
+    // 50 + 300 = 350 ms before, 50 + 150 = 200 ms after: 150 ms faster
+    val explain = scenario.explain(Params(mapOf("base" to 300), "14:05"))
+    assertThat(explain.contains("about 350 ms")).isTrue()
+    assertThat(explain.contains("= 200 ms: about 150 ms faster")).isTrue()
   }
 
   @Test
@@ -317,6 +360,14 @@ class ScenarioCatalogTest {
     }
     assertThat(scenario.answer).isEqualTo(ScenarioCatalog.byId.getValue("cache_miss").answer)
     assertThat(scenario.decoy).isEqualTo(0.5)
+    val measured = scenario.params(Random(1), ExerciseContext(productDetailSeconds = 0.018))
+    assertThat(measured["query_ms"]).isEqualTo(18)
+    val params = Params(mapOf("ttl" to 200, "fork_rps" to 150, "query_ms" to 18), "14:05")
+    assertThat(scenario.ticket(params).contains("p99 did not move")).isTrue()
+    for (id in listOf("fork_decoy", "cache_miss")) {
+      val explain = ScenarioCatalog.byId.getValue(id).explain(params)
+      assertThat(explain.contains("p50 jumps from under 1 ms to about 18 ms")).isTrue()
+    }
   }
 
   @Test
@@ -333,9 +384,9 @@ class ScenarioCatalogTest {
       }
     }
     val rtt = ScenarioCatalog.byId.getValue("rtt_amplified")
-    repeat(50) {
+    repeat(200) {
       val params = Params(rtt.params(random, ExerciseContext()), "14:05")
-      assertThat(NetworkScenarios.inUse(params)).isBetween(2.3, 3.4)
+      assertThat(NetworkScenarios.inUse(params)).isBetween(2.0, 3.0)
     }
     val keepalive = ScenarioCatalog.byId.getValue("no_keepalive")
     assertThat(keepalive.faults(Params(mapOf("delay" to 7), "14:05")).services).isEqualTo(mapOf("api" to mapOf<String, Any?>("pricing_keepalive" to false)))
@@ -343,13 +394,16 @@ class ScenarioCatalogTest {
 
   @Test
   fun `the round trip arithmetic of rtt_amplified matches a hand computation`() {
-    val params = Params(mapOf("delay" to 5, "k" to 8), "14:05")
-    // 15/s x (50 + (2.5 x 8 + 3) x 5) ms = 15 x 0.165 s = 2.475 connections
-    assertThat(NetworkScenarios.inUse(params)).isEqualTo(2.475)
+    val params = Params(mapOf("delay" to 5, "k" to 6), "14:05")
+    // a round trip costs 5 + 1.8 = 6.8 ms; 15/s x (50 + (2.5 x 6 + 3) x 6.8) ms = 15 x 0.1724 s = 2.586 connections
+    assertThat(NetworkScenarios.inUse(params)).isCloseTo(2.586, 0.0001)
     val explain = ScenarioCatalog.byId.getValue("rtt_amplified").explain(params)
-    assertThat(explain.contains("23 x 5 ms = 115 ms")).isTrue()
-    assertThat(explain.contains("175 ms for a basket of 4")).isTrue()
-    assertThat(explain.contains("about 2.5 of 4")).isTrue()
+    assertThat(explain.contains("5 + 1.8 = 6.8 ms")).isTrue()
+    assertThat(explain.contains("18 x 6.8 ms = 122 ms")).isTrue()
+    assertThat(explain.contains("184 ms for a basket of 4")).isTrue()
+    assertThat(explain.contains("about 2.6 of 4")).isTrue()
+    // the live draw that filled the pool: 3 ms and 15 repeats give 15 x (50 + 40.5 x 4.8) ms = 3.67 connections
+    assertThat(NetworkScenarios.inUse(Params(mapOf("delay" to 3, "k" to 15), "14:05")) > 3.6).isTrue()
   }
 
   private companion object {
@@ -379,17 +433,44 @@ class ScenarioCatalogTest {
   }
 
   @Test
-  fun `the pinning hold puts the checkout demand at 1_2 to 1_6 times the two carriers`() {
-    assertThat(JvmScenarios.carrierDemand(JvmScenarios.PIN_HOLD_MIN_MS)).isBetween(1.2, 1.6)
-    assertThat(JvmScenarios.carrierDemand(JvmScenarios.PIN_HOLD_MAX_MS)).isBetween(1.2, 1.6)
-    // 15 checkouts/s × (50 + 110) ms / 2 carriers = 1.2
-    assertThat(JvmScenarios.carrierDemand(110)).isEqualTo(1.2)
+  fun `the pinning hold keeps the two carriers 70 to 85 percent busy and the explanation does the M_M_2 arithmetic`() {
+    assertThat(JvmScenarios.carrierDemand(JvmScenarios.PIN_HOLD_MIN_MS)).isBetween(0.70, 0.85)
+    assertThat(JvmScenarios.carrierDemand(JvmScenarios.PIN_HOLD_MAX_MS)).isBetween(0.70, 0.85)
+    // 15 checkouts/s × (50 + 50) ms / 2 carriers = 0.75; 2 × 0.75² / 1.75 = 0.643; 0.643 / (2 / 0.1 − 15) = 0.129 s
+    assertThat(JvmScenarios.carrierDemand(50)).isEqualTo(0.75)
+    assertThat(Baseline.round2(JvmScenarios.carrierBusyChance(50))).isEqualTo(0.64)
+    assertThat(Baseline.round2(JvmScenarios.carrierWaitSeconds(50))).isEqualTo(0.13)
     val scenario = ScenarioCatalog.byId.getValue("vthread_pinning")
     val random = Random(4)
     repeat(50) {
       val hold = scenario.params(random, ExerciseContext())["hold"] as Int
-      assertThat(JvmScenarios.carrierDemand(hold)).isBetween(1.2, 1.6)
+      assertThat(JvmScenarios.carrierDemand(hold)).isBetween(0.70, 0.85)
     }
+    val explain = scenario.explain(Params(mapOf("hold" to 50), "14:05"))
+    assertThat(explain.contains("= 1.50 carrier-seconds per second")).isTrue()
+    assertThat(explain.contains("75% busy")).isTrue()
+    assertThat(explain.contains("= 64% of the time")).isTrue()
+    assertThat(explain.contains("= 129 ms")).isTrue()
+    assertThat(scenario.ticket(Params(mapOf("hold" to 50), "14:05")).contains("fell")).isFalse()
+  }
+
+  @Test
+  fun `the logging band puts 0_19 to 0_3 cores of system time on api and its texts do the per-line arithmetic`() {
+    assertThat(JvmScenarios.logSystemCores(JvmScenarios.MIN_LOG_LINES)).isBetween(0.19, 0.3)
+    assertThat(JvmScenarios.logSystemCores(JvmScenarios.MAX_LOG_LINES)).isBetween(0.19, 0.3)
+    val scenario = ScenarioCatalog.byId.getValue("sync_logging")
+    val random = Random(2)
+    repeat(30) {
+      val lines = scenario.params(random, ExerciseContext())["lines"] as Int
+      assertThat(lines).isBetween(JvmScenarios.MIN_LOG_LINES, JvmScenarios.MAX_LOG_LINES)
+    }
+    // 2000 × 50 = 100,000 lines/s; × 1.9 µs = 0.19 cores system, × 3.4 µs = 0.34 cores user; 2000 × 5.3 µs = 10.6 ms per request
+    val params = Params(mapOf("lines" to 2000), "14:05")
+    val explain = scenario.explain(params)
+    assertThat(explain.contains("100000 lines/s")).isTrue()
+    assertThat(explain.contains("0.34 cores of user time and 0.19 cores of system time")).isTrue()
+    assertThat(explain.contains("≈ 11 ms of extra work")).isTrue()
+    assertThat(scenario.ticket(params).contains("about 11 ms")).isTrue()
   }
 
   @Test
@@ -406,5 +487,8 @@ class ScenarioCatalogTest {
     assertThat(explain.contains("4.2 million")).isTrue()
     assertThat(explain.contains("3.1 MB/s")).isTrue()
     assertThat(explain.contains("26 s")).isTrue()
+    // 300 ms / 22 s = 1.4% of requests arrive during a pause
+    assertThat(explain.contains("1.4% of requests")).isTrue()
+    assertThat(scenario.evidence.none { it.contains("jvm_memory_max_bytes") }).isTrue()
   }
 }

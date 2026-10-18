@@ -12,8 +12,9 @@ Every lab service runs the Serial collector (`-XX:+UseSerialGC`). Serial does al
 
 | Setting | Value in the lab | Where it comes from |
 |---|---|---|
-| Heap max | 50% of the container limit: 256 MB for api (512 MB) | `-XX:MaxRAMPercentage=50` |
-| Heap at start | 25% of the limit: 128 MB for api. It grows when needed | `-XX:InitialRAMPercentage=25` |
+| Heap max | 256 MB for api, fixed. pricing and worker get 50% of their container limit | `-Xmx256m` for api, `-XX:MaxRAMPercentage=50` for the others |
+| Heap at start | 128 MB for api. It grows when needed | `-Xms128m` for api, `-XX:InitialRAMPercentage=25` for the others |
+| Memory outside the heap | About 410 MB for api: metaspace, code cache, threads, the profiler agent and JFR. So api's container limit is 768 MB | `mem_limit: 768m` |
 | Young generation | 1/3 of the heap: about 85 MB for api | `NewRatio=2`, the default |
 | Old generation | 2/3 of the heap: about 170 MB for api | Same |
 | Young split | Eden 68 MB, two survivor spaces of about 8.5 MB | `SurvivorRatio=8`, the default |
@@ -36,7 +37,9 @@ A pause stops every request at the same moment. Most requests finish before or a
 - Read pauses as a histogram, not an average. `jvm_gc_pause_seconds_bucket` uses the same buckets as the request latency. In PromQL: `histogram_quantile(0.99, sum by (le) (rate(jvm_gc_pause_seconds_bucket{job="api"}[5m])))`.
 - Time in GC is pause seconds per second: `rate(jvm_gc_pause_seconds_sum[5m])`. A value of 0.02 means the app stood still 2% of the time.
 - Count the pauses by collector and cause: `sum by (gc, cause) (rate(jvm_gc_pause_seconds_count[5m]))`. Many full GCs is the warning sign. Young GCs are normal.
-- On the api latency heatmap, a pause is a short column of slow requests. p99 by route jumps on every route at the same moments. A slow downstream slows only the routes that call it.
+- A pause hits every route at the same moments. A slow downstream slows only the routes that call it.
+- Read the pause at the LB, not in the app. api starts its timer when a request reaches its filter. During a pause no thread reads the socket, so a new request waits there and api never counts that wait.
+- Only the one or two requests already inside api count the pause. So api's own p99 stays flat, while p99.9 at the LB jumps to about the pause length.
 
 ### Allocation rate and live data
 
@@ -46,7 +49,7 @@ Three numbers explain most GC trouble.
 |---|---|---|
 | Allocation rate | `rate(jvm_gc_memory_allocated_bytes_total[5m])` | How fast Eden fills, so how often young GCs come |
 | Promotion rate | `rate(jvm_gc_memory_promoted_bytes_total[5m])` | How fast the old generation fills, so how often full GCs come |
-| Live data after GC | `jvm_gc_live_data_size_bytes` | What a full GC could not free. Compare it with the old generation max, `jvm_memory_max_bytes{id="Tenured Gen"}` |
+| Live data after GC | `jvm_gc_live_data_size_bytes` | What a full GC could not free. Compare it with the old generation max, `jvm_gc_max_data_size_bytes` |
 
 How long an object lives decides where it costs:
 
@@ -55,6 +58,8 @@ How long an object lives decides where it costs:
 - Medium-lived objects are the expensive ones. They survive a few young GCs, move to the old generation, then die there. They fill the old generation with garbage, and only a full GC can free it.
 
 Time between full GCs is about the free room in the old generation divided by the promotion rate. Example: old max 170 MB, live data 140 MB, promotion 1.5 MB/s. That gives (170 − 140) / 1.5 = 20 s.
+
+In PromQL, the share of the old generation that stays live is `jvm_gc_live_data_size_bytes / jvm_gc_max_data_size_bytes`. Dividing by `jvm_memory_max_bytes{id="Tenured Gen"}` returns nothing, because that series has the extra labels `area` and `id`.
 
 Read live data after GC over time:
 
@@ -108,13 +113,14 @@ Pinning looks like a saturated resource with no gauge of its own.
 | Signal | Pinning | A saturated DB pool | CPU saturation |
 |---|---|---|---|
 | CPU | Low | Low | High |
-| In-flight requests | High, growing | High, growing | High |
+| In-flight requests | Above normal. Growing without end only when demand passes the carriers | High, growing | High |
 | Pool in use | Low | At max | Any |
-| `jvm_virtual_thread_pinned_seconds_total` rate | Near the carrier count | About 0 | About 0 |
+| `jvm_virtual_thread_pinned_seconds_total` rate | A large share of the carrier count | About 0 | About 0 |
 
 - `rate(jvm_virtual_thread_pinned_seconds_total[1m])` is seconds pinned per second. That is about how many carriers are blocked at once. When it reaches the carrier count, every other request waits.
 - `rate(jvm_virtual_thread_pinned_total[1m])` is pinned parks per second. A step at a deploy points at new code.
-- Demand against capacity: rate × pinned time / carriers. Above 1, the queue grows until clients time out.
+- Demand against capacity: rate × pinned time / carriers. Below 1, the carriers act like a busy queue with C servers. Every request waits for a carrier, /health and the metrics scrape too, so p99 rises on every route.
+- With 2 carriers at 75% busy, about 2 × 0.75² / 1.75 = 64% of requests find both busy and wait. Above 1, the queue grows until clients time out and health checks fail.
 - A lock profile shows nothing when each request locks its own object. Nobody waits for the lock. They wait for a carrier.
 
 ## System time
@@ -142,5 +148,6 @@ A log line looks free in the code. It is not.
 - In a container, stdout is a pipe. Docker reads it and stores the log on disk.
 - Every write happens under the appender's lock. Threads that log at the same time wait in line.
 - The cost grows with lines per request. 500 lines per request at 50 requests/s is 25,000 syscalls per second.
+- On the lab, one line costs api about 5 µs of CPU, and about 2 µs of that is system time for the write. 2,000 lines per request add about 10 ms of CPU to each request.
 - Fixes, in order: log less (put the level back, sample), then log in batches. Logback's `AsyncAppender` puts events in a queue (256 by default) and one background thread writes them. With the defaults, it drops TRACE, DEBUG and INFO events when the queue is nearly full. A caller blocks when the queue is full.
 - Log volume is also disk. Rotate the files: the lab caps api's Docker log at 3 files of 20 MB.
