@@ -31,6 +31,7 @@ import kotlin.system.exitProcess
 
 // Lab controller.
 //   labctl daemon            keeps every service in the desired fault state and serves the lab API (runs in the control container)
+//   labctl api               the lab API alone, for the handbook's dev server
 //   labctl new|hint|answer|reveal|clear|status|list|history|load|quiz
 //   labctl ramp              a capacity ramp on the live lab (its own mode of make answer)
 //   labctl bench             closed-loop clients for a while, then a before/after report
@@ -61,10 +62,14 @@ object Main : Logging {
           }
           val cgroups = docker?.let { CgroupApplier.ifAvailable(it::containerId, hostPath("CGROUP_ROOT", "/host/cgroup"), hostPath("HOST_VOLUMES", "/host/volumes"), hostPath("HOST_SYS", "/host/sys")) }
           val appliers = listOfNotNull(ServiceFaultApplier(http), docker?.let { ContainerCpuApplier(it) }, docker?.let { NetemApplier(it) }, cgroups)
-          val port = System.getenv("LAB_API_PORT")?.toIntOrNull() ?: ApiServer.DEFAULT_PORT
-          labApi(store, probe, GrafanaAnnotator(http) { warn { it } }).start(port)
-          info { "lab API listening on port $port" }
+          serveApi(store, probe, http)
           ControlDaemon(store, appliers).run()
+          0
+        }
+        "api" -> {
+          serveApi(store, probe, http)
+          info { "no control loop: faults in the state file are not applied" }
+          Thread.currentThread().join()
           0
         }
         "new" -> exercises.newExercise(CommandLine.newOptions(args.drop(1)))
@@ -96,6 +101,12 @@ object Main : Logging {
     }
   }
 
+  private fun serveApi(store: StateStore, probe: LabProbe, http: JsonHttp) {
+    val port = System.getenv("LAB_API_PORT")?.toIntOrNull() ?: ApiServer.DEFAULT_PORT
+    labApi(store, probe, GrafanaAnnotator(http) { warn { it } }).start(port)
+    info { "lab API listening on port $port" }
+  }
+
   fun labApi(store: StateStore, probe: LabProbe, annotator: Annotator): LabApi {
     val ramp = RampEngine(store, probe, annotator)
     val bench = BenchEngine(store, probe, annotator)
@@ -106,7 +117,7 @@ object Main : Logging {
 
   private fun usage(): Int {
     println(
-      "usage: labctl daemon | new [--level N] [--topic T] [--id ID] [--force] [--mode incident|toolbox] | hint | answer | reveal | clear | status | list | history | load X | " +
+      "usage: labctl daemon | api | new [--level N] [--topic T] [--id ID] [--force] [--mode incident|toolbox] | hint | answer | reveal | clear | status | list | history | load X | " +
         "quiz [-n N] [--kind numbers|concepts|all] | ramp [--every S] | bench [--clients N] [--seconds S] | export OUT.json"
     )
     return USAGE_EXIT

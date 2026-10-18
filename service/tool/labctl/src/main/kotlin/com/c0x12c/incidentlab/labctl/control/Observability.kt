@@ -2,6 +2,7 @@ package com.c0x12c.incidentlab.labctl.control
 
 import java.net.URLEncoder
 import java.util.Locale
+import java.util.concurrent.Executors
 
 /** One evaluation of a PromQL expression. */
 data class Sample(
@@ -66,9 +67,12 @@ class HttpLabProbe(private val http: JsonHttp) : LabProbe {
         .takeIf { it.isNotEmpty() }
     }.getOrNull()
 
+  /** All services at once, so one that hangs costs one timeout, not one per service. */
   override fun serviceStatus(): Map<String, String?> =
-    Services.ENDPOINTS.mapValues { (_, url) ->
-      runCatching { http.get("$url/admin/faults") }.exceptionOrNull()?.javaClass?.simpleName
+    Executors.newVirtualThreadPerTaskExecutor().use { pool ->
+      Services.ENDPOINTS
+        .mapValues { (_, url) -> pool.submit<String?> { runCatching { http.get("$url/admin/faults") }.exceptionOrNull()?.javaClass?.simpleName } }
+        .mapValues { (_, check) -> check.get() }
     }
 
   companion object {
