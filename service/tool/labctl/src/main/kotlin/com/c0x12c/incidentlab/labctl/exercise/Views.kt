@@ -27,7 +27,10 @@ data class ActiveView(
   val hints: List<String>,
   val answered: Boolean,
   /** The toolbox rules in toolbox mode. */
-  val rules: String?
+  val rules: String?,
+  /** What the four questions offer, for an incident or a toolbox exercise. Null for the ramp and the bench. */
+  @get:JsonInclude(JsonInclude.Include.NON_NULL)
+  val options: AnswerOptions? = null
 )
 
 /** One choice of a question: a stable key and the text a learner reads. */
@@ -46,6 +49,24 @@ data class AnswerView(
   val partial: List<Option>
 )
 
+/**
+ * The options one open incident offers, drawn from its ticket's [com.c0x12c.incidentlab.labctl.scenario.Symptom]
+ * only. Every scenario with the same symptom offers the same lists, so they tell the learner nothing the ticket did not.
+ */
+data class AnswerOptions(
+  val natures: List<Option>,
+  val locations: List<Option>,
+  val signals: List<Option>,
+  val causes: List<Option>
+)
+
+/** One cause the exercise offered, with the check that rules it in or out. Only in a [Reveal]. */
+data class RuleOut(
+  val cause: Option,
+  val check: String,
+  val correct: Boolean
+)
+
 /** Everything about the scenario. Only built once the exercise is answered or revealed. */
 data class Reveal(
   val id: String,
@@ -58,7 +79,9 @@ data class Reveal(
   /** PromQL. */
   val evidence: List<String>,
   val cli: List<String>,
-  val guide: List<GuidePointer>
+  val guide: List<GuidePointer>,
+  /** Every cause the exercise offered, in the order offered, with its check. */
+  val ruleOuts: List<RuleOut> = emptyList()
 )
 
 data class Verdicts(

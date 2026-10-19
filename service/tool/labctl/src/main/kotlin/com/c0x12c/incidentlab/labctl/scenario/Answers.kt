@@ -134,5 +134,18 @@ object Answers {
     "red", "load", "layers", "use", "container", "runtime", "db", "async", "host", "little", "cpu", "jvm", "disk", "network", "profiling", "capacity"
   )
 
+  /** The ticket symptoms each cause can produce. An exercise offers a cause only when its ticket shows one of them. */
+  val CAUSE_SYMPTOMS: Map<String, Set<Symptom>> = CAUSES.associate { it.first to Symptom.entries.toSet() }
+
+  /** The ticket symptoms each signal can tell apart. An exercise offers a signal only when its ticket shows one of them. */
+  val SIGNAL_SYMPTOMS: Map<String, Set<Symptom>> = SIGNALS.associate { it.first to Symptom.entries.toSet() }
+
+  /** For each cause, what you would see if it were the one: the check that rules it in or out. Shown only after the answer. */
+  val RULE_OUTS: Map<String, String> = CAUSES.associate { it.first to it.second }
+
+  fun causesFor(symptom: Symptom): List<Pair<String, String>> = CAUSES.filter { symptom in CAUSE_SYMPTOMS.getValue(it.first) }
+
+  fun signalsFor(symptom: Symptom): List<Pair<String, String>> = SIGNALS.filter { symptom in SIGNAL_SYMPTOMS.getValue(it.first) }
+
   fun label(options: List<Pair<String, String>>, key: String): String = options.first { it.first == key }.second
 }
