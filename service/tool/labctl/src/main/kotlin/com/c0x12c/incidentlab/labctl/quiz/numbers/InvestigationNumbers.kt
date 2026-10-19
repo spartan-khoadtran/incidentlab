@@ -185,7 +185,7 @@ internal object InvestigationNumbers {
     return NumericQuestion(
       "Consumer lag is $lag messages and the consumer handles $rate msg/s. About how many seconds does a message produced now wait before the consumer reaches it?",
       answer, Tolerance.Relative(0.03), "seconds",
-      "Lag in time ≈ lag / consume rate = $lag / $rate = ${shown(answer)} s. This number is easier to compare with an SLA than a message count.",
+      "A new message waits for the whole backlog ahead of it: lag / consume rate = $lag / $rate = ${shown(answer)} s. The age of the oldest message is lag / produce rate instead. The two match only when both rates are equal.",
       "RED at many layers > The async layer"
     )
   }
