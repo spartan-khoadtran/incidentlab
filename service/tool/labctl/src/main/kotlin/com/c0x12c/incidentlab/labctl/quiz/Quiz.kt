@@ -13,20 +13,32 @@ object Quiz {
   fun run(count: Int, kind: QuizKind, terminal: Terminal, random: Random = Random.Default): Int {
     val drills = draw(count, kind, random)
     var score = 0
+    var skipped = 0
+    terminal.out("Press Enter with no answer to skip a question.")
     drills.forEachIndexed { index, drill ->
       terminal.out()
       terminal.out("Question ${index + 1}/${drills.size}. ${drill.text}")
-      val correct = when (drill) {
+      val mark = when (drill) {
         is NumericQuestion -> askNumeric(drill, terminal)
         is ChoiceQuestion -> askChoice(drill, terminal, random)
       } ?: return inputClosed(terminal, score)
-      if (correct) score += 1
+      when (mark) {
+        Mark.RIGHT -> score += 1
+        Mark.SKIPPED -> skipped += 1
+        Mark.WRONG -> Unit
+      }
       terminal.out("  ${drill.explanation}")
       terminal.out("  Read again in ${GuideIndex.where(drill.doc)}")
     }
     terminal.out()
-    terminal.out("Result: $score/${drills.size}")
+    terminal.out("Result: $score/${drills.size}" + if (skipped > 0) " ($skipped skipped)" else "")
     return score
+  }
+
+  private enum class Mark(val label: String) {
+    RIGHT("  CORRECT. "),
+    WRONG("  NOT QUITE. "),
+    SKIPPED("  SKIPPED. ")
   }
 
   /** A mixed run gives concepts the odd question; a pool that is too small for the count is used whole. */
@@ -45,36 +57,48 @@ object Quiz {
     }
   }
 
-  private fun askNumeric(question: NumericQuestion, terminal: Terminal): Boolean? {
+  private fun askNumeric(question: NumericQuestion, terminal: Terminal): Mark? {
     val given = askNumber(terminal, question.unit) ?: return null
-    val correct = isCorrect(given, question.answer, question.tolerance)
-    terminal.out(verdict(correct) + "Answer: ${shown(question.answer)} ${question.unit}")
-    return correct
+    val mark = when (given) {
+      Typed.Skip -> Mark.SKIPPED
+      is Typed.Value -> if (isCorrect(given.value, question.answer, question.tolerance)) Mark.RIGHT else Mark.WRONG
+    }
+    terminal.out(mark.label + "Answer: ${shown(question.answer)} ${question.unit}")
+    return mark
   }
 
-  private fun askChoice(question: ChoiceQuestion, terminal: Terminal, random: Random): Boolean? {
+  private fun askChoice(question: ChoiceQuestion, terminal: Terminal, random: Random): Mark? {
     val options = question.options.shuffled(random)
     options.forEachIndexed { index, option -> terminal.out("  ${index + 1}. $option") }
     val picked = askOption(terminal, options.size) ?: return null
-    val correct = options[picked - 1] == question.answer
-    terminal.out(verdict(correct) + "Answer: ${options.indexOf(question.answer) + 1}. ${question.answer}")
-    return correct
+    val mark = when (picked) {
+      Typed.Skip -> Mark.SKIPPED
+      is Typed.Value -> if (options[picked.value - 1] == question.answer) Mark.RIGHT else Mark.WRONG
+    }
+    terminal.out(mark.label + "Answer: ${options.indexOf(question.answer) + 1}. ${question.answer}")
+    return mark
   }
 
-  private fun verdict(correct: Boolean): String = if (correct) "  CORRECT. " else "  NOT QUITE. "
+  private sealed interface Typed<out T> {
+    data object Skip : Typed<Nothing>
 
-  private fun askNumber(terminal: Terminal, unit: String): Double? {
+    data class Value<T>(val value: T) : Typed<T>
+  }
+
+  private fun askNumber(terminal: Terminal, unit: String): Typed<Double>? {
     while (true) {
       val raw = terminal.ask("  Answer ($unit): ") ?: return null
-      parseNumber(raw)?.let { return it }
+      if (raw.isBlank()) return Typed.Skip
+      parseNumber(raw)?.let { return Typed.Value(it) }
       terminal.out("  Enter a number, for example 12.5")
     }
   }
 
-  private fun askOption(terminal: Terminal, size: Int): Int? {
+  private fun askOption(terminal: Terminal, size: Int): Typed<Int>? {
     while (true) {
       val raw = terminal.ask("  Pick a number: ") ?: return null
-      raw.trim().toIntOrNull()?.takeIf { it in 1..size }?.let { return it }
+      if (raw.isBlank()) return Typed.Skip
+      raw.trim().toIntOrNull()?.takeIf { it in 1..size }?.let { return Typed.Value(it) }
       terminal.out("  Enter a number from 1 to $size.")
     }
   }

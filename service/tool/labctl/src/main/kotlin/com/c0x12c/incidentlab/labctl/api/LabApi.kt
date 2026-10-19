@@ -131,11 +131,15 @@ class LabApi(
       created(quiz.open(count, kind))
     },
     post("/api/quiz/([^/]+)/([0-9]{1,6})") { call ->
-      val node = call.tree().path("answer")
+      val body = call.tree()
+      val node = body.path("answer")
+      val skip = body.path("skip").let { it.isBoolean && it.booleanValue() }
       val answer = when {
+        skip && !node.isMissingNode -> throw badRequest("bad_answer", "Send an answer or skip, not both.")
+        skip -> QuizAnswer.Skip
         node.isNumber -> QuizAnswer.Number(node.asDouble())
         node.isTextual -> QuizAnswer.Text(node.asText())
-        else -> throw badRequest("bad_answer", "Send the answer as a number, or as the text of one option.")
+        else -> throw badRequest("bad_answer", "Send the answer as a number, or as the text of one option, or send skip: true.")
       }
       ok(quiz.grade(call.params[0], call.params[1].toInt(), answer).orFail())
     }

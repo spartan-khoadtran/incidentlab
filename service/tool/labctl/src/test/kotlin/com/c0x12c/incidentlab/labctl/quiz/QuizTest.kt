@@ -147,6 +147,25 @@ class QuizTest {
   }
 
   @Test
+  fun `an empty answer skips the question, shows the answer and is counted apart`() {
+    val terminal = object : Terminal {
+      val lines = mutableListOf<String>()
+
+      override fun out(line: String) {
+        lines.add(line)
+      }
+
+      override fun ask(prompt: String): String = ""
+    }
+
+    val score = Quiz.run(4, QuizKind.ALL, terminal, Random(4))
+
+    assertThat(score).isEqualTo(0)
+    assertThat(terminal.lines.count { it.startsWith("  SKIPPED. Answer: ") }).isEqualTo(4)
+    assertThat(terminal.lines.last()).isEqualTo("Result: 0/4 (4 skipped)")
+  }
+
+  @Test
   fun `the benchmarking formulas give the answer worked out by hand on fixed values`() {
     assertThat(BenchmarkingNumbers.closedLoopThroughput(clients = 20, responseMs = 50, thinkMs = 150).answer).isCloseTo(100.0, 0.001)
     assertThat(BenchmarkingNumbers.closedLoopClients(targetRps = 500, responseMs = 100, thinkMs = 900).answer).isCloseTo(500.0, 0.001)

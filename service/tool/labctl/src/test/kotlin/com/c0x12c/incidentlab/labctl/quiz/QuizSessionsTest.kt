@@ -87,6 +87,23 @@ class QuizSessionsTest {
   }
 
   @Test
+  fun `a skip shows the answer, never counts as correct, and stands like an answer`() {
+    val sessions = sessions()
+    val start = sessions.open(4, QuizKind.ALL)
+    val drills = drills(4, QuizKind.ALL)
+
+    drills.forEachIndexed { index, drill ->
+      val skipped = grade(sessions.grade(start.session, index, QuizAnswer.Skip))
+      assertThat(skipped.skipped).isTrue()
+      assertThat(skipped.correct).isFalse()
+      assertThat(skipped.explanation).isEqualTo(drill.explanation)
+    }
+    val choice = drills.indexOfFirst { it is ChoiceQuestion }
+    val answer = (drills[choice] as ChoiceQuestion).answer
+    assertThat(grade(sessions.grade(start.session, choice, QuizAnswer.Text(answer))).skipped).isTrue()
+  }
+
+  @Test
   fun `a bad answer, question or session is refused`() {
     val sessions = sessions()
     val start = sessions.open(5, QuizKind.CONCEPTS)

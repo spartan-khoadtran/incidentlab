@@ -41,7 +41,7 @@ Both point back at the section of the guide to read again.
 
 You can also do both in the browser. The handbook at http://localhost:4000 has a Play page for the exercises and a Quiz page for the drills. They score the same way as the terminal. The web pages talk to the lab, so they need `make up` first, even for the quiz. See [The handbook](#the-handbook).
 
-`make quiz` asks 50 questions by default, half numbers and half concepts. Change it with `N` and `KIND`:
+`make quiz` asks 50 questions by default, half numbers and half concepts. To skip a question, press Enter with no answer. You see the answer, and it counts as not right. Change the size and the kind with `N` and `KIND`:
 
 ```bash
 make quiz                  # 50 mixed questions

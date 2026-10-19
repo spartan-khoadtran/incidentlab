@@ -322,9 +322,12 @@ export class MockLab {
           if (!session) return err(404, "no_session", "Mock: this quiz is over or has expired.");
           const q = session[Number(quiz[2])];
           if (!q) return err(404, "no_question", `Mock: this quiz has no question ${quiz[2]}.`);
+          if (body.skip === true) {
+            return { status: 200, body: { correct: false, skipped: true, answer: q.answer, explanation: "Mock explanation: L = λ × W.", guide: [{ pointer: "Linking RED and USE > Little's Law", file: "investigation-guide.md" }] } };
+          }
           const given = typeof body.answer === "string" && q.kind === "number" ? Number(body.answer.replace(",", ".")) : body.answer;
           const correct = q.kind === "number" ? Math.abs(Number(given) - Number(q.answer)) < 0.5 : given === q.answer;
-          return { status: 200, body: { correct, answer: q.answer, explanation: "Mock explanation: L = λ × W.", guide: [{ pointer: "Linking RED and USE > Little's Law", file: "investigation-guide.md" }] } };
+          return { status: 200, body: { correct, skipped: false, answer: q.answer, explanation: "Mock explanation: L = λ × W.", guide: [{ pointer: "Linking RED and USE > Little's Law", file: "investigation-guide.md" }] } };
         }
         return err(404, "not_found", "No such endpoint.");
       }

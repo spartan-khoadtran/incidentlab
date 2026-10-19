@@ -54,6 +54,7 @@ export function Quiz() {
               A <strong>concept</strong> question takes the number of one option. The options are shuffled every run, so a position is never the answer.
             </li>
             <li>Every question ends with the guide section to read again, in the same <code>Section &gt; Subsection</code> form the Guide shows under each heading.</li>
+            <li>To skip a question, press Skip here, or Enter with no answer in a terminal. You see the answer, and it counts as not right.</li>
             <li>The score is right answers out of the questions asked. Nothing is saved.</li>
           </ul>
         </div>

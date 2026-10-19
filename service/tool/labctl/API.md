@@ -123,7 +123,7 @@ BenchReport = { n, clients, seconds, before: Window, during: Window, explanation
 ### Quiz
 
 - `POST /api/quiz` body `{ count?: int (1 to 300, default 50, the same as `make quiz`), kind?: "numbers"|"concepts"|"all" }` -> 201 `{ session: string, questions: [{ index, kind: "number"|"choice", text, unit?: string, options?: [string] }] }`. The options are already shuffled. No answer is in it.
-- `POST /api/quiz/{session}/{index}` body `{ answer: number|string }` -> `{ correct: bool, answer: string, explanation: string, guide: [GuidePointer] }`. A number question takes a number, or a string typed the way the CLI reads it (`"12,5"`). A choice question takes the text of one option. The tolerance is the CLI's. The first answer to a question stands: posting again returns the same grade. 400 `bad_answer`, 404 `no_session` or `no_question`.
+- `POST /api/quiz/{session}/{index}` body `{ answer: number|string }` or `{ skip: true }` -> `{ correct: bool, skipped: bool, answer: string, explanation: string, guide: [GuidePointer] }`. A number question takes a number, or a string typed the way the CLI reads it (`"12,5"`). A choice question takes the text of one option. The tolerance is the CLI's. A skip shows the answer and is never correct. A body with both `answer` and `skip` is a 400. The first answer or skip to a question stands: posting again returns the same grade. 400 `bad_answer`, 404 `no_session` or `no_question`.
 
 Sessions live in the daemon's memory, at most 50, each dropped after 2 hours without an answer. A daemon restart drops them all.
 
