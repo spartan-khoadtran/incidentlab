@@ -7,9 +7,16 @@ object Services {
     "pricing" to "http://pricing:8001",
     "worker" to "http://worker:8002",
     "loadgen" to "http://loadgen:8003",
-    "noisy" to "http://noisy:8005"
+    "noisy" to "http://noisy:8005",
+    "pgobserver" to "http://pgobserver:8004"
   )
 
   /** Container settings the daemon owns even with no exercise running. */
-  val BASE_DOCKER: Map<String, Map<String, Any?>> = mapOf("api" to mapOf("cpus" to 2.0))
+  val BASE_DOCKER: Map<String, Map<String, Any?>> = mapOf(
+    "api" to mapOf(ContainerCpuApplier.CPUS to 2.0),
+    "postgres" to mapOf(CgroupApplier.WRITE_IOPS to CgroupApplier.UNLIMITED)
+  )
+
+  /** Containers with NET_ADMIN, where the netem script may run. Each must also be in [BASE_DOCKER]. */
+  val NETEM_CONTAINERS: Set<String> = setOf("api")
 }

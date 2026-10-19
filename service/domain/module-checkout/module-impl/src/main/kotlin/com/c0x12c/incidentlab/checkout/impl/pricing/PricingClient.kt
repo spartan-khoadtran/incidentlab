@@ -17,8 +17,14 @@ import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.api.trace.Tracer
 import java.io.IOException
 import java.io.InterruptedIOException
+import java.net.InetSocketAddress
+import java.net.Proxy
 import java.util.concurrent.TimeUnit
+import okhttp3.ConnectionPool
+import okhttp3.EventListener
 import okhttp3.Interceptor
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.Response
 import retrofit2.Call
 
@@ -86,4 +92,30 @@ class PricingTimeoutInterceptor(private val faults: Faults) : Interceptor {
   private companion object {
     const val MILLIS_PER_SECOND = 1_000.0
   }
+}
+
+/** Counts the TCP connections OkHttp opens: `connectStart` fires only when no pooled connection can be reused. */
+class ConnectionCounter(registry: MeterRegistry, private val target: String) : EventListener() {
+
+  private val connections = LabCounter(registry, "http_client_connections", "TCP connections opened to downstream HTTP services", listOf("target"))
+
+  override fun connectStart(call: okhttp3.Call, inetSocketAddress: InetSocketAddress, proxy: Proxy) {
+    connections.increment(target)
+  }
+}
+
+/**
+ * Picks the client per call, so the controller can flip connection reuse live: the pooled client,
+ * or a copy whose pool keeps no idle connection. OkHttp closes such a connection itself right after
+ * the response, so this side closes first and keeps the TIME_WAIT socket.
+ */
+class KeepAliveSwitch(
+  private val faults: Faults,
+  private val pooled: OkHttpClient
+) : okhttp3.Call.Factory {
+
+  private val unpooled: OkHttpClient = pooled.newBuilder().connectionPool(ConnectionPool(0, 1, TimeUnit.SECONDS)).build()
+
+  override fun newCall(request: Request): okhttp3.Call =
+    (if (faults.bool(CheckoutFaults.PRICING_KEEPALIVE)) pooled else unpooled).newCall(request)
 }

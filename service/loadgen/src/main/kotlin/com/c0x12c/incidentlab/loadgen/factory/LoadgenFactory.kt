@@ -17,6 +17,7 @@ object LoadgenFaults {
   const val TIMEOUT_MS = "timeout_ms"
   const val CHECKOUT_TIMEOUT_MS = "checkout_timeout_ms"
   const val RETRIES = "retries"
+  const val CLOSED_CLIENTS = "closed_clients"
 
   val DEFAULTS: Map<String, Any?> = mapOf(
     // requests per second per tenant
@@ -33,7 +34,9 @@ object LoadgenFaults {
     // overrides timeout_ms for /checkout
     CHECKOUT_TIMEOUT_MS to null,
     // immediate retries on 5xx / timeout / connection error
-    RETRIES to 0
+    RETRIES to 0,
+    // above 0: stop the open arrivals and run this many closed-loop clients with no think time
+    CLOSED_CLIENTS to 0
   )
 }
 

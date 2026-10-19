@@ -66,9 +66,13 @@ class Scenario(
   val steps: List<String>,
   val explain: (Params) -> String,
   val evidence: List<String>,
+  /** Shell commands that prove the cause without Grafana. */
+  val cli: List<String> = emptyList(),
   val doc: String,
   /** A real change event, written as a Grafana annotation up to 3 minutes before the start. */
   val marker: ((Params) -> String)? = null,
   /** Probability of a fake change event between 10 minutes before and 1 minute after the start. */
-  val decoy: Double = 0.0
+  val decoy: Double = 0.0,
+  /** Its draws are calibrated at the base load of 50 rps, so it only starts when `make load` is 1. */
+  val baseLoad: Boolean = false
 )

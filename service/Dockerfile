@@ -23,10 +23,18 @@ RUN --mount=type=cache,target=/root/.gradle \
 
 FROM eclipse-temurin:21-jre-jammy
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl procps iproute2 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /run
 COPY --from=build /out /run/app
+# The controller runs it through docker exec in the api container, which has NET_ADMIN.
+COPY --chmod=755 docker/netem.sh /run/netem.sh
+
+# The Pyroscope Java agent (async-profiler inside). api, pricing and worker load it through JAVA_TOOL_OPTIONS.
+ARG PYROSCOPE_AGENT_VERSION=2.9.2
+ARG PYROSCOPE_AGENT_SHA256=ad738199a90734f7b8392bae1ab892027d411acb953ef1f00cd6e8e7c669ff8f
+RUN curl -fsSL -o /run/pyroscope.jar "https://repo1.maven.org/maven2/io/pyroscope/agent/${PYROSCOPE_AGENT_VERSION}/agent-${PYROSCOPE_AGENT_VERSION}.jar" \
+    && echo "${PYROSCOPE_AGENT_SHA256}  /run/pyroscope.jar" | sha256sum -c -
 
 # MaxRAMPercentage keeps the heap under the container limit; the lab's memory-leak fault allocates
 # off heap on purpose, so the kernel OOM killer ends the process, not a Java OutOfMemoryError.

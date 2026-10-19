@@ -1,3 +1,6 @@
 <configuration>
   <include resource="logback-base.xml"/>
+
+  <!-- The support-case logger: always DEBUG, silent until debug_log_lines asks it to write. -->
+  <logger name="com.c0x12c.incidentlab.checkout.impl.runtime.SupportTrace" level="DEBUG"/>
 </configuration>

@@ -13,6 +13,9 @@ import java.util.concurrent.atomic.AtomicReference
 /** What the kernel reports about the container this process runs in. Counters are totals since the cgroup was created. */
 data class CgroupStats(
   val cpuUsageSeconds: Double,
+  /** cgroup v2 only: `user_usec` and `system_usec` from cpu.stat. */
+  val cpuUserSeconds: Double,
+  val cpuSystemSeconds: Double,
   val cpuPeriods: Double,
   val cpuThrottledPeriods: Double,
   val cpuThrottledSeconds: Double,
@@ -24,7 +27,7 @@ data class CgroupStats(
   val pressureWaitingSeconds: Map<Pair<String, String>, Double>
 ) {
   companion object {
-    val EMPTY = CgroupStats(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, emptyMap())
+    val EMPTY = CgroupStats(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, emptyMap())
   }
 }
 
@@ -49,6 +52,8 @@ class CgroupReader(private val root: Path = Path.of("/sys/fs/cgroup")) {
     }.toMap()
     return CgroupStats(
       cpuUsageSeconds = (cpu["usage_usec"] ?: 0.0) / MICROS_PER_SECOND,
+      cpuUserSeconds = (cpu["user_usec"] ?: 0.0) / MICROS_PER_SECOND,
+      cpuSystemSeconds = (cpu["system_usec"] ?: 0.0) / MICROS_PER_SECOND,
       cpuPeriods = cpu["nr_periods"] ?: 0.0,
       cpuThrottledPeriods = cpu["nr_throttled"] ?: 0.0,
       cpuThrottledSeconds = (cpu["throttled_usec"] ?: 0.0) / MICROS_PER_SECOND,
@@ -72,6 +77,8 @@ class CgroupReader(private val root: Path = Path.of("/sys/fs/cgroup")) {
     val memoryLimit = text(memoryDir.resolve("memory.limit_in_bytes"))?.toDoubleOrNull() ?: 0.0
     return CgroupStats(
       cpuUsageSeconds = usageNanos / NANOS_PER_SECOND,
+      cpuUserSeconds = 0.0,
+      cpuSystemSeconds = 0.0,
       cpuPeriods = cpu["nr_periods"] ?: 0.0,
       cpuThrottledPeriods = cpu["nr_throttled"] ?: 0.0,
       cpuThrottledSeconds = (cpu["throttled_time"] ?: 0.0) / NANOS_PER_SECOND,
@@ -130,6 +137,12 @@ class CgroupMetrics(
   override fun bindTo(registry: MeterRegistry) {
     FunctionCounter.builder("cgroup_cpu_usage_seconds", this) { it.latest().cpuUsageSeconds }
       .description("CPU time used by the container").register(registry)
+    FunctionCounter.builder("cgroup_cpu_mode_seconds", this) { it.latest().cpuUserSeconds }
+      .description("CPU time used by the container, by mode (user code or the kernel on its behalf)")
+      .tags("mode", "user").register(registry)
+    FunctionCounter.builder("cgroup_cpu_mode_seconds", this) { it.latest().cpuSystemSeconds }
+      .description("CPU time used by the container, by mode (user code or the kernel on its behalf)")
+      .tags("mode", "system").register(registry)
     FunctionCounter.builder("cgroup_cpu_periods", this) { it.latest().cpuPeriods }
       .description("CFS enforcement periods").register(registry)
     FunctionCounter.builder("cgroup_cpu_throttled_periods", this) { it.latest().cpuThrottledPeriods }

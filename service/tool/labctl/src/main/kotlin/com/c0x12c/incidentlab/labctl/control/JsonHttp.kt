@@ -9,6 +9,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
+class HttpStatusException(val code: Int, message: String) : IOException(message)
+
 /** The few JSON calls the controller makes: service admin endpoints, Grafana, Prometheus. */
 class JsonHttp(timeout: Duration = Duration.ofSeconds(2)) {
 
@@ -24,12 +26,14 @@ class JsonHttp(timeout: Duration = Duration.ofSeconds(2)) {
 
   fun post(url: String, body: Any): JsonNode = exchange(Request.Builder().url(url).post(encode(body)).build())
 
+  fun delete(url: String): JsonNode = exchange(Request.Builder().url(url).delete().build())
+
   private fun encode(body: Any) = LabJson.mapper.writeValueAsString(body).toRequestBody(JSON)
 
   private fun exchange(request: Request): JsonNode =
     client.newCall(request).execute().use { response ->
       if (!response.isSuccessful) {
-        throw IOException("${request.method} ${request.url} -> ${response.code}")
+        throw HttpStatusException(response.code, "${request.method} ${request.url} -> ${response.code}")
       }
       val text = response.body.string()
       if (text.isBlank()) LabJson.mapper.nullNode() else LabJson.mapper.readTree(text)

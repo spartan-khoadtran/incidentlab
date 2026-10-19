@@ -5,3 +5,8 @@ dependencies {
 
   testImplementation(libs.micrometer.registry.prometheus)
 }
+
+// The lab's image runs every service on the Serial collector, so the tests read its pool names.
+tasks.withType(Test).configureEach {
+  jvmArgs("-XX:+UseSerialGC")
+}

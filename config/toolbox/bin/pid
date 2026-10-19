@@ -1,0 +1,20 @@
+#!/bin/sh
+# Prints the host PID of a lab service, read from the docker socket. pgrep would also match other projects' containers on the VM.
+service=$1
+if [ -z "$service" ]; then
+  echo "usage: pid SERVICE   (api, pricing, worker, noisy, postgres...)" >&2
+  exit 2
+fi
+id=$(cid "$service") || exit 1
+main=$(curl -s --unix-socket /var/run/docker.sock "http://localhost/containers/$id/json" | jq -r '.State.Pid // 0')
+if [ "$main" = "0" ]; then
+  echo "pid: the $service container is not running" >&2
+  exit 1
+fi
+case "$(cat "/proc/$main/comm" 2>/dev/null)" in
+  sh | bash)
+    child=$(pgrep -o -P "$main")
+    [ -n "$child" ] && main=$child
+    ;;
+esac
+echo "$main"

@@ -10,3 +10,5 @@ jackson:
 app:
   service:
     name: ${SERVICE_NAME:noisy}
+  disk:
+    dir: ${NOISY_DATA_DIR:/data}

@@ -8,11 +8,18 @@ import com.c0x12c.incidentlab.checkout.impl.cache.ProductCache
 import com.c0x12c.incidentlab.checkout.impl.config.CheckoutConfig
 import com.c0x12c.incidentlab.checkout.impl.db.DbSessions
 import com.c0x12c.incidentlab.checkout.impl.events.OrderEvents
+import com.c0x12c.incidentlab.checkout.impl.inventory.InventoryCache
 import com.c0x12c.incidentlab.checkout.impl.leak.MemoryLeak
 import com.c0x12c.incidentlab.checkout.impl.manager.DefaultCheckoutManager
+import com.c0x12c.incidentlab.checkout.impl.pricing.ConnectionCounter
+import com.c0x12c.incidentlab.checkout.impl.pricing.KeepAliveSwitch
 import com.c0x12c.incidentlab.checkout.impl.pricing.PricingClient
 import com.c0x12c.incidentlab.checkout.impl.pricing.PricingTimeoutInterceptor
+import com.c0x12c.incidentlab.checkout.impl.render.ReceiptRenderer
 import com.c0x12c.incidentlab.checkout.impl.resource.ApiGates
+import com.c0x12c.incidentlab.checkout.impl.runtime.HeapPressure
+import com.c0x12c.incidentlab.checkout.impl.runtime.LegacyOrderCache
+import com.c0x12c.incidentlab.checkout.impl.runtime.SupportTrace
 import com.c0x12c.incidentlab.client.PricingApi
 import com.c0x12c.incidentlab.database.DatabaseContext
 import com.c0x12c.incidentlab.faults.Faults
@@ -49,6 +56,18 @@ class CheckoutFactory {
   fun memoryLeak(registry: MeterRegistry): MemoryLeak = MemoryLeak(registry)
 
   @Singleton
+  fun receiptRenderer(objectMapper: ObjectMapper): ReceiptRenderer = ReceiptRenderer(objectMapper)
+
+  @Singleton
+  fun heapPressure(registry: MeterRegistry): HeapPressure = HeapPressure(registry)
+
+  @Singleton
+  fun legacyOrderCache(): LegacyOrderCache = LegacyOrderCache()
+
+  @Singleton
+  fun supportTrace(): SupportTrace = SupportTrace()
+
+  @Singleton
   @Bean(preDestroy = "shutdown")
   fun redissonClient(config: CheckoutConfig): RedissonClient =
     Redisson.create(
@@ -67,10 +86,11 @@ class CheckoutFactory {
   fun productCache(redisson: RedissonClient, tracer: Tracer): ProductCache = ProductCache(redisson, tracer)
 
   @Singleton
-  fun pricingApi(config: CheckoutConfig, faults: Faults, openTelemetry: OpenTelemetry, objectMapper: ObjectMapper): PricingApi {
-    val httpClient = OkHttpClient.Builder()
+  fun pricingApi(config: CheckoutConfig, faults: Faults, openTelemetry: OpenTelemetry, objectMapper: ObjectMapper, registry: MeterRegistry): PricingApi {
+    val pooled = OkHttpClient.Builder()
       .addInterceptor(PricingTimeoutInterceptor(faults))
       .addInterceptor(TraceContextInterceptor(openTelemetry))
+      .eventListener(ConnectionCounter(registry, PRICING_TARGET))
       .connectionPool(ConnectionPool(POOL_CONNECTIONS, POOL_KEEP_ALIVE_MINUTES, TimeUnit.MINUTES))
       .dispatcher(
         Dispatcher().apply {
@@ -82,7 +102,7 @@ class CheckoutFactory {
       .build()
     return Retrofit.Builder()
       .baseUrl(config.pricingUrl.trimEnd('/') + "/")
-      .client(httpClient)
+      .callFactory(KeepAliveSwitch(faults, pooled))
       .addConverterFactory(JacksonConverterFactory.create(objectMapper))
       .build()
       .create(PricingApi::class.java)
@@ -106,6 +126,9 @@ class CheckoutFactory {
   ): OrderEvents = OrderEvents(kafka, openTelemetry, tracer, objectMapper, registry).also { it.start() }
 
   @Singleton
+  fun inventoryCache(faults: Faults, tracer: Tracer, registry: MeterRegistry): InventoryCache = InventoryCache(faults, tracer, registry)
+
+  @Singleton
   fun checkoutManager(
     faults: Faults,
     products: ProductRepository,
@@ -114,7 +137,12 @@ class CheckoutFactory {
     pricing: PricingClient,
     cache: ProductCache,
     events: OrderEvents,
+    inventory: InventoryCache,
     leak: MemoryLeak,
+    renderer: ReceiptRenderer,
+    heap: HeapPressure,
+    legacyCache: LegacyOrderCache,
+    supportTrace: SupportTrace,
     runtime: EventLoopRuntime,
     tracer: Tracer,
     objectMapper: ObjectMapper,
@@ -127,7 +155,12 @@ class CheckoutFactory {
     pricing = pricing,
     cache = cache,
     events = events,
+    inventory = inventory,
     leak = leak,
+    renderer = renderer,
+    heap = heap,
+    legacyCache = legacyCache,
+    supportTrace = supportTrace,
     runtime = runtime,
     tracer = tracer,
     objectMapper = objectMapper,
@@ -137,6 +170,7 @@ class CheckoutFactory {
   private companion object {
     const val REDIS_TIMEOUT_MS = 2_000
     const val REDIS_RETRIES = 1
+    const val PRICING_TARGET = "pricing"
     const val POOL_CONNECTIONS = 512
     const val POOL_KEEP_ALIVE_MINUTES = 5L
     const val MAX_REQUESTS = 4_096

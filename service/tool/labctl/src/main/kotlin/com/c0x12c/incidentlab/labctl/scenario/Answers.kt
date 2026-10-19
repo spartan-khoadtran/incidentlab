@@ -17,6 +17,8 @@ object Answers {
     "pricing" to "The pricing service",
     "cache" to "Redis / cache",
     "worker" to "The Kafka consumer (worker)",
+    "network" to "The network between two services",
+    "disk" to "Disk I/O under Postgres or the host",
     "container" to "The api container / cgroup",
     "host" to "The shared host / VM"
   )
@@ -39,7 +41,16 @@ object Answers {
     "memory_restarts" to "Container memory against its limit (sawtooth) and the restart count",
     "host_cpu" to "Host CPU and load, split by container",
     "consumer_lag" to "Produce rate against consume rate, processing time, lag over time",
-    "lag_per_partition" to "Lag and retries per partition"
+    "lag_per_partition" to "Lag and retries per partition",
+    "worker_cpu_vs_lag" to "Worker process CPU against its lag and consume rate: busy while there is no work",
+    "lock_wait" to "Lock wait time and threads waiting on a lock inside api, while CPU, pool and downstream stay flat",
+    "cpu_profile" to "A CPU profile of api: one code path owns most of the samples",
+    "tcp_retransmits" to "TCP retransmits and RTO timeouts counted inside api, against pricing's own p99 which stays flat",
+    "tcp_connections" to "New TCP connections per second and TIME_WAIT count at api against its call rate",
+    "disk_io" to "Disk await and busy share on the host against Postgres wait events (WAL sync, checkpoint) and exec time by query",
+    "jvm_gc" to "GC pause rate and pause p99 against live data after GC and heap max",
+    "vthread_pinned" to "Pinned virtual-thread events per second against in-flight requests, with CPU low",
+    "user_vs_sys" to "Process CPU split into user and system time: system time rises with syscalls"
   )
 
   /** Causes by layer, outermost first. The prompt prints one header per layer. */
@@ -61,30 +72,47 @@ object Answers {
       "n_plus_one" to "N+1 queries: each request sends far too many queries",
       "cache_miss" to "Cache misses rose, load shifted to the DB",
       "gc_pause" to "Long GC pauses stop the JVM",
-      "memory_leak" to "Memory grows without limit (a leak) and will hit the limit"
+      "memory_leak" to "Memory grows without limit (a leak) and will hit the limit",
+      "app_lock" to "A lock inside the app serializes requests: they wait for each other, not for a resource",
+      "hot_code_path" to "A hot code path burns CPU on every request: a serializer, a regex, a formatter",
+      "thread_pool_exhausted" to "A thread pool is full: requests wait for a free worker thread",
+      "vthread_pinning" to "Virtual threads pinned to their carriers: synchronized around blocking work caps concurrency at the CPU count",
+      "sync_logging" to "Verbose synchronous logging: every line is a write syscall under one lock"
     ),
     "DB client and Postgres" to listOf(
       "pool_exhausted" to "Connection pool exhausted: hold time too long, or the pool too small",
       "pool_timeout_short" to "The pool's acquire timeout is too short: requests give up in short bursts",
       "db_lock" to "Lock contention in Postgres",
-      "missing_index" to "A missing index makes one query scan the whole table",
-      "disk_full" to "Disk full or disk I/O saturated on the DB host"
+      "missing_index" to "A missing index makes one query scan the whole table"
     ),
     "Downstream service" to listOf(
       "downstream_slow" to "A downstream service is slow",
-      "downstream_errors" to "A downstream service returns errors",
-      "packet_loss" to "Packet loss or a slow network between services"
+      "downstream_errors" to "A downstream service returns errors"
     ),
     "Async" to listOf(
       "consumer_backlog" to "The producer sends more than the consumer can handle, backlog grows",
       "consumer_slow" to "The consumer got slower per message, throughput dropped",
       "poison_message" to "A poison message blocks one partition",
-      "slow_drain" to "The fix worked, but the backlog drains slowly: too little headroom"
+      "slow_drain" to "The fix worked, but the backlog drains slowly: too little headroom",
+      "busy_poll" to "The consumer polls with no wait and spins on an empty queue"
+    ),
+    "Network" to listOf(
+      "packet_loss" to "Packet loss between two services: a lost segment waits for a retransmit",
+      "rtt_amplified" to "A small network delay multiplied by many sequential round trips per request",
+      "no_keepalive" to "Connections are not reused: every call pays a handshake and leaves a TIME_WAIT socket",
+      "dns_slow" to "Slow or failing DNS lookups"
+    ),
+    "Disk and storage" to listOf(
+      "disk_full" to "Disk full: writes fail with 'No space left on device'",
+      "disk_io_contention" to "Another process saturates the disk Postgres writes its WAL to",
+      "checkpoint_bursts" to "Checkpoints write their dirty pages in short bursts: periodic I/O spikes",
+      "iops_limit" to "The volume hit its IOPS limit: a quota sits between the database and an idle disk"
     ),
     "Container and host" to listOf(
       "cpu_throttle" to "CPU throttling from the container's CPU limit",
       "oom" to "Memory limit hit: OOM kill, then restart",
-      "noisy_neighbor" to "Another process takes the host's CPU"
+      "noisy_neighbor" to "Another process takes the host's CPU",
+      "cpu_credits" to "A burstable VM ran out of CPU credits and fell to its baseline CPU"
     )
   )
 
@@ -93,7 +121,7 @@ object Answers {
   val CAUSE_GROUPS: Map<String, String> = CAUSES_BY_LAYER.flatMap { (group, causes) -> causes.map { it.first to group } }.toMap()
 
   /** Causes no scenario has. They keep the cause list from being a copy of the catalog. */
-  val DISTRACTORS: Set<String> = setOf("gc_pause", "missing_index", "packet_loss", "disk_full")
+  val DISTRACTORS: Set<String> = setOf("thread_pool_exhausted", "missing_index", "disk_full", "dns_slow", "disk_io_contention", "checkpoint_bursts")
 
   val DECOYS: List<String> = listOf(
     "Deploy worker v1.8: logging library update",
@@ -102,7 +130,9 @@ object Answers {
     "Deploy loadgen-ios v5.2: display bug fix"
   )
 
-  val TOPICS: List<String> = listOf("red", "load", "layers", "use", "container", "runtime", "db", "async", "host", "little")
+  val TOPICS: List<String> = listOf(
+    "red", "load", "layers", "use", "container", "runtime", "db", "async", "host", "little", "cpu", "jvm", "disk", "network", "profiling", "capacity"
+  )
 
   fun label(options: List<Pair<String, String>>, key: String): String = options.first { it.first == key }.second
 }

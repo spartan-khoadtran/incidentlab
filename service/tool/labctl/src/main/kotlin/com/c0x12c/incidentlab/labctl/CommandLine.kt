@@ -1,8 +1,12 @@
 package com.c0x12c.incidentlab.labctl
 
+import com.c0x12c.incidentlab.labctl.bench.BenchCatalog
+import com.c0x12c.incidentlab.labctl.bench.BenchOptions
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
 import com.c0x12c.incidentlab.labctl.exercise.NewOptions
 import com.c0x12c.incidentlab.labctl.quiz.QuizKind
+import com.c0x12c.incidentlab.labctl.ramp.RampOptions
+import com.c0x12c.incidentlab.labctl.ramp.RampPlan
 import com.c0x12c.incidentlab.labctl.scenario.Answers
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
 
@@ -25,6 +29,7 @@ object CommandLine {
         "--topic" -> options = options.copy(topic = topic(args.getOrNull(++index)))
         "--id" -> options = options.copy(id = args.getOrNull(++index).orEmpty())
         "--force" -> options = options.copy(force = true)
+        "--mode" -> options = options.copy(mode = mode(args.getOrNull(++index)))
         else -> throw UsageError("Unknown option '$flag'.")
       }
       index++
@@ -55,6 +60,41 @@ object CommandLine {
     return options
   }
 
+  fun rampOptions(args: List<String>): RampOptions {
+    var options = RampOptions()
+    var index = 0
+    while (index < args.size) {
+      when (val flag = args[index]) {
+        "--every" -> options = options.copy(every = stepSeconds(args.getOrNull(++index)))
+        else -> throw UsageError("Unknown option '$flag'.")
+      }
+      index++
+    }
+    return options
+  }
+
+  fun benchOptions(args: List<String>): BenchOptions {
+    var options = BenchOptions()
+    var index = 0
+    while (index < args.size) {
+      when (val flag = args[index]) {
+        "--clients" -> options = options.copy(clients = bounded(args.getOrNull(++index), "CLIENTS", BenchCatalog.MIN_CLIENTS, BenchCatalog.MAX_CLIENTS, "make bench CLIENTS=50"))
+        "--seconds" -> options = options.copy(seconds = bounded(args.getOrNull(++index), "SECONDS", BenchCatalog.MIN_SECONDS, BenchCatalog.MAX_SECONDS, "make bench SECONDS=180"))
+        else -> throw UsageError("Unknown option '$flag'.")
+      }
+      index++
+    }
+    return options
+  }
+
+  private fun bounded(raw: String?, name: String, min: Int, max: Int, example: String): Int =
+    raw?.toIntOrNull()?.takeIf { it in min..max }
+      ?: throw UsageError("$name must be a whole number between $min and $max, for example `$example`.")
+
+  private fun stepSeconds(raw: String?): Int =
+    raw?.toIntOrNull()?.takeIf { it in RampPlan.MIN_STEP_SECONDS..RampPlan.MAX_STEP_SECONDS }
+      ?: throw UsageError("STEP must be a whole number of seconds between ${RampPlan.MIN_STEP_SECONDS} and ${RampPlan.MAX_STEP_SECONDS}, for example `make ramp STEP=45`.")
+
   private fun quizCount(raw: String?): Int =
     raw?.toIntOrNull()?.takeIf { it > 0 }
       ?: throw UsageError("N must be a whole number above 0, for example `make quiz N=5`.")
@@ -62,6 +102,10 @@ object CommandLine {
   private fun quizKind(raw: String?): QuizKind =
     QuizKind.entries.firstOrNull { it.flag == raw }
       ?: throw UsageError("KIND must be one of ${QuizKind.entries.joinToString(", ") { it.flag }}, for example `make quiz KIND=concepts`.")
+
+  private fun mode(raw: String?): String =
+    raw?.takeIf { it in Exercises.NEW_MODES }
+      ?: throw UsageError("MODE must be one of ${Exercises.NEW_MODES.joinToString(", ")}.")
 
   private fun level(raw: String?): Int {
     val levels = ScenarioCatalog.all.map { it.level }.distinct().sorted()

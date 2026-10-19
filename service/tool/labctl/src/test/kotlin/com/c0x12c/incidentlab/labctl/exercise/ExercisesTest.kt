@@ -10,13 +10,17 @@ import assertk.assertions.isFalse
 import assertk.assertions.isNotNull
 import assertk.assertions.isNull
 import assertk.assertions.isTrue
+import com.c0x12c.incidentlab.labctl.FakeAnnotator
+import com.c0x12c.incidentlab.labctl.ScriptedTerminal as HookedTerminal
 import com.c0x12c.incidentlab.labctl.Terminal
-import com.c0x12c.incidentlab.labctl.control.Annotator
+import com.c0x12c.incidentlab.labctl.control.Capabilities
+import com.c0x12c.incidentlab.labctl.control.CapabilitiesFile
 import com.c0x12c.incidentlab.labctl.control.LabProbe
 import com.c0x12c.incidentlab.labctl.scenario.Answers
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
 import com.c0x12c.incidentlab.labctl.state.ActiveExercise
 import com.c0x12c.incidentlab.labctl.state.LabState
+import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import java.nio.file.Path
 import kotlin.random.Random
@@ -45,13 +49,13 @@ class ExercisesTest {
     override fun serviceStatus(): Map<String, String?> = mapOf("api" to null)
   }
 
-  private val annotations = mutableListOf<Pair<String, Double>>()
-  private val annotator = Annotator { text, _, at -> annotations.add(text to at) }
+  private val annotator = FakeAnnotator()
+  private val annotations get() = annotator.written.map { it.text to it.at }
 
   private val index = { options: List<Pair<String, String>>, key: String -> (options.indexOfFirst { it.first == key } + 1).toString() }
 
-  private fun exercises(dir: Path, terminal: Terminal): Exercises =
-    Exercises(StateStore(dir.resolve("state.json")), probe, annotator, terminal, random = Random(1), now = { NOW })
+  private fun exercises(dir: Path, terminal: Terminal, capabilities: Capabilities = Capabilities.ALL, random: Random = Random(1)): Exercises =
+    Exercises(StateStore(dir.resolve("state.json")), probe, annotator, terminal, random = random, now = { NOW }, capabilities = capabilities)
 
   private fun picks(nature: String, location: String, signal: String, cause: String): List<String> =
     listOf(index(Answers.NATURES, nature), index(Answers.LOCATIONS, location), index(Answers.SIGNALS, signal), index(Answers.CAUSES, cause))
@@ -102,6 +106,38 @@ class ExercisesTest {
     val state = StateStore(dir.resolve("state.json")).load()
     assertThat(state.history.single().score).isNull()
     assertThat(state.active).isNull()
+  }
+
+  @Test
+  fun `an answer is refused when another exercise opened while the prompts waited`(@TempDir dir: Path) {
+    val terminal = HookedTerminal(*picks("arch", "api_db", "pool", "pool_exhausted").toTypedArray(), "", "y")
+    val exercises = exercises(dir, terminal)
+    exercises.newExercise(NewOptions(id = "pool_hold"))
+    terminal.beforeAnswer = { if (it == LAST_PICK) exercises(dir, HookedTerminal()).newExercise(NewOptions(id = "oom", force = true)) }
+
+    assertThat(exercises.answer()).isEqualTo(1)
+
+    assertThat(terminal.lines.last()).isEqualTo(Exercises.CHANGED)
+    val state = StateStore(dir.resolve("state.json")).load()
+    assertThat(state.active!!.id).isEqualTo("oom")
+    assertThat(state.active!!.answered).isFalse()
+    assertThat(state.history).isEmpty()
+  }
+
+  @Test
+  fun `the clear prompt only clears the exercise just answered, even when the input closes`(@TempDir dir: Path) {
+    val terminal = HookedTerminal(*picks("arch", "api_db", "pool", "pool_exhausted").toTypedArray(), "")
+    val exercises = exercises(dir, terminal)
+    exercises.newExercise(NewOptions(id = "pool_hold"))
+    terminal.beforeAnswer = { if (it == CLEAR_PROMPT) exercises(dir, HookedTerminal()).newExercise(NewOptions(id = "oom", force = true)) }
+
+    assertThat(exercises.answer()).isEqualTo(0)
+
+    assertThat(terminal.lines.last()).isEqualTo(Exercises.NOT_CLEARED)
+    val state = StateStore(dir.resolve("state.json")).load()
+    assertThat(state.active!!.id).isEqualTo("oom")
+    assertThat(state.history.single().id).isEqualTo("pool_hold")
+    assertThat(annotations.none { it.first == "lab: fault cleared" }).isTrue()
   }
 
   @Test
@@ -200,6 +236,92 @@ class ExercisesTest {
   }
 
   @Test
+  fun `a ramp score gets its own average, apart from the incidents and their topics`(@TempDir dir: Path) {
+    val store = StateStore(dir.resolve("state.json"))
+    store.save(
+      store.load().copy(
+        history = listOf(
+          HistoryEntry(n = 1, id = "pool_hold", title = "Pool hold", level = 1, score = 4.0, hints = 0, minutes = 9.0, at = NOW),
+          HistoryEntry(n = 2, id = "ramp", mode = "ramp", title = "Capacity ramp (pool_max = 3)", level = 0, score = 1.0, hints = 0, minutes = 9.0, at = NOW, missed = listOf("cause"))
+        )
+      )
+    )
+    val terminal = ScriptedTerminal(ArrayDeque())
+
+    exercises(dir, terminal).history()
+
+    assertThat(terminal.lines).contains("Average score: 4.00/5 over 1 exercise(s)")
+    assertThat(terminal.lines).contains("Ramp average: 1.00/5 over 1 ramp(s)")
+    assertThat(terminal.lines.none { it.startsWith("Most missed cause") }).isTrue()
+  }
+
+  @Test
+  fun `toolbox mode picks only scenarios with commands and keeps Grafana out of the ticket`(@TempDir dir: Path) {
+    val withCli = ScenarioCatalog.all.filter { it.cli.isNotEmpty() }.map { it.id }.toSet()
+    repeat(PICKS) { round ->
+      val terminal = ScriptedTerminal(ArrayDeque())
+      val store = StateStore(dir.resolve("state-$round.json"))
+      val exercises = Exercises(store, probe, annotator, terminal, random = Random(round), now = { NOW })
+
+      assertThat(exercises.newExercise(NewOptions(mode = Exercises.TOOLBOX))).isEqualTo(0)
+
+      val active = store.load().active!!
+      assertThat(active.id in withCli).isTrue()
+      assertThat(active.mode).isEqualTo(Exercises.TOOLBOX)
+      assertThat(terminal.lines).contains(Exercises.TOOLBOX_RULES)
+      assertThat(terminal.lines.none { it.contains("localhost:3000") }).isTrue()
+    }
+  }
+
+  @Test
+  fun `toolbox mode refuses an id without commands`(@TempDir dir: Path) {
+    val withoutCli = ScenarioCatalog.all.first { it.cli.isEmpty() }
+    val terminal = ScriptedTerminal(ArrayDeque())
+    val exercises = exercises(dir, terminal)
+
+    assertThat(exercises.newExercise(NewOptions(id = withoutCli.id, mode = Exercises.TOOLBOX))).isEqualTo(1)
+    assertThat(terminal.lines.last()).contains("has no CLI proof yet")
+    assertThat(StateStore(dir.resolve("state.json")).load().active).isNull()
+  }
+
+  @Test
+  fun `the explanation prints the commands after the PromQL and history keeps the mode`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal(ArrayDeque(listOf("y")))
+    val exercises = exercises(dir, terminal)
+    val scenario = ScenarioCatalog.byId.getValue("pool_hold")
+
+    exercises.newExercise(NewOptions(id = scenario.id, mode = Exercises.TOOLBOX))
+    exercises.reveal()
+
+    val evidence = terminal.lines.indexOfFirst { it.startsWith("EVIDENCE TO LOOK FOR") }
+    val commands = terminal.lines.indexOfFirst { it.startsWith("COMMANDS THAT PROVE IT") }
+    assertThat(evidence in 0 until commands).isTrue()
+    assertThat(terminal.lines.subList(commands + 1, commands + 1 + scenario.cli.size)).isEqualTo(scenario.cli.map { "  $ $it" })
+    val entry = StateStore(dir.resolve("state.json")).load().history.single()
+    assertThat(entry.mode).isEqualTo(Exercises.TOOLBOX)
+    terminal.lines.clear()
+    exercises.history()
+    assertThat(terminal.lines.single { it.startsWith("#1") }).contains("toolbox")
+  }
+
+  @Test
+  fun `an incident without commands prints no command block, and list tags the toolbox scenarios`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal(ArrayDeque(listOf("y")))
+    val exercises = exercises(dir, terminal)
+
+    exercises.newExercise(NewOptions(id = ScenarioCatalog.all.first { it.cli.isEmpty() }.id))
+    exercises.reveal()
+    assertThat(terminal.lines.none { it.startsWith("COMMANDS THAT PROVE IT") }).isTrue()
+
+    terminal.lines.clear()
+    exercises.list()
+    for (scenario in ScenarioCatalog.all) {
+      val line = terminal.lines.single { it.startsWith("  - ${scenario.id} ") }
+      assertThat(line.endsWith("[toolbox]")).isEqualTo(scenario.cli.isNotEmpty())
+    }
+  }
+
+  @Test
   fun `every title fits the list column`() {
     for (scenario in ScenarioCatalog.all) {
       assertThat(scenario.title.length <= Exercises.TITLE_COLUMN).isTrue()
@@ -221,8 +343,86 @@ class ExercisesTest {
     assertThat(store.load().active).isNull()
   }
 
+  @Test
+  fun `a scenario counts the container settings it sets, a late fault included`() {
+    val needs = { id: String -> ExerciseEngine.dockerKeys(ScenarioCatalog.byId.getValue(id)) }
+
+    assertThat(needs("cpu_throttle")).isEqualTo(setOf("cpus"))
+    assertThat(needs("cpu_credits")).isEqualTo(setOf("cpus"))
+    assertThat(needs("packet_loss")).isEqualTo(setOf("netem"))
+    assertThat(needs("iops_limit")).isEqualTo(setOf("write_iops"))
+    assertThat(needs("pool_hold")).isEmpty()
+  }
+
+  @Test
+  fun `a random pick skips every scenario that needs a setting the controller cannot apply`(@TempDir dir: Path) {
+    val onlyCpus = Capabilities { setOf("cpus") }
+    val terminal = ScriptedTerminal(ArrayDeque())
+    val store = StateStore(dir.resolve("state.json"))
+    val picked = (0 until MANY_PICKS).map { round ->
+      exercises(dir, terminal, onlyCpus, Random(round)).newExercise(NewOptions(force = true))
+      store.load().active!!.id
+    }.toSet()
+
+    assertThat(picked.none { it == "iops_limit" || it == "packet_loss" }).isTrue()
+    assertThat(picked.all { (ExerciseEngine.dockerKeys(ScenarioCatalog.byId.getValue(it)) - "cpus").isEmpty() }).isTrue()
+    assertThat("cpu_throttle" in picked || "cpu_credits" in picked).isTrue()
+  }
+
+  @Test
+  fun `an id the controller cannot run is refused and nothing starts`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal(ArrayDeque())
+    val exercises = exercises(dir, terminal, Capabilities { setOf("cpus") })
+
+    assertThat(exercises.newExercise(NewOptions(id = "iops_limit"))).isEqualTo(1)
+    assertThat(terminal.lines.last()).contains("'iops_limit' needs container settings this lab's controller cannot apply (write_iops)")
+    assertThat(StateStore(dir.resolve("state.json")).load().active).isNull()
+    assertThat(exercises.newExercise(NewOptions(id = "cpu_throttle"))).isEqualTo(0)
+  }
+
+  @Test
+  fun `with no controller every setting is applied, and a topic with nothing runnable says why`(@TempDir dir: Path) {
+    val terminal = ScriptedTerminal(ArrayDeque())
+    val file = CapabilitiesFile.beside(dir.resolve("state.json"))
+
+    assertThat(file.dockerKeys()).isNull()
+    assertThat(exercises(dir, terminal, file).newExercise(NewOptions(id = "iops_limit"))).isEqualTo(0)
+
+    file.write(emptySet())
+    val none = exercises(dir, terminal, file)
+    val dockerOnly = Answers.TOPICS.first { topic ->
+      ScenarioCatalog.all.filter { topic in it.topics }.let { matching -> matching.isNotEmpty() && matching.all { ExerciseEngine.dockerKeys(it).isNotEmpty() } }
+    }
+    assertThat(none.newExercise(NewOptions(id = "packet_loss", force = true))).isEqualTo(1)
+    assertThat(none.newExercise(NewOptions(topic = dockerOnly, force = true))).isEqualTo(1)
+    assertThat(terminal.lines.last()).contains("Every exercise that matches needs")
+  }
+
+  @Test
+  fun `away from load 1 a random pick skips the scenarios tuned for the base load, and their id is refused`(@TempDir dir: Path) {
+    val baseLoad = ScenarioCatalog.all.filter { it.baseLoad }.map { it.id }.toSet()
+    val terminal = ScriptedTerminal(ArrayDeque())
+    val store = StateStore(dir.resolve("state.json"))
+    exercises(dir, terminal).load(1.5)
+    val picked = (0 until MANY_PICKS).map { round ->
+      exercises(dir, terminal, random = Random(round)).newExercise(NewOptions(force = true))
+      store.load().active!!.id
+    }.toSet()
+
+    assertThat(baseLoad.isNotEmpty()).isTrue()
+    assertThat(picked.intersect(baseLoad)).isEmpty()
+    assertThat(exercises(dir, terminal).newExercise(NewOptions(id = baseLoad.first(), force = true))).isEqualTo(1)
+    assertThat(terminal.lines.last()).contains("Background load is 1.5 x")
+    exercises(dir, terminal).load(1.0)
+    assertThat(exercises(dir, terminal).newExercise(NewOptions(id = baseLoad.first(), force = true))).isEqualTo(0)
+  }
+
   private companion object {
+    const val MANY_PICKS = 200
     const val NOW = 1_700_000_000.0
     const val MARKER_LEAD_SECONDS = 180
+    const val PICKS = 20
+    const val LAST_PICK = 4
+    const val CLEAR_PROMPT = 6
   }
 }

@@ -54,13 +54,15 @@ object RedBoard {
       "Envoy counts the 503s it generates itself in upstream_rq_5xx, so compare with the errors api counts."
     )
     b.timeseries(
-      "Latency p99: LB vs api",
+      "Latency p99 and p99.9: LB vs api",
       listOf(
         quantile(0.99, "envoy_http_downstream_rq_time", selector = "{$LB}") + " / 1000" to "LB (Envoy) p99",
-        quantile(0.99, "http_server_duration_seconds", selector = "{job=\"api\"}") to "api (APM) p99"
+        quantile(0.99, "http_server_duration_seconds", selector = "{job=\"api\"}") to "api (APM) p99",
+        quantile(0.999, "envoy_http_downstream_rq_time", selector = "{$LB}") + " / 1000" to "LB (Envoy) p99.9",
+        quantile(0.999, "http_server_duration_seconds", selector = "{job=\"api\"}") to "api (APM) p99.9"
       ),
       "s",
-      "The gap between the two lines is time spent in between: network, the queue ahead of the app."
+      "The gap between the LB and api is time spent in between: network, the queue ahead of the app, a process that stood still."
     )
     b.timeseries(
       "Healthy backends per Envoy",
@@ -103,6 +105,13 @@ object RedBoard {
       "s",
       "Failed requests may be very fast (fail fast) or very slow (timeout)."
     )
+    b.heatmap(
+      "api latency heatmap (requests per bucket)",
+      "http_server_duration_seconds",
+      "{job=\"api\"}",
+      description = "The whole distribution over time. A band far above the main one is a tail; dots are exemplars to open in Tempo.",
+      exemplars = true
+    )
 
     b.row("4 · Downstream as seen from api")
     b.timeseries(
@@ -124,6 +133,15 @@ object RedBoard {
     b.timeseries("Calls to pricing: p99 as seen from api", listOf(quantile(0.99, "http_client_duration_seconds", "route", "{job=\"api\"}") to "{{route}}"), "s")
     b.timeseries("Calls to pricing: outcomes/s", listOf("sum by (route, outcome) (rate(http_client_requests_total{job=\"api\"}[RI]))" to "{{route}} {{outcome}}"), "reqps")
     b.timeseries("Cache hit ratio", listOf("sum(rate(cache_requests_total{result=\"hit\"}[RI])) / sum(rate(cache_requests_total[RI]))" to "hit ratio"), "percentunit")
+    b.timeseries(
+      "Calls to pricing: new TCP connections/s vs calls/s",
+      listOf(
+        "sum(rate(http_client_connections_total{job=\"api\",target=\"pricing\"}[RI]))" to "connections opened/s",
+        "sum(rate(http_client_requests_total{job=\"api\",target=\"pricing\"}[RI]))" to "calls/s"
+      ),
+      "short",
+      "With connection reuse, opens stay near 0 while calls flow. One open per call means every call pays a handshake."
+    )
 
     b.row("5 · Downstream as seen by itself")
     b.timeseries("pricing: requests/s by route and status", listOf("sum by (route, status) (rate(http_server_requests_total{job=\"pricing\"}[RI]))" to "{{route}} {{status}}"), "reqps")

@@ -6,8 +6,15 @@ import jakarta.inject.Singleton
 
 object NoisyFaults {
   const val BURNERS = "burners"
+  const val FORK_RPS = "fork_rps"
+  const val FSYNC_MB_PER_S = "fsync_mb_per_s"
 
-  val DEFAULTS: Map<String, Any?> = mapOf(BURNERS to 0)
+  val DEFAULTS: Map<String, Any?> = mapOf(
+    BURNERS to 0,
+    // short-lived processes started per second (capped at 200 inside ForkStorm)
+    FORK_RPS to 0,
+    FSYNC_MB_PER_S to 0
+  )
 }
 
 @Factory

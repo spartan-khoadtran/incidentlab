@@ -1,6 +1,14 @@
 package com.c0x12c.incidentlab.labctl.control
 
-import com.c0x12c.incidentlab.labctl.Terminal
+import java.net.URLEncoder
+import java.util.Locale
+import java.util.concurrent.Executors
+
+/** One evaluation of a PromQL expression. */
+data class Sample(
+  val at: Double,
+  val value: Double
+)
 
 /** What an exercise reads from the running lab before it starts, and the marks it leaves on the dashboards. */
 interface LabProbe {
@@ -13,10 +21,26 @@ interface LabProbe {
   fun tenants(): Map<String, Int>?
 
   fun serviceStatus(): Map<String, String?>
+
+  /** The first series of `expr` every `step` seconds from `start` to `end`, NaN points left out. Null when Prometheus does not answer. */
+  fun rangeQuery(expr: String, start: Double, end: Double, step: Double): List<Sample>? = null
+
+  /** The first series of `expr` at `at` (now when null). Null when Prometheus does not answer or has no data. */
+  fun instantQuery(expr: String, at: Double? = null): Double? = null
 }
 
-fun interface Annotator {
-  fun annotate(text: String, tags: List<String>, atSeconds: Double)
+interface Annotator {
+  /** Grafana's id for the new annotation, or null when it was not written. */
+  fun annotate(text: String, tags: List<String>, atSeconds: Double): Long?
+
+  fun delete(id: Long): Deletion
+}
+
+sealed interface Deletion {
+  /** Deleted now, or already gone. */
+  data object Gone : Deletion
+
+  data class Failed(val reason: String) : Deletion
 }
 
 class HttpLabProbe(private val http: JsonHttp) : LabProbe {
@@ -25,12 +49,26 @@ class HttpLabProbe(private val http: JsonHttp) : LabProbe {
     runCatching { http.get("${Services.ENDPOINTS.getValue("noisy")}/health").path("cpu_count").asInt() }.getOrNull()
 
   override fun productDetailSeconds(): Double? =
+    instantQuery("sum(rate(pg_query_exec_seconds_total{query=\"product_detail\"}[10m])) / sum(rate(pg_query_calls_total{query=\"product_detail\"}[10m]))")
+      ?.takeIf { it > MIN_PLAUSIBLE && it < MAX_PLAUSIBLE }
+
+  override fun rangeQuery(expr: String, start: Double, end: Double, step: Double): List<Sample>? =
     runCatching {
-      val expr = "sum(rate(pg_query_exec_seconds_total{query=\"product_detail\"}[10m])) / sum(rate(pg_query_calls_total{query=\"product_detail\"}[10m]))"
-      val value = http.get(PROMETHEUS + "/api/v1/query?query=" + java.net.URLEncoder.encode(expr, Charsets.UTF_8))
-        .path("data").path("result").get(0).path("value").get(1).asText().toDouble()
-      value.takeIf { it > MIN_PLAUSIBLE && it < MAX_PLAUSIBLE }
+      val url = "$PROMETHEUS/api/v1/query_range?query=${encode(expr)}&start=${seconds(start)}&end=${seconds(end)}&step=${seconds(step)}"
+      http.get(url).path("data").path("result").path(0).path("values").mapNotNull { point ->
+        point.path(1).asText().toDoubleOrNull()?.takeIf { it.isFinite() }?.let { Sample(point.path(0).asDouble(), it) }
+      }
     }.getOrNull()
+
+  override fun instantQuery(expr: String, at: Double?): Double? =
+    runCatching {
+      val url = "$PROMETHEUS/api/v1/query?query=${encode(expr)}" + (at?.let { "&time=${seconds(it)}" } ?: "")
+      http.get(url).path("data").path("result").path(0).path("value").path(1).asText().toDoubleOrNull()?.takeIf { it.isFinite() }
+    }.getOrNull()
+
+  private fun encode(expr: String): String = URLEncoder.encode(expr, Charsets.UTF_8)
+
+  private fun seconds(value: Double): String = String.format(Locale.ROOT, "%.3f", value)
 
   override fun tenants(): Map<String, Int>? =
     runCatching {
@@ -39,9 +77,12 @@ class HttpLabProbe(private val http: JsonHttp) : LabProbe {
         .takeIf { it.isNotEmpty() }
     }.getOrNull()
 
+  /** All services at once, so one that hangs costs one timeout, not one per service. */
   override fun serviceStatus(): Map<String, String?> =
-    Services.ENDPOINTS.mapValues { (_, url) ->
-      runCatching { http.get("$url/admin/faults") }.exceptionOrNull()?.javaClass?.simpleName
+    Executors.newVirtualThreadPerTaskExecutor().use { pool ->
+      Services.ENDPOINTS
+        .mapValues { (_, url) -> pool.submit<String?> { runCatching { http.get("$url/admin/faults") }.exceptionOrNull()?.javaClass?.simpleName } }
+        .mapValues { (_, check) -> check.get() }
     }
 
   companion object {
@@ -51,18 +92,31 @@ class HttpLabProbe(private val http: JsonHttp) : LabProbe {
   }
 }
 
-class GrafanaAnnotator(private val http: JsonHttp, private val terminal: Terminal) : Annotator {
+/** Writes annotations to Grafana. A failed write is reported, not thrown: the CLI prints it, the daemon logs it. A failed delete is returned to the caller. */
+class GrafanaAnnotator(private val http: JsonHttp, private val grafana: String = GRAFANA, private val report: (String) -> Unit) : Annotator {
 
-  override fun annotate(text: String, tags: List<String>, atSeconds: Double) {
+  override fun annotate(text: String, tags: List<String>, atSeconds: Double): Long? =
     try {
-      http.post("$GRAFANA/api/annotations", mapOf("time" to (atSeconds * MILLIS_PER_SECOND).toLong(), "tags" to listOf("lab") + tags, "text" to text))
+      http.post("$grafana/api/annotations", mapOf("time" to (atSeconds * MILLIS_PER_SECOND).toLong(), "tags" to listOf("lab") + tags, "text" to text))
+        .path("id").takeIf { it.isIntegralNumber }?.asLong()
     } catch (e: Exception) {
-      terminal.out("(could not write the annotation to Grafana: ${e.message})")
+      report("(could not write the annotation to Grafana: ${e.message})")
+      null
     }
-  }
+
+  override fun delete(id: Long): Deletion =
+    try {
+      http.delete("$grafana/api/annotations/$id")
+      Deletion.Gone
+    } catch (e: HttpStatusException) {
+      if (e.code == NOT_FOUND) Deletion.Gone else Deletion.Failed(e.message.orEmpty())
+    } catch (e: Exception) {
+      Deletion.Failed(e.message ?: e.javaClass.simpleName)
+    }
 
   companion object {
     val GRAFANA: String = System.getenv("GRAFANA_URL") ?: "http://grafana:3000"
     private const val MILLIS_PER_SECOND = 1_000.0
+    private const val NOT_FOUND = 404
   }
 }

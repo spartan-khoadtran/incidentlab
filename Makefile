@@ -5,8 +5,8 @@ CTL      = $(COMPOSE) exec control $(LABCTL)
 GRADLE   = cd service && ./gradlew
 
 .DEFAULT_GOAL := help
-.PHONY: help up up-datadog wait new hint answer reveal clear status list history quiz load \
-        open logs ps stop down nuke check build test lint format dashboards
+.PHONY: help up up-datadog wait new hint answer reveal clear status list history quiz load ramp bench \
+        toolbox shell open logs ps stop down nuke check build test lint format dashboards site
 
 help: ## List the commands
 	@echo "incidentlab: incident investigation lab"
@@ -32,8 +32,10 @@ wait:
 	@echo ""
 	@echo "  Grafana     http://localhost:3000"
 	@echo "  Traces      in Grafana: Explore > Tempo (or click an exemplar dot on a latency panel)"
+	@echo "  Profiles    in Grafana: Explore > Pyroscope (service = api, pricing, worker), or http://localhost:4040"
 	@echo "  Prometheus  http://localhost:9090"
 	@echo "  Envoy       http://localhost:8080 (admin: http://localhost:9901)"
+	@echo "  Handbook    http://localhost:4000 (guide, catalog, commands)"
 	@echo ""
 	@echo "Let the system run for 3-5 minutes to get a baseline, then type: make new"
 
@@ -48,7 +50,7 @@ nuke: ## Like `down`, and also remove the built image
 
 # ----------------------------------------------------------------------------- exercises
 new: ## New incident exercise on the live lab. Options: LEVEL=1|2|3 TOPIC=async ID=pool_hold FORCE=1
-	@$(CTL) new $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(ID),--id $(ID)) $(if $(FORCE),--force)
+	@$(CTL) new $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(ID),--id $(ID)) $(if $(filter 1 yes true,$(FORCE)),--force)
 
 hint: ## Next hint (costs 0.5 point each)
 	@$(CTL) hint
@@ -73,14 +75,30 @@ history: ## History and scores
 
 quiz: ## Theory drills from the guide (N=50, KIND=numbers|concepts|all). Does not need the lab running
 	@$(COMPOSE) build -q control
-	@$(COMPOSE) run --rm --no-deps control $(LABCTL) quiz -n $(or $(N),50) --kind $(or $(KIND),all)
+	@docker run --rm -i$(shell [ -t 0 ] && echo t) --network none --memory 256m incidentlab-svc:latest $(LABCTL) quiz -n $(or $(N),50) --kind $(or $(KIND),all)
 
 load: ## Change the background load: X=1.5 (times the default 50 rps)
 	@$(CTL) load $(or $(X),1)
 
+toolbox: ## New CLI-only exercise: prove the cause from `make shell`, no Grafana. Options: LEVEL TOPIC ID FORCE
+	@$(CTL) new --mode toolbox $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(ID),--id $(ID)) $(if $(filter 1 yes true,$(FORCE)),--force)
+
+shell: ## Root shell on the Docker VM with the Linux tools (vmstat, pidstat, psql, bpftrace...)
+	@$(COMPOSE) up -d --no-deps toolbox
+	@$(COMPOSE) exec toolbox bash -l
+
+ramp: ## Capacity ramp on the live lab: the load rises in steps, find the knee. Option: STEP=60 (seconds per step)
+	@$(CTL) ramp $(if $(STEP),--every $(STEP))
+
+bench: ## Closed-loop bench on the live lab, not scored, then a before/after report. Options: CLIENTS=20 SECONDS=120
+	@$(CTL) bench $(if $(CLIENTS),--clients $(CLIENTS)) $(if $(SECONDS),--seconds $(SECONDS))
+
 # ----------------------------------------------------------------------------- tools
 open: ## Open Grafana in the browser (macOS)
 	@open http://localhost:3000 || true
+
+site: ## Open the handbook in the browser (macOS): the guide, the catalog and every command
+	@open http://localhost:4000 || true
 
 logs: ## Tail logs: S=worker (empty = all services)
 	$(COMPOSE) logs -f --tail=100 $(S)

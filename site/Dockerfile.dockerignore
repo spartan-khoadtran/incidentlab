@@ -1,0 +1,14 @@
+*
+!docs/*.md
+!Makefile
+!docker-compose.yml
+!README.md
+!CLAUDE.md
+!service/tool/labctl/src/main/kotlin/com/c0x12c/incidentlab/labctl/scenario/Answers.kt
+!service/tool/labctl/src/main/kotlin/com/c0x12c/incidentlab/labctl/scenario/catalog/*.kt
+!config/grafana/dashboards/*.json
+!config/grafana/provisioning/datasources/datasources.yml
+!site
+site/node_modules
+site/dist
+site/src/generated

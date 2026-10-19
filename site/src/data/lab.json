@@ -1,0 +1,387 @@
+{
+  "scenarios" : [ {
+    "id" : "tenant_spike",
+    "title" : "One tenant's traffic surges",
+    "level" : 1,
+    "topics" : [ "red", "load" ],
+    "toolbox" : false
+  }, {
+    "id" : "global_surge",
+    "title" : "Traffic grows across every tenant",
+    "level" : 1,
+    "topics" : [ "red", "load", "little" ],
+    "toolbox" : false
+  }, {
+    "id" : "mix_shift",
+    "title" : "Same traffic, heavier mix",
+    "level" : 2,
+    "topics" : [ "red", "load", "layers" ],
+    "toolbox" : false
+  }, {
+    "id" : "client_outage",
+    "title" : "One client stopped calling",
+    "level" : 1,
+    "topics" : [ "red", "load" ],
+    "toolbox" : false
+  }, {
+    "id" : "retry_storm",
+    "title" : "Retry storm",
+    "level" : 2,
+    "topics" : [ "red", "layers" ],
+    "toolbox" : false
+  }, {
+    "id" : "client_timeout",
+    "title" : "Client timeout shorter than server latency",
+    "level" : 3,
+    "topics" : [ "layers", "red" ],
+    "toolbox" : false
+  }, {
+    "id" : "timeout_retry",
+    "title" : "Client timeouts turn into retries",
+    "level" : 3,
+    "topics" : [ "red", "layers" ],
+    "toolbox" : false
+  }, {
+    "id" : "surge_queue",
+    "title" : "A real surge queues before the app",
+    "level" : 2,
+    "topics" : [ "load", "layers", "little" ],
+    "toolbox" : false
+  }, {
+    "id" : "queue_before_app",
+    "title" : "Requests queue before the app accepts them",
+    "level" : 2,
+    "topics" : [ "layers", "red" ],
+    "toolbox" : false
+  }, {
+    "id" : "lb_no_healthy",
+    "title" : "The LB answers 503 itself",
+    "level" : 1,
+    "topics" : [ "layers", "red" ],
+    "toolbox" : true
+  }, {
+    "id" : "lb_flapping",
+    "title" : "The LB drops a few requests now and then",
+    "level" : 2,
+    "topics" : [ "layers", "red" ],
+    "toolbox" : false
+  }, {
+    "id" : "n_plus_one",
+    "title" : "N+1 queries after an ORM change",
+    "level" : 1,
+    "topics" : [ "layers", "red" ],
+    "toolbox" : true
+  }, {
+    "id" : "single_thread_cpu",
+    "title" : "One core saturated by CPU work on the event loop",
+    "level" : 2,
+    "topics" : [ "use", "runtime" ],
+    "toolbox" : true
+  }, {
+    "id" : "cache_miss",
+    "title" : "Cache misses push the load onto the DB",
+    "level" : 2,
+    "topics" : [ "layers", "red" ],
+    "toolbox" : true
+  }, {
+    "id" : "app_lock",
+    "title" : "Checkouts wait for each other on one lock",
+    "level" : 2,
+    "topics" : [ "use", "runtime" ],
+    "toolbox" : false
+  }, {
+    "id" : "fork_decoy",
+    "title" : "A fork storm on the host, slower product pages",
+    "level" : 3,
+    "topics" : [ "host", "layers" ],
+    "toolbox" : false
+  }, {
+    "id" : "pool_hold",
+    "title" : "Connection pool exhausted after a deploy",
+    "level" : 2,
+    "topics" : [ "layers", "use", "little" ],
+    "toolbox" : true
+  }, {
+    "id" : "pool_shrunk",
+    "title" : "Connection pool shrunk by a config change",
+    "level" : 2,
+    "topics" : [ "layers", "use", "little" ],
+    "toolbox" : true
+  }, {
+    "id" : "pool_timeout",
+    "title" : "Pool acquire timeout set too short",
+    "level" : 2,
+    "topics" : [ "use", "db" ],
+    "toolbox" : false
+  }, {
+    "id" : "db_lock",
+    "title" : "Lock contention on one hot row",
+    "level" : 3,
+    "topics" : [ "use", "db", "layers" ],
+    "toolbox" : true
+  }, {
+    "id" : "downstream_slow",
+    "title" : "A slow downstream",
+    "level" : 1,
+    "topics" : [ "layers", "red" ],
+    "toolbox" : false
+  }, {
+    "id" : "downstream_errors",
+    "title" : "A downstream returns errors",
+    "level" : 1,
+    "topics" : [ "layers", "red" ],
+    "toolbox" : false
+  }, {
+    "id" : "api_timeout",
+    "title" : "api times out on pricing before pricing answers",
+    "level" : 3,
+    "topics" : [ "layers", "red" ],
+    "toolbox" : false
+  }, {
+    "id" : "pricing_cpu",
+    "title" : "pricing saturates its single event loop thread",
+    "level" : 2,
+    "topics" : [ "use", "runtime", "layers" ],
+    "toolbox" : true
+  }, {
+    "id" : "tail_latency",
+    "title" : "Only the tail is slow",
+    "level" : 2,
+    "topics" : [ "red", "layers" ],
+    "toolbox" : false
+  }, {
+    "id" : "two_faults",
+    "title" : "Two changes at once, one of them harmless",
+    "level" : 3,
+    "topics" : [ "layers", "host" ],
+    "toolbox" : false
+  }, {
+    "id" : "unexplained_win",
+    "title" : "Good news that is not",
+    "level" : 3,
+    "topics" : [ "layers", "red" ],
+    "toolbox" : false
+  }, {
+    "id" : "consumer_backlog",
+    "title" : "The consumer cannot keep up",
+    "level" : 2,
+    "topics" : [ "async", "load" ],
+    "toolbox" : true
+  }, {
+    "id" : "consumer_slow",
+    "title" : "The worker got slower per message",
+    "level" : 2,
+    "topics" : [ "async", "layers" ],
+    "toolbox" : true
+  }, {
+    "id" : "poison_message",
+    "title" : "Poison message",
+    "level" : 3,
+    "topics" : [ "async" ],
+    "toolbox" : true
+  }, {
+    "id" : "lag_after_fix",
+    "title" : "Lag stays high after the fix",
+    "level" : 3,
+    "topics" : [ "async", "little" ],
+    "toolbox" : false
+  }, {
+    "id" : "busy_poll",
+    "title" : "The worker burns a core doing nothing",
+    "level" : 2,
+    "topics" : [ "async", "cpu", "use" ],
+    "toolbox" : true
+  }, {
+    "id" : "cpu_throttle",
+    "title" : "CPU throttling at the container",
+    "level" : 2,
+    "topics" : [ "use", "container" ],
+    "toolbox" : true
+  }, {
+    "id" : "oom",
+    "title" : "Periodic OOM kill",
+    "level" : 3,
+    "topics" : [ "use", "container" ],
+    "toolbox" : true
+  }, {
+    "id" : "slow_leak",
+    "title" : "Memory climbs slowly after a deploy",
+    "level" : 2,
+    "topics" : [ "use", "container" ],
+    "toolbox" : true
+  }, {
+    "id" : "noisy_neighbor",
+    "title" : "Noisy neighbour on the host",
+    "level" : 2,
+    "topics" : [ "use", "host" ],
+    "toolbox" : true
+  }, {
+    "id" : "cpu_credits",
+    "title" : "A burstable VM runs out of CPU credits",
+    "level" : 2,
+    "topics" : [ "use", "container", "cpu" ],
+    "toolbox" : false
+  }, {
+    "id" : "hot_code_path",
+    "title" : "A hot code path on every request",
+    "level" : 3,
+    "topics" : [ "profiling", "use", "runtime" ],
+    "toolbox" : true
+  }, {
+    "id" : "packet_loss",
+    "title" : "Packet loss between api and pricing",
+    "level" : 2,
+    "topics" : [ "network", "layers" ],
+    "toolbox" : true
+  }, {
+    "id" : "rtt_amplified",
+    "title" : "A few milliseconds of network, many round trips",
+    "level" : 3,
+    "topics" : [ "network", "layers", "db" ],
+    "toolbox" : true
+  }, {
+    "id" : "no_keepalive",
+    "title" : "Every call to pricing opens a new connection",
+    "level" : 3,
+    "topics" : [ "network", "layers" ],
+    "toolbox" : true
+  }, {
+    "id" : "iops_limit",
+    "title" : "Database I/O slow on an idle disk",
+    "level" : 3,
+    "topics" : [ "disk", "db", "use" ],
+    "toolbox" : true
+  }, {
+    "id" : "gc_pressure",
+    "title" : "Full GC pauses from a large churning heap",
+    "level" : 2,
+    "topics" : [ "jvm", "use", "runtime" ],
+    "toolbox" : true
+  }, {
+    "id" : "vthread_pinning",
+    "title" : "Virtual threads pinned by old synchronized code",
+    "level" : 3,
+    "topics" : [ "jvm", "runtime", "use" ],
+    "toolbox" : true
+  }, {
+    "id" : "sync_logging",
+    "title" : "DEBUG logging turned on for a support case",
+    "level" : 2,
+    "topics" : [ "runtime", "use", "cpu" ],
+    "toolbox" : true
+  } ],
+  "topics" : [ "red", "load", "layers", "use", "container", "runtime", "db", "async", "host", "little", "cpu", "jvm", "disk", "network", "profiling", "capacity" ],
+  "levels" : [ 1, 2, 3 ],
+  "modes" : [ {
+    "id" : "incident",
+    "guide" : "In this lab",
+    "guide_file" : "investigation-guide.md"
+  }, {
+    "id" : "toolbox",
+    "guide" : "The toolbox in this lab > make toolbox and make shell",
+    "guide_file" : "toolbox.md"
+  }, {
+    "id" : "ramp",
+    "guide" : "Capacity from a ramp test > Finding the knee; Capacity from a ramp test > The ramp in this lab",
+    "guide_file" : "capacity.md"
+  }, {
+    "id" : "bench",
+    "guide" : "Closed-loop clients in this lab > What make bench does; Closed-loop clients in this lab > Why the two p99 values differ",
+    "guide_file" : "capacity.md"
+  } ],
+  "quiz" : [ {
+    "file" : "benchmarking.md",
+    "numbers" : 6,
+    "concepts" : 15
+  }, {
+    "file" : "capacity.md",
+    "numbers" : 10,
+    "concepts" : 12
+  }, {
+    "file" : "cpu.md",
+    "numbers" : 6,
+    "concepts" : 21
+  }, {
+    "file" : "disk.md",
+    "numbers" : 15,
+    "concepts" : 12
+  }, {
+    "file" : "foundations.md",
+    "numbers" : 18,
+    "concepts" : 21
+  }, {
+    "file" : "investigation-guide.md",
+    "numbers" : 32,
+    "concepts" : 81
+  }, {
+    "file" : "methods.md",
+    "numbers" : 3,
+    "concepts" : 15
+  }, {
+    "file" : "monitoring.md",
+    "numbers" : 14,
+    "concepts" : 25
+  }, {
+    "file" : "network.md",
+    "numbers" : 11,
+    "concepts" : 10
+  }, {
+    "file" : "profiling.md",
+    "numbers" : 8,
+    "concepts" : 16
+  }, {
+    "file" : "runtime.md",
+    "numbers" : 11,
+    "concepts" : 17
+  }, {
+    "file" : "toolbox.md",
+    "numbers" : 3,
+    "concepts" : 16
+  } ],
+  "scoring" : {
+    "nature_points" : 1.0,
+    "location_points" : 1.0,
+    "signal_points" : 1.0,
+    "cause_points" : 2.0,
+    "partial_cause_points" : 1.0,
+    "hint_penalty" : 0.5,
+    "max_points" : 5.0,
+    "ramp_max_points" : 5.0
+  },
+  "tick_seconds" : 3,
+  "recent_window" : 5,
+  "defaults" : {
+    "base_rps" : 50,
+    "ramp_rates" : [ 50, 75, 100, 125, 150, 200, 250, 300 ],
+    "ramp_step_seconds" : 60,
+    "bench_clients" : 20,
+    "bench_seconds" : 120,
+    "quiz_questions" : 50
+  },
+  "limits" : {
+    "load_multiplier" : {
+      "min" : 0.1,
+      "max" : 6.0
+    },
+    "ramp_step_seconds" : {
+      "min" : 30.0,
+      "max" : 300.0
+    },
+    "bench_clients" : {
+      "min" : 1.0,
+      "max" : 200.0
+    },
+    "bench_seconds" : {
+      "min" : 30.0,
+      "max" : 600.0
+    }
+  },
+  "counts" : {
+    "scenarios" : 45,
+    "toolbox" : 24,
+    "causes" : 41,
+    "signals" : 26,
+    "numbers" : 137,
+    "concepts" : 261
+  }
+}

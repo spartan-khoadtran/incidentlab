@@ -1,9 +1,10 @@
 name: incidentlab
 
 # Shared settings for the JVM services: one image, a different launcher per service.
+# Only control builds it, because parallel builds of one tag fail with "image already exists".
 x-svc: &svc
-  build: ./service
   image: incidentlab-svc:latest
+  pull_policy: never
   restart: unless-stopped
   environment: &svc-env
     TZ: ${TZ:-Asia/Ho_Chi_Minh}
@@ -14,6 +15,17 @@ x-svc: &svc
     KAFKA_BOOTSTRAP: kafka:9092
     TRACE_SAMPLE_RATIO: "1.0"
     LOG_FORMAT: ${LOG_FORMAT:-text}
+
+# Continuous profiling for the services under test. itimer samples CPU time without perf_event
+# access, which Docker's default seccomp profile blocks.
+x-profiled: &profiled-env
+  JAVA_TOOL_OPTIONS: -javaagent:/run/pyroscope.jar
+  PYROSCOPE_SERVER_ADDRESS: http://pyroscope:4040
+  PYROSCOPE_PROFILER_EVENT: itimer
+  PYROSCOPE_PROFILER_LOCK: 10ms
+  PYROSCOPE_PROFILER_ALLOC: 512k
+  PYROSCOPE_FORMAT: jfr
+  PYROSCOPE_UPLOAD_INTERVAL: 10s
 
 services:
   # ------------------------------------------------------------------ the system under test
@@ -39,50 +51,61 @@ services:
     volumes:
       - ./config/envoy.yaml:/etc/envoy/envoy.yaml:ro
     ports:
-      - "8080:8080"
-      - "9901:9901"
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:9901:9901"
     labels:
       com.datadoghq.ad.checks: '{"envoy": {"instances": [{"openmetrics_endpoint": "http://%%host%%:9901/stats/prometheus"}]}}'
 
   api:
     <<: *svc
     environment:
-      <<: *svc-env
+      <<: [*svc-env, *profiled-env]
       SERVICE_LAUNCHER: /run/app/checkout-api/bin/checkout-api
       SERVICE_NAME: api
       PORT: "8000"
       PRICING_URL: http://pricing:8001
       REDIS_HOST: redis
+      PYROSCOPE_APPLICATION_NAME: api
+      # A 256 MB heap cap (-Xmx256m). The profiler agent, JFR, metaspace and threads take about 410 MB outside it.
+      JAVA_OPTS: "-Xms128m -Xmx256m -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+UseSerialGC -Xss512k"
     cpus: "2.0"
-    mem_limit: 512m
-    memswap_limit: 512m
+    mem_limit: 768m
+    memswap_limit: 768m
+    # The verbose-logging exercise writes a few MB of log per second; rotation caps it at 60 MB.
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_started }
     labels:
       com.datadoghq.ad.checks: '{"openmetrics": {"instances": [{"openmetrics_endpoint": "http://%%host%%:8000/metrics", "namespace": "lab", "metrics": [".*"]}]}}'
+    # tc inside the container: the controller shapes api's traffic per destination (netem).
+    cap_add: [NET_ADMIN]
 
   pricing:
     <<: *svc
     environment:
-      <<: *svc-env
+      <<: [*svc-env, *profiled-env]
       SERVICE_LAUNCHER: /run/app/pricing-api/bin/pricing-api
       SERVICE_NAME: pricing
       PORT: "8001"
+      PYROSCOPE_APPLICATION_NAME: pricing
     cpus: "2.0"
-    mem_limit: 256m
-    memswap_limit: 256m
+    mem_limit: 384m
+    memswap_limit: 384m
     labels:
       com.datadoghq.ad.checks: '{"openmetrics": {"instances": [{"openmetrics_endpoint": "http://%%host%%:8001/metrics", "namespace": "lab", "metrics": [".*"]}]}}'
 
   worker:
     <<: *svc
     environment:
-      <<: *svc-env
+      <<: [*svc-env, *profiled-env]
       SERVICE_LAUNCHER: /run/app/orders-worker/bin/orders-worker
       SERVICE_NAME: worker
       PORT: "8002"
       KAFKA_PARTITIONS: "3"
+      PYROSCOPE_APPLICATION_NAME: worker
     cpus: "1.0"
     mem_limit: 512m
     memswap_limit: 512m
@@ -106,6 +129,13 @@ services:
       - pg_stat_statements.track=all
       - -c
       - max_connections=200
+      # Room for the 128 MB review_stats table that pgobserver's stats writer rewrites.
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - track_io_timing=on
+      - -c
+      - track_wal_io_timing=on
     volumes:
       - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - pgdata:/var/lib/postgresql/data
@@ -166,23 +196,38 @@ services:
       SERVICE_LAUNCHER: /run/app/noisy/bin/noisy
       SERVICE_NAME: noisy
       PORT: "8005"
+    # Same disk as pgdata: every named volume lives under the Docker data root.
+    volumes:
+      - noisyio:/data
 
   # Lab controller: applies the faults of the current exercise. `make new/hint/answer` run inside it.
   control:
     <<: *svc
+    build: ./service
     command: ["/run/app/labctl/bin/labctl", "daemon"]
     mem_limit: 256m
     memswap_limit: 256m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "2" }
     environment:
       <<: *svc-env
       SERVICE_NAME: control
-      COMPOSE_PROJECT: incidentlab
       GRAFANA_URL: http://grafana:3000
       PROMETHEUS_URL: http://prometheus:9090
       LAB_STATE: /state/state.json
+      CGROUP_ROOT: /host/cgroup
+      HOST_VOLUMES: /host/volumes
+      HOST_SYS: /host/sys
+      LAB_API_PORT: "8090"
+    # Privileged with the host cgroup tree: the disk IOPS exercise writes postgres's io.max, which the Docker API cannot change.
+    privileged: true
     volumes:
       - labstate:/state
       - /var/run/docker.sock:/var/run/docker.sock
+      - /sys/fs/cgroup:/host/cgroup:rw
+      - /var/lib/docker/volumes:/host/volumes:ro
+      - /sys:/host/sys:ro
 
   # ------------------------------------------------------------------ observability
   prometheus:
@@ -198,7 +243,7 @@ services:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - promdata:/prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
 
   grafana:
     image: grafana/grafana:11.6.0
@@ -215,7 +260,7 @@ services:
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
 
   # Traces. Read them in Grafana (Explore or Drilldown > Traces); there is no separate UI.
   tempo:
@@ -225,6 +270,21 @@ services:
     volumes:
       - ./config/tempo.yaml:/etc/tempo.yaml:ro
       - tempodata:/var/tempo
+
+  # Continuous profiles from api, pricing and worker. Read them in Grafana (Explore > Pyroscope) or at :4040.
+  pyroscope:
+    image: grafana/pyroscope:1.21.1
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/pyroscope/config.yaml
+      - -usage-stats.enabled=false
+      - -self-profiling.disable-push=true
+      - -compactor.blocks-retention-period=24h
+    volumes:
+      - pyroscopedata:/data
+    mem_limit: 768m
+    ports:
+      - "127.0.0.1:4040:4040"
 
   node-exporter:
     image: prom/node-exporter:v1.9.1
@@ -237,6 +297,36 @@ services:
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
+
+  # Shell on the Docker VM for the CLI-only exercises: `make shell`. It sees every process and cgroup. It is root on the VM with full Docker API access (a :ro bind does not limit a socket).
+  toolbox:
+    build: ./config/toolbox
+    image: incidentlab-toolbox:latest
+    restart: unless-stopped
+    pid: host
+    cgroup: host
+    privileged: true
+    mem_limit: 512m
+    memswap_limit: 512m
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # The handbook: the guide, the catalog and every command, built from this repo. `make site` opens it.
+  site:
+    build:
+      context: .
+      dockerfile: site/Dockerfile
+    image: incidentlab-site:latest
+    restart: unless-stopped
+    mem_limit: 64m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "2" }
+    ports:
+      - "127.0.0.1:4000:80"
 
   # ------------------------------------------------------------------ optional: Datadog (make up-datadog)
   datadog-agent:
@@ -263,4 +353,6 @@ volumes:
   pgdata:
   promdata:
   tempodata:
+  pyroscopedata:
   labstate:
+  noisyio:

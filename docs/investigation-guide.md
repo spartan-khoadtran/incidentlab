@@ -12,7 +12,6 @@ RED and USE are two checklists that complete each other. RED asks whether the se
 | Point of view | The workload, seen from the caller | The resource, seen from inside |
 | Three metrics | Rate, Errors, Duration | Utilization, Saturation, Errors |
 | Answers | Is there a problem? In which service? Is it load or architecture? | Why is it slow? Which resource is the bottleneck? |
-| Proposed by | Tom Wilkie | Brendan Gregg |
 | Blind spot | Does not name the resource. Does not see errors that happen before the request reaches the service | Does not say whether users are affected. A busy resource is not always a problem |
 
 Three ideas run through this guide:
@@ -335,7 +334,7 @@ When the rate goes up, answer four questions: who causes the load (client, tenan
 
 | Set | Metrics | Relation to RED and USE |
 |---|---|---|
-| Four golden signals (Google SRE) | Latency, traffic, errors, saturation | RED plus the service's saturation. Handy when you want one set per service |
+| Four golden signals | Latency, traffic, errors, saturation | RED plus the service's saturation. Handy when you want one set per service |
 | Core Web Vitals | LCP, INP, CLS | Duration at the client layer, measured as the user experiences a web page |
 | SLI and SLO | The share of "good" requests, for example no error and under 300 ms | Turns R, E and D into a commitment. Error budgets and burn-rate alerts are built on RED |
 
@@ -377,17 +376,23 @@ Where each layer of this guide lives in the dashboards:
 | Client | loadgen. Dashboard `01 · RED by layer`, row 1. User requests by outcome, error rate, latency, requests by tenant, attempts vs user requests, p99 by endpoint |
 | Load balancer | Envoy. Dashboard 01, row 2. 5xx at the LB against 5xx api records itself, LB p99 against api p99, healthy backends |
 | Service (entry span) | api. Dashboard 01, row 3. Rate by route and status, error rate by route, p99 by route, the Little's Law panel, success vs error p99 |
-| Downstream, seen from the app | Dashboard 01, row 4. DB session p99 (pool wait plus hold), queries/s, mean query time from the app, calls to pricing p99 and outcomes, cache hit ratio |
+| Downstream, seen from the app | Dashboard 01, row 4. DB session p99 (pool wait plus hold), queries/s, mean query time from the app, calls to pricing p99 and outcomes, cache hit ratio, new TCP connections against calls to pricing |
 | Downstream, seen by itself | Dashboard 01, row 5. pricing's own rate and p99; Postgres queries/s and mean exec time, counted by Postgres |
 | Async | Dashboard 01, row 6. Produce/s and consume/s, processing time, end-to-end p99, lag and retries by partition |
-| Software resources | Dashboard `02 · USE by layer`, row 1. DB pool in use, max and waiting, acquire wait p99, pool timeouts, admission waiting and wait p99 |
-| Runtime | Dashboard 02, row 2. Event loop lag p99, process CPU in cores, RSS, restarts |
+| Software resources | Dashboard `02 · USE by layer`, row 1. DB pool in use, max and waiting, acquire wait p99, pool timeouts, admission waiting and wait p99, inventory lock wait p99, threads waiting and utilization |
+| Runtime | Dashboard 02, row 2. Event loop lag p99, process CPU in cores, RSS, restarts, CPU user against system |
 | Container, cgroup | Dashboard 02, row 3. CPU usage against the limit, share of throttled periods, memory against the limit, PSI, OOM kills |
 | Host | Dashboard 02, row 4. CPU by mode, load against the CPU count, PSI, memory available, steal time |
-| Postgres | Dashboard 02, row 5. Connections by state against max, backends waiting on a lock, exec seconds per second |
+| Postgres | Dashboard 02, row 5. Connections by state against max, backends waiting on a lock, exec seconds per second, wait events by type, mean WAL sync time, checkpoints |
 | Kafka consumer | Dashboard 02, row 6. Lag in seconds by partition, messages in worker memory, processing errors |
+| Network | Dashboard 02, row 7. TCP retransmits, RTO timeouts and loss probes, connections opened, TIME_WAIT and established sockets, per service. `docs/network.md` explains it |
+| Disk | Dashboard 02, row 8. IOPS, throughput, await, busy share and queue per host disk. `docs/disk.md` explains it |
+| JVM | Dashboard 02, row 9. Heap by pool, GC pause p99 and heatmap, GC runs by cause, allocation rate, live data after GC, pinned virtual threads. `docs/runtime.md` explains them |
+| Profiles | Dashboard 02, row 10, CPU flame graphs of api and pricing. Grafana Explore > Pyroscope, or http://localhost:4040, for every profile type. `docs/profiling.md` explains it |
 | Traces | Grafana, Explore > Tempo. A dot on a latency panel is an exemplar: click it to open one real request |
 | Change events | The orange lines are annotations. Some are real deploys, some are decoys, and a ticket that says "nobody deployed" can be wrong |
+
+PSI needs a kernel that has it turned on. The OrbStack kernel has it off, so the PSI panels read 0 there. Run `kernel-check` in `make shell` to see what your VM kernel supports.
 
 Two habits the lab rewards:
 
@@ -496,10 +501,3 @@ Linking the two:
 - The latency gap between two adjacent layers is where the time is lost.
 - Rate flat, duration up: architecture. Rate and duration up together: maybe load, but check retries first.
 - RED finds the place, USE finds the resource, the other methods find the reason.
-
-## References
-
-- Brendan Gregg, The USE Method, and USE Method: Linux Performance Checklist.
-- Grafana Labs, The RED Method: How to Instrument Your Services, based on Tom Wilkie's talk. The talk makes clear that RED and USE are two views that complete each other.
-- Google SRE Book, Monitoring Distributed Systems: the four golden signals.
-- Datadog Docs, Trace Metrics.

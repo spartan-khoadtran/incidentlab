@@ -5,49 +5,89 @@ import com.c0x12c.logging.info
 import com.c0x12c.logging.warn
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import java.time.Duration
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import kotlin.system.exitProcess
 
 /**
- * Keeps every service in the desired fault state. Every tick it recomputes the desired overrides
- * from the state file and PUTs them to each service, so the state file is the whole truth and a
- * hand-made PUT lasts one tick. A service that is restarting is simply tried again next tick.
+ * Keeps the lab in the desired fault state. Every tick it recomputes the desired state from the
+ * state file and hands it to each applier, so the state file is the whole truth and a hand-made
+ * change lasts one tick. A service that is restarting is simply tried again next tick. Each
+ * applier and the [cleanup] of queued Grafana marks run on their own thread at that pace, so a
+ * hung Docker engine or Grafana never delays the service faults. Appliers found later join with [add].
  */
 class ControlDaemon(
   private val store: StateStore,
-  private val http: JsonHttp,
-  private val docker: DockerControl?,
-  private val interval: Duration = Duration.ofSeconds(3)
+  appliers: List<Applier>,
+  private val capabilities: CapabilitiesFile? = null,
+  private val interval: Duration = TICK,
+  private val cleanup: AnnotationCleanup? = null,
+  private val onFatal: (Throwable) -> Unit = { exitProcess(1) }
 ) : Logging {
 
+  private val appliers = CopyOnWriteArrayList(appliers)
+  private val stopped = CountDownLatch(1)
+
+  @Volatile
+  private var running = false
+
+  /** Tells the CLI and the API which container settings this daemon applies, so they never start an exercise it cannot run. */
+  fun publishCapabilities() {
+    val keys = appliers.flatMap { it.dockerKeys }.toSet()
+    capabilities?.write(keys)
+    info { "container settings applied: ${keys.sorted().joinToString().ifEmpty { "none" }}" }
+  }
+
+  /** Appliers found after the start, such as the container appliers once Docker answers. */
+  @Synchronized
+  fun add(more: List<Applier>) {
+    appliers += more
+    publishCapabilities()
+    if (running) more.forEach(::launch)
+  }
+
+  /** Starts every loop and blocks until one of them hits an error the daemon cannot recover from. */
   fun run() {
     info { "lab controller started" }
-    if (docker == null) {
-      info { "docker socket not found: CPU-limit exercises are disabled" }
+    synchronized(this) {
+      running = true
+      cleanup?.let { pass -> loop("annotation-cleanup") { pass.runOnce() } }
+      appliers.forEach(::launch)
     }
-    while (!Thread.currentThread().isInterrupted) {
+    stopped.await()
+  }
+
+  private fun launch(applier: Applier) {
+    loop(applier::class.simpleName ?: "applier") { applier.apply(DesiredState.of(store.load())) }
+  }
+
+  private fun loop(name: String, step: () -> Unit) {
+    Thread.ofVirtual().name(name).start {
       try {
-        applyOnce()
-      } catch (e: Exception) {
-        warn { "control: ${e.message}" }
+        while (!Thread.currentThread().isInterrupted) {
+          try {
+            step()
+          } catch (e: Exception) {
+            warn { "$name: ${e.message}" }
+          }
+          Thread.sleep(interval.toMillis())
+        }
+      } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+      } catch (e: Throwable) {
+        warn(e) { "$name stopped: the controller exits so compose restarts it" }
+        stopped.countDown()
+        onFatal(e)
       }
-      Thread.sleep(interval.toMillis())
     }
   }
 
   fun applyOnce() {
     val desired = DesiredState.of(store.load())
-    for ((service, overrides) in desired.faults) {
-      val url = Services.ENDPOINTS[service] ?: continue
-      runCatching { http.put("$url/admin/faults", overrides) }
-    }
-    if (docker != null) {
-      for ((container, settings) in desired.docker) {
-        val cpus = (settings["cpus"] as? Number)?.toDouble() ?: continue
-        try {
-          docker.ensureCpus(container, cpus)
-        } catch (e: Exception) {
-          warn { "docker: ${e.message}" }
-        }
-      }
-    }
+    appliers.forEach { it.apply(desired) }
+  }
+
+  companion object {
+    val TICK: Duration = Duration.ofSeconds(3)
   }
 }

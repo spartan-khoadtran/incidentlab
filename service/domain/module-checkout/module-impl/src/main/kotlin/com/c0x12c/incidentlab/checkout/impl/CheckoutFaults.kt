@@ -18,6 +18,15 @@ object CheckoutFaults {
   const val EXTRA_EVENTS_RPS = "extra_events_rps"
   const val POISON_NONCE = "poison_nonce"
   const val PRICING_TIMEOUT_S = "pricing_timeout_s"
+  const val LOCK_MS = "lock_ms"
+  const val PRICE_FALLBACK = "price_fallback"
+  const val RENDER_MS = "render_ms"
+  const val PRICING_KEEPALIVE = "pricing_keepalive"
+  const val RETAIN_MB = "retain_mb"
+  const val CHURN_KB = "churn_kb"
+  const val PIN_DB = "pin_db"
+  const val PIN_HOLD_MS = "pin_hold_ms"
+  const val DEBUG_LOG_LINES = "debug_log_lines"
 
   val DEFAULTS: Map<String, Any?> = mapOf(
     // max concurrent requests the app accepts; the rest wait before the handler starts timing
@@ -46,6 +55,24 @@ object CheckoutFaults {
     EXTRA_EVENTS_RPS to 0,
     // produce one malformed event when this changes
     POISON_NONCE to null,
-    PRICING_TIMEOUT_S to 2.0
+    PRICING_TIMEOUT_S to 2.0,
+    // mean time every checkout holds the one inventory lock (exponential), outside any DB session and pricing call
+    LOCK_MS to 0,
+    // a failed pricing call is priced from the list prices and still answers 200
+    PRICE_FALLBACK to false,
+    // CPU work per request on the request's own thread: the receipt renderer
+    RENDER_MS to 0,
+    // false: no connection reuse towards pricing; every call opens a TCP connection and closes it after the response
+    PRICING_KEEPALIVE to true,
+    // live data the GC-pressure store keeps on the heap
+    RETAIN_MB to 0,
+    // new objects per request written over random old ones in that store
+    CHURN_KB to 0,
+    // checkout DB work inside synchronized, which pins a virtual thread to its carrier
+    PIN_DB to false,
+    // blocking cache put inside that synchronized block
+    PIN_HOLD_MS to 0,
+    // DEBUG lines per request that reach the console
+    DEBUG_LOG_LINES to 0
   )
 }

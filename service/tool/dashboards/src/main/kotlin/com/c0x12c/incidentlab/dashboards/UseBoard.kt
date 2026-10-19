@@ -4,6 +4,7 @@ import com.c0x12c.incidentlab.dashboards.Board.Companion.quantile
 
 object UseBoard {
 
+  private const val JVM_SERVICES = "job=~\"api|pricing|worker\""
   private const val SERVICES = "job=~\"api|pricing|worker|loadgen|pgobserver\""
 
   fun build(): Board {
@@ -31,6 +32,19 @@ object UseBoard {
     )
     b.stat("Admission limit", "app_admission_limit{job=\"api\"}", width = 4)
     b.timeseries("Admission wait p99", listOf(quantile(0.99, "app_admission_wait_seconds", selector = "{job=\"api\"}") to "wait p99"), "s", width = 10)
+    b.timeseries(
+      "Inventory lock: wait p99",
+      listOf(quantile(0.99, "app_lock_wait_seconds", selector = "{job=\"api\"}") to "lock wait p99"),
+      "s",
+      "Time a checkout waits for api's one inventory lock. Off-CPU time: the thread uses no CPU while it waits."
+    )
+    b.timeseries("Inventory lock: threads waiting (saturation)", listOf("app_lock_waiting{job=\"api\"}" to "waiting"), "short")
+    b.timeseries(
+      "Inventory lock: utilization",
+      listOf("100 * rate(app_lock_held_seconds_total{job=\"api\"}[RI])" to "held %"),
+      "percent",
+      "Share of time the lock is held. By M/M/1 the mean wait is utilization / (1 - utilization) times the hold time."
+    )
 
     b.row("Runtime (process)")
     b.timeseries(
@@ -47,6 +61,12 @@ object UseBoard {
     )
     b.timeseries("Memory (RSS)", listOf("process_resident_memory_bytes{$SERVICES}" to "{{job}}"), "bytes")
     b.timeseries("Restarts in 10 minutes", listOf("changes(process_start_time_seconds{job=~\"api|pricing|worker|loadgen\"}[10m])" to "{{job}}"), "short")
+    b.timeseries(
+      "CPU user against system (cores)",
+      listOf("sum by (job, mode) (rate(cgroup_cpu_mode_seconds_total{$JVM_SERVICES}[RI]))" to "{{job}} {{mode}}"),
+      "short",
+      "From the container's cpu.stat. System time is the kernel working for the process: syscalls such as writes to a socket, a pipe or a file."
+    )
 
     b.row("Container (cgroup)")
     b.timeseries("CPU usage per container (cores)", listOf("rate(cgroup_cpu_usage_seconds_total[RI])" to "{{job}}"), "short")
@@ -99,11 +119,158 @@ object UseBoard {
       "short",
       "By Little's Law, this is the mean number of queries running inside Postgres."
     )
+    b.timeseries(
+      "Wait events (mean backends waiting)",
+      listOf("pg_wait_events > 0" to "{{type}} / {{event}}"),
+      "short",
+      "Sampled every 100 ms from pg_stat_activity. IO / WALSync: waiting for a WAL fsync (a commit or the WAL writer). IO / DataFileSync: mostly the checkpointer flushing table files.",
+      stack = true
+    )
+    b.timeseries(
+      "Mean WAL sync time",
+      listOf("rate(pg_wal_sync_seconds_total[RI]) / rate(pg_wal_syncs_total[RI])" to "per WAL fsync"),
+      "s",
+      "Every commit waits for one of these. It grows when the disk under the WAL is busy."
+    )
+    b.timeseries(
+      "WAL written per second",
+      listOf("rate(pg_wal_bytes_total[RI])" to "WAL bytes/s"),
+      "Bps",
+      "The first change to a page after a checkpoint writes an image of the whole page to WAL, so WAL jumps right after each checkpoint."
+    )
+    b.timeseries(
+      "Checkpoints in the last minute, by kind",
+      listOf("increase(pg_checkpoints_total[1m])" to "{{kind}}"),
+      "short",
+      "timed: checkpoint_timeout fired. requested: WAL reached max_wal_size (or someone ran CHECKPOINT)."
+    )
+    b.timeseries(
+      "Checkpoint write and sync (seconds per second)",
+      listOf("rate(pg_checkpoint_write_seconds_total[1m])" to "write", "rate(pg_checkpoint_sync_seconds_total[1m])" to "sync"),
+      "short",
+      "Both counters move once per checkpoint, when it ends. Write time includes the pauses that spread a checkpoint out, so a long write is healthy. Sync time is the burst of flushes at the end."
+    )
 
     b.row("Kafka consumer (worker)")
     b.timeseries("Lag (seconds) by partition", listOf("kafka_consumer_lag_seconds" to "p{{partition}}"), "s")
     b.timeseries("Messages waiting in worker memory", listOf("kafka_partition_queue" to "p{{partition}}"), "short")
     b.timeseries("Processing errors/s", listOf("sum by (source) (rate(kafka_consumed_total{outcome=\"error\"}[RI])) or vector(0)" to "{{source}}"), "short")
+
+    b.row("Network (per service)")
+    b.timeseries(
+      "TCP segments retransmitted/s",
+      listOf("rate(net_tcp_retrans_segs_total{$SERVICES}[RI])" to "{{job}}"),
+      "short",
+      "Counted by the kernel in each container's own network namespace. Near 0 on a healthy network."
+    )
+    b.timeseries(
+      "RTO timeouts and tail loss probes/s",
+      listOf("rate(net_tcp_timeouts_total{$SERVICES}[RI])" to "{{job}} RTO", "rate(net_tcp_loss_probes_total{$SERVICES}[RI])" to "{{job}} probe"),
+      "short",
+      "Each one is a sender that waited for a lost segment. On Linux an RTO waits at least 200 ms."
+    )
+    b.timeseries("TCP connections opened/s (active opens)", listOf("rate(net_tcp_active_opens_total{$SERVICES}[RI])" to "{{job}}"), "short")
+    b.timeseries(
+      "Sockets in TIME_WAIT",
+      listOf("net_tcp_time_wait{$SERVICES}" to "{{job}}"),
+      "short",
+      "The side that closes first keeps the socket for 60 s. About closes per second x 60."
+    )
+    b.timeseries("TCP connections established", listOf("net_tcp_current_established{$SERVICES}" to "{{job}}"), "short")
+    b.row("Disk (host, node-exporter)")
+    b.timeseries(
+      "IOPS by device",
+      listOf("rate(node_disk_writes_completed_total[RI])" to "{{device}} writes", "rate(node_disk_reads_completed_total[RI])" to "{{device}} reads"),
+      "short",
+      "Completed I/Os per second as the host sees each disk. A cgroup IOPS limit holds I/O back before it reaches this count."
+    )
+    b.timeseries(
+      "Throughput by device",
+      listOf("rate(node_disk_written_bytes_total[RI])" to "{{device}} written", "rate(node_disk_read_bytes_total[RI])" to "{{device}} read"),
+      "Bps"
+    )
+    b.timeseries(
+      "Await (mean time per I/O)",
+      listOf(
+        "rate(node_disk_write_time_seconds_total[RI]) / rate(node_disk_writes_completed_total[RI])" to "{{device}} write",
+        "rate(node_disk_read_time_seconds_total[RI]) / rate(node_disk_reads_completed_total[RI])" to "{{device}} read"
+      ),
+      "s",
+      "Queue time in the device plus service time, like iostat's w_await and r_await."
+    )
+    b.timeseries(
+      "Busy share (utilization)",
+      listOf("100 * rate(node_disk_io_time_seconds_total[RI])" to "{{device}}"),
+      "percent",
+      "Share of time with at least one I/O in flight, like iostat's %util. A disk that serves I/Os in parallel can take more work at 100%."
+    )
+    b.timeseries(
+      "Queue (mean I/Os in flight)",
+      listOf("rate(node_disk_io_time_weighted_seconds_total[RI])" to "{{device}}"),
+      "short",
+      "Saturation, like iostat's aqu-sz. By Little's Law it is IOPS times await."
+    )
+    b.row("JVM (heap, GC, virtual threads)")
+    b.timeseries(
+      "api heap by pool against the old gen max",
+      listOf("jvm_memory_used_bytes{job=\"api\",area=\"heap\"}" to "{{id}}", "jvm_memory_max_bytes{job=\"api\",id=\"Tenured Gen\"}" to "Tenured Gen max"),
+      "bytes",
+      "Serial collector pools: Eden Space and Survivor Space are the young generation, Tenured Gen the old one. Old gen usage grows between full GCs."
+    )
+    b.timeseries(
+      "GC pause p99",
+      listOf(quantile(0.99, "jvm_gc_pause_seconds", "job", "{$JVM_SERVICES}") to "{{job}}"),
+      "s",
+      "Every pause stops all application threads. A request in flight during a pause waits for it."
+    )
+    b.heatmap(
+      "api GC pauses (pauses per bucket)",
+      "jvm_gc_pause_seconds",
+      "{job=\"api\"}",
+      description = "One cell per pause-length bucket and interval. A full GC shows as a cell far above the young GC band."
+    )
+    b.timeseries(
+      "GC runs per second by collector and cause",
+      listOf("sum by (job, gc, cause) (rate(jvm_gc_pause_seconds_count{$JVM_SERVICES}[RI]))" to "{{job}} {{gc}} {{cause}}"),
+      "short",
+      "Copy is the young collector, MarkSweepCompact the full one."
+    )
+    b.timeseries(
+      "Allocation rate",
+      listOf("rate(jvm_gc_memory_allocated_bytes_total{$JVM_SERVICES}[RI])" to "{{job}}"),
+      "Bps",
+      "Bytes allocated in the young generation per second, counted at each GC."
+    )
+    b.timeseries(
+      "Live data after full GC against the old gen max",
+      listOf(
+        "jvm_gc_live_data_size_bytes{$JVM_SERVICES}" to "{{job}} live after GC",
+        "jvm_memory_max_bytes{$JVM_SERVICES,id=\"Tenured Gen\"}" to "{{job}} old gen max"
+      ),
+      "bytes",
+      "What a full GC could not free. Close to the max: each GC frees little, so the next one comes soon."
+    )
+    b.timeseries(
+      "Pinned virtual threads per second",
+      listOf("rate(jvm_virtual_thread_pinned_total{$JVM_SERVICES}[RI])" to "{{job}}"),
+      "short",
+      "JFR jdk.VirtualThreadPinned events above 1 ms: a virtual thread blocked while it could not leave its carrier thread."
+    )
+    b.timeseries(
+      "Time pinned per second (carriers blocked)",
+      listOf("rate(jvm_virtual_thread_pinned_seconds_total{$JVM_SERVICES}[RI])" to "{{job}}"),
+      "short",
+      "Seconds of pinned blocking per second, about the number of carriers blocked at once. api has 2 carriers, one per core."
+    )
+    b.row("CPU profiles (Pyroscope)")
+    b.flamegraph(
+      "api: where the CPU goes",
+      "{service_name=\"api\"}",
+      Board.CPU_PROFILE,
+      "Summed over the time range. Width is a share of CPU samples, and the x-axis is not time. Narrow the range to the incident, and compare with a range before it.",
+      width = 12
+    )
+    b.flamegraph("pricing: where the CPU goes", "{service_name=\"pricing\"}", Board.CPU_PROFILE, width = 12)
     return b
   }
 }

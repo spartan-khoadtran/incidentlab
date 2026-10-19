@@ -1,6 +1,7 @@
 package com.c0x12c.incidentlab.labctl.quiz
 
 import com.c0x12c.incidentlab.labctl.Terminal
+import com.c0x12c.incidentlab.labctl.guide.GuideIndex
 import java.math.BigDecimal
 import java.math.MathContext
 import kotlin.math.abs
@@ -21,7 +22,7 @@ object Quiz {
       } ?: return inputClosed(terminal, score)
       if (correct) score += 1
       terminal.out("  ${drill.explanation}")
-      terminal.out("  Read again in $GUIDE: ${drill.doc}")
+      terminal.out("  Read again in ${GuideIndex.where(drill.doc)}")
     }
     terminal.out()
     terminal.out("Result: $score/${drills.size}")
@@ -105,5 +106,4 @@ object Quiz {
 
   private const val EPSILON = 1e-9
   private const val SIGNIFICANT_DIGITS = 4
-  const val GUIDE = "docs/investigation-guide.md"
 }

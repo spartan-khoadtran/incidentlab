@@ -1,0 +1,45 @@
+#!/bin/sh
+cat <<'TEXT'
+incidentlab toolbox: the Docker VM from the inside (host PID namespace, privileged, cgroups read-only).
+Run `kernel-check` first: it says which kernel tools work on this VM.
+
+The 60-second checklist (Ctrl-C stops the ones that repeat)
+  uptime                 load average over 1, 5, 15 min
+  dmesg -T | tail        kernel errors: OOM kills, dropped packets
+  vmstat 1               r against nproc, si/so, us sy id wa st
+  mpstat -P ALL 1        one CPU busy while the others idle?
+  pidstat 1              %CPU per process
+  iostat -xz 1           r_await, w_await, aqu-sz, %util per disk
+  free -m                available (not free)
+  sar -n DEV 1           rxkB/s, txkB/s per interface
+  sar -n TCP,ETCP 1      active/s, passive/s, retrans/s
+  top                    press 1 for every CPU, H for threads, q to quit
+
+Find a service's process (from the docker socket: pgrep also matches other projects on this VM)
+  pid api        pid pricing      pid worker      pid noisy      pid postgres
+  cid api        the container id, for the docker socket: curl -s --unix-socket /var/run/docker.sock http://localhost/containers/$(cid api)/json
+  containers     every container with its PID and cgroup
+
+Read a container's cgroup
+  C=$(cg $(pid api))
+  cat $C/cpu.max $C/memory.max           the limits
+  cat $C/cpu.stat                        nr_periods, nr_throttled, throttled_usec
+  cat $C/memory.current $C/memory.events usage now, oom_kill
+  cat $C/cpu.pressure                    time spent waiting for a CPU (PSI)
+
+Enter a container's network namespace (the tools stay the toolbox's)
+  nsenter -t $(pid api) -n ss -tn
+  nsenter -t $(pid api) -n sar -n TCP,ETCP 1
+  nsenter -t 1 -n sar -n DEV 1           the VM's own interfaces
+
+Ask the services
+  psql                                   same as PGPASSWORD=lab psql -h postgres -U lab lab
+  curl -s http://api:8000/metrics | grep ^db_pool
+  curl -s http://worker:8002/metrics | grep ^kafka_consumer_lag
+
+Kernel tools: they need BPF, perf events and tracefs from the VM kernel. They may fail on Docker Desktop.
+  bpftrace -e 'profile:hz:99 { @[comm] = count(); } interval:s:10 { exit(); }'
+  perf top -e cpu-clock
+
+`toolbox-help` prints this again. docs/toolbox.md explains every command.
+TEXT
