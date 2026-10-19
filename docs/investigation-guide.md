@@ -177,7 +177,7 @@ Read the layers top to bottom. Each one is a measuring point that sits inside th
 
 ### Tail amplification
 
-A request that calls N downstream services in parallel must wait for the slowest one. So the tail latency of the lower layer is amplified at the upper layer. Let p be the share of fast calls. With N calls, the share of upstream requests that hit at least one slow call is 1 minus p^N. Take 20 parallel calls, each above its p99 1% of the time. Then about 18% of upstream requests hit a slow call. So with a large fan-out, watch p99.9 at the lower layer, not only p99 or p50. Why: take 20 calls again. For the upstream p99 to stay fast, each call must be fast 99.95% of the time (0.9995^20 is about 0.99). So the upstream p99 depends on the lower layer's p99.95. p99.9 is the closest percentile most dashboards have.
+A request that calls N downstream services in parallel must wait for the slowest one. So the tail latency of the lower layer is amplified at the upper layer. Let p be the share of fast calls. With N calls, 1 minus p^N of upstream requests hit at least one slow call. Take 20 parallel calls, each above its p99 1% of the time. Then about 18% of upstream requests hit a slow call. So with a large fan-out, watch p99.9 at the lower layer, not only p99 or p50. Why: take 20 calls again. For the upstream p99 to stay fast, each call must be fast 99.95% of the time. 0.9995^20 is about 0.99. So the upstream p99 depends on the lower layer's p99.95. p99.9 is the closest percentile most dashboards have.
 
 ### Compare two adjacent layers
 
@@ -197,8 +197,8 @@ A request that calls N downstream services in parallel must wait for the slowest
 - RED for a consumer: messages consumed per second, failed messages or messages sent to a DLQ, processing time per message.
 - What users care about is end to end: from the moment the event is created until it is processed. That is the time in the queue plus the processing time.
 - Time in the queue shows as consumer lag, which is the saturation of the consumer group. Processing time can stay flat while lag grows, because the produce rate is above the consume rate.
-- Read lag in seconds, not in messages. A message count means nothing without the rate: 10k messages is 100 seconds behind at 100 msg/s, but 1 second at 10k msg/s. Users and SLAs think in time, for example an order must show up within 30 s. A lag in seconds compares directly with that deadline. An alert in seconds also stays right when traffic grows. An alert at 10k messages does not.
-- How to measure it: take the age of the oldest message not processed yet, which is now minus its timestamp. If you only have the message count, divide it by the produce rate. The backlog is what arrived since the oldest message. Dividing by the consume rate gives another number: how long a new message waits before the consumer reaches it. The two match only when both rates are equal. When the consumer is stuck, the consume rate is 0 and that division breaks. The age still works then. In this lab, `kafka_consumer_lag_seconds` is that age, per partition.
+- Read lag in seconds, not in messages. A message count means nothing without the rate. 10k messages is 100 seconds of traffic at 100 msg/s. At 10k msg/s, it is 1 second. Users and SLAs think in time, for example an order must show up within 30 s. A lag in seconds compares directly with that deadline. An alert in seconds also stays right when traffic grows. An alert at 10k messages does not.
+- How to measure it: take the age of the oldest message not processed yet, which is now minus its timestamp. If you only have the message count, divide it by the produce rate. The backlog is what arrived since the oldest message. Dividing by the consume rate gives another number. It is how long a new message waits before the consumer reaches it. The two match only when both rates are equal. Both divisions use the rate of now for a backlog built in the past. They break when that rate falls to 0: a stuck consumer, or producers that go quiet. The age still works then. In this lab, `kafka_consumer_lag_seconds` is that age, per partition.
 - A poison message that is retried for ever blocks its whole partition. Errors stay low, because it is one message failing again and again. The lag of that partition grows in a straight line: new messages keep coming at a steady rate, and none leave.
 
 ## USE at many layers
@@ -264,7 +264,7 @@ Three common uses:
 
 - Check whether a pool is big enough. A service gets 200 rps with a mean duration of 50 ms. So on average 10 requests are in progress at once. A thread pool of 8 is certainly saturated. 8 threads at 50 ms each finish at most 160 requests per second. 200 arrive, so the queue grows by 40 every second until requests time out.
 - See how a slow downstream drags the upstream along. 400 queries/s, query latency goes from 5 ms to 50 ms: the connections in use at once go from 2 to 20. A pool of 10 is full, requests wait, and API latency rises further.
-- Turn consumer lag into time. Lag in time is about lag in messages divided by the rate. In steady state, the produce rate and the consume rate are the same.
+- Turn consumer lag into time. λ is the arrival rate, so divide the lag in messages by the produce rate. In steady state, the consume rate is the same.
 
 Little's Law uses averages for a system in steady state. Good enough for capacity estimates, not for tail latency. It says how many requests are inside on average. It does not say how the time is spread between them, so it cannot give a p99.
 

@@ -398,7 +398,7 @@ internal object InvestigationConcepts {
         "p99 is enough at every layer",
         "The mean: fan-out averages the tail out"
       ),
-      explanation = "The upstream waits for the slowest call. The share that hits a slow call is 1 − p^N. Take 20 calls. For the upstream p99 to stay fast, each call must be fast 99.95% of the time. p99.9 is the closest percentile most dashboards have.",
+      explanation = "The upstream waits for the slowest call. Let p be the share of fast calls. With N calls, 1 − p^N of upstream requests hit a slow one. Take 20 calls. For the upstream p99 to stay fast, each call must be fast 99.95% of the time. p99.9 is the closest percentile most dashboards have.",
       doc = "RED at many layers > Tail amplification"
     ),
     ChoiceQuestion(
@@ -458,7 +458,7 @@ internal object InvestigationConcepts {
     ),
     ChoiceQuestion(
       text = "Why is lag in seconds easier to read than lag in messages?",
-      answer = "10k messages is 100 s at 100 msg/s but 1 s at 10k msg/s; seconds compare directly with the users' deadline",
+      answer = "10k messages is 100 s of traffic at 100 msg/s but 1 s at 10k msg/s, and seconds compare directly with the users' deadline",
       others = listOf(
         "Kafka only reports lag in seconds",
         "Messages are harder to count",
