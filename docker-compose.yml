@@ -205,14 +205,16 @@ services:
     <<: *svc
     build: ./service
     command: ["/run/app/labctl/bin/labctl", "daemon"]
-    mem_limit: 256m
-    memswap_limit: 256m
+    # Each `make` command is a second JVM here (about 90 MB), next to the daemon (about 150 MB).
+    mem_limit: 512m
+    memswap_limit: 512m
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "2" }
     environment:
       <<: *svc-env
       SERVICE_NAME: control
+      JAVA_OPTS: "-Xms32m -Xmx128m -XX:MaxMetaspaceSize=96m -XX:ReservedCodeCacheSize=48m -XX:+UseSerialGC -Xss512k"
       GRAFANA_URL: http://grafana:3000
       PROMETHEUS_URL: http://prometheus:9090
       LAB_STATE: /state/state.json

@@ -35,7 +35,7 @@ Lifecycle:
 - `make stop`: stop containers, keep volumes. The next `make up` still starts fresh.
 - `make up-datadog`: same as `up` (fresh too) with the `datadog` compose profile. Needs `DD_API_KEY` in `.env`.
 
-Exercises (each one runs the `labctl` CLI inside the `control` container):
+Exercises (each one runs the `labctl` CLI inside the `control` container, as a second JVM next to the daemon with the Makefile's small `CLI_JAVA` options, so `control` has 512 MB for the daemon plus two commands at once):
 - `make new` with optional `LEVEL=1|2|3`, `TOPIC=async`, `ID=pool_hold`, `FORCE=1`
 - `make hint`, `make answer`, `make reveal`, `make clear`, `make status`, `make list`, `make history`
 - `make quiz N=50 KIND=numbers|concepts|all`: theory drills from the guide, numeric (`Numbers`) and multiple choice (`Concepts`). Default KIND is `all`. Does not need the lab running.
