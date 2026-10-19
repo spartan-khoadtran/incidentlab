@@ -42,7 +42,7 @@ internal object InvestigationConcepts {
         "Nothing yet: rate never helps with latency",
         "The LB is dropping requests, so the rate only looks flat"
       ),
-      explanation = "The same amount of work now takes longer, so something in the system got slower. Rate and duration up together may be load; check with workload characterization.",
+      explanation = "The same amount of work now takes longer, so something in the system got slower. Rate and duration up together may be load. Check with workload characterization.",
       doc = "RED method in detail > Rate"
     ),
     ChoiceQuestion(
@@ -275,7 +275,7 @@ internal object InvestigationConcepts {
         "A memory leak in the app",
         "Add RAM before anything else"
       ),
-      explanation = "The kernel gives page cache back when an app needs memory, so high used memory is not a problem by itself. Swapping, OOM kills and PSI show real pressure.",
+      explanation = "The kernel gives page cache back when an app needs memory. So high used memory is not a problem by itself. Swapping, OOM kills and PSI show real pressure.",
       doc = "USE method in detail > Pitfalls"
     ),
     ChoiceQuestion(
@@ -398,7 +398,7 @@ internal object InvestigationConcepts {
         "p99 is enough at every layer",
         "The mean: fan-out averages the tail out"
       ),
-      explanation = "The upstream waits for the slowest call, and the share that hits a slow call is 1 − p^N. For the upstream p99 to stay fast with 20 calls, each call must be fast 99.95% of the time.",
+      explanation = "The upstream waits for the slowest call. The share that hits a slow call is 1 − p^N. Take 20 calls. For the upstream p99 to stay fast, each call must be fast 99.95% of the time. p99.9 is the closest percentile most dashboards have.",
       doc = "RED at many layers > Tail amplification"
     ),
     ChoiceQuestion(
@@ -464,7 +464,7 @@ internal object InvestigationConcepts {
         "Messages are harder to count",
         "Seconds never change with the consume rate"
       ),
-      explanation = "A message count means nothing without the rate. Users and SLAs think in time, so seconds compare directly with the deadline and stay right when traffic grows. Measure the age of the oldest unprocessed message.",
+      explanation = "A message count means nothing without the rate. Users and SLAs think in time. Seconds compare directly with the deadline and stay right when traffic grows. Measure the age of the oldest unprocessed message.",
       doc = "RED at many layers > The async layer"
     ),
 
@@ -589,7 +589,7 @@ internal object InvestigationConcepts {
         "Because hardware fails above 70%",
         "It does not; only 100% matters"
       ),
-      explanation = "Requests arrive in bursts. At 90% busy there is only 10% idle time to clear a burst, so the queue rarely empties: response time is 10 times the service time.",
+      explanation = "Requests arrive in bursts, and the server needs idle time to clear them. At 70% busy, response time is already 3.3 times the service time. At 90% it is 10 times.",
       doc = "Linking RED and USE > Why latency rises before 100%"
     ),
     ChoiceQuestion(
@@ -712,7 +712,7 @@ internal object InvestigationConcepts {
         "Do it cheaper",
         "Do it when nobody waits"
       ),
-      explanation = "The first fixes remove work, the last ones only make it faster. Work you remove costs nothing and cannot break again.",
+      explanation = "The order: do not do it, do it once, do less, do it later, do it when nobody waits, do it in parallel, do it cheaper. The first fixes remove work, the last ones only make it faster. Work you remove costs nothing and cannot break again.",
       doc = "Combining with other methods > Performance mantras"
     ),
     ChoiceQuestion(
@@ -870,7 +870,7 @@ internal object InvestigationConcepts {
         "Any CPU throttling",
         "Disk usage above 70%"
       ),
-      explanation = "A page wakes a person, so it should mean users hurt. USE signals are early warnings or tickets, except saturation that predicts a certain incident, like a disk that fills within 2 hours.",
+      explanation = "A page wakes a person, so it should mean users hurt. USE signals are early warnings or tickets. The exception is saturation that predicts a certain incident, like a disk that fills within 2 hours.",
       doc = "Applying on Datadog > Monitors"
     ),
 
