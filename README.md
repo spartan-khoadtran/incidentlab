@@ -39,6 +39,8 @@ back at a section of it.
 A good order: run `make quiz` until the guide makes sense, then `make new` to use it on a live system.
 Both point back at the section of the guide to read again.
 
+You can also do both in the browser. The handbook at http://localhost:4000 has a Play page for the exercises and a Quiz page for the drills. They score the same way as the terminal. The web pages talk to the lab, so they need `make up` first, even for the quiz. See [The handbook](#the-handbook).
+
 `make quiz` asks 50 questions by default, half numbers and half concepts. Change it with `N` and `KIND`:
 
 ```bash
@@ -111,6 +113,7 @@ Nothing else is installed on your machine: the services are built inside Docker.
 ```bash
 make up        # build + start, wait until ready (the first build takes several minutes)
 # open http://localhost:3000 (Grafana: dashboards and traces)
+# open http://localhost:4000 (the handbook: guide, Play and Quiz in the browser)
 make new       # an incident on the live lab
 make hint      # a hint (costs 0.5 point)
 make answer    # submit, see the explanation and the step-by-step trace
@@ -123,6 +126,8 @@ make down      # stop and remove everything
 ### The handbook
 
 `make up` also starts a small website at http://localhost:4000 (`make site` opens it). It has the guide with search, the system diagram, every command and the catalog (titles only). The Play page runs the lab from the browser: exercises, hints, answers, the ramp, the bench and your history. It shows the answer only after you answer or reveal. The Quiz page asks the drills one at a time. The site is built from this repo, so it always matches the docs and the Makefile.
+
+Grafana and the handbook listen on 127.0.0.1 only. Grafana runs as an anonymous Admin and the handbook can drive the lab, so neither one should be open to your network.
 
 ## Layout
 
@@ -146,6 +151,26 @@ make lint      # ktlint
 
 To rebuild one service after a change: `docker compose build control && docker compose up -d api`. Every service shares the
 `incidentlab-svc` image, so this rebuilds the image once; restart the other services to pick it up.
+
+### The handbook site
+
+The site in `site/` is Vite, React and TypeScript. It needs Node 22.
+
+```bash
+cd site && npm ci
+LAB_MOCK=1 npm run dev     # a fake lab, no Docker needed
+npm run dev                # the real lab API on :8090, see below
+npm test                   # vitest
+npm run lint               # eslint
+npm run build              # build, then check the bundle has no answers in it
+```
+
+`npm run dev` sends `/api` to `http://localhost:8090`. To serve the lab API there without the full lab, run
+`cd service && LAB_STATE=/tmp/lab-state.json ./gradlew :tool:labctl:run --args=api`. It has its own state file and
+applies no fault. With the lab up, use `LAB_API=http://localhost:4000 npm run dev` instead.
+
+The catalog, the quiz counts and the scoring come from `site/src/data/lab.json`. Run `npm run export:lab` after you
+change a scenario, a drill, the scoring or a default. `npm run check:data` fails when the file is out of date.
 
 ## Datadog (optional, experimental)
 
