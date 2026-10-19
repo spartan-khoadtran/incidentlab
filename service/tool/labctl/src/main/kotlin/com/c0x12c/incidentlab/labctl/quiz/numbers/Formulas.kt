@@ -33,9 +33,6 @@ internal object Formulas {
   /** Mean wait in queue of M/M/1, in the unit of [service]. */
   fun mm1Wait(rho: Double, service: Double): Double = rho / (1 - rho) * service
 
-  /** Mean wait in queue of M/D/1: half of M/M/1, because the service time has no variance. */
-  fun md1Wait(rho: Double, service: Double): Double = rho / (2 * (1 - rho)) * service
-
   /** Mean wait in queue of M/G/1: the M/M/1 wait times (1 + CV²) / 2, where [cv] is the service time's coefficient of variation. */
   fun mg1Wait(rho: Double, service: Double, cv: Double): Double = mm1Wait(rho, service) * (1 + cv * cv) / 2
 
@@ -45,8 +42,8 @@ internal object Formulas {
   /** Mean wait in queue of M/M/2 with one shared queue, rho = lambda / (2 mu) and mu = 1 / [service]. */
   fun mm2Wait(rho: Double, service: Double): Double = rho * rho * service / (1 - rho * rho)
 
-  /** The share of requests that wait at all in M/M/2. */
-  fun mm2WaitProbability(rho: Double): Double = 2 * rho * rho / (1 + rho)
+  /** How many times shorter the wait gets when two M/M/1 queues at [rho] merge into one M/M/2 queue. */
+  fun sharedQueueGain(rho: Double): Double = (1 + rho) / rho
 
   private const val PERCENT = 100.0
 }

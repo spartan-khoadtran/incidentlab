@@ -50,4 +50,26 @@ describe("QuizRunner", () => {
     expect(screen.getByText("/ 2 right")).toBeTruthy();
     expect(screen.getByText(/which layer sees the time/)).toBeTruthy();
   });
+
+  it("skips a question, shows its answer, and counts it apart", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <LabProvider>
+          <QuizRunner />
+        </LabProvider>
+      </MemoryRouter>,
+    );
+    await user.clear(screen.getByRole("spinbutton", { name: "Questions" }));
+    await user.type(screen.getByRole("spinbutton", { name: "Questions" }), "1");
+    await user.click(screen.getByRole("button", { name: "Start the quiz" }));
+
+    expect(await screen.findByText(/How many requests are in flight/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Skip" }));
+    expect(await screen.findByText("Skipped.")).toBeTruthy();
+    expect(screen.getByText("10")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "See the summary" }));
+    expect(screen.getByText("/ 1 right")).toBeTruthy();
+    expect(screen.getByText("1 skipped")).toBeTruthy();
+  });
 });

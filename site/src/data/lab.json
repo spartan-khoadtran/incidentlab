@@ -307,8 +307,8 @@
     "concepts" : 12
   }, {
     "file" : "foundations.md",
-    "numbers" : 18,
-    "concepts" : 21
+    "numbers" : 16,
+    "concepts" : 22
   }, {
     "file" : "investigation-guide.md",
     "numbers" : 32,
@@ -381,7 +381,7 @@
     "toolbox" : 24,
     "causes" : 41,
     "signals" : 26,
-    "numbers" : 137,
-    "concepts" : 261
+    "numbers" : 135,
+    "concepts" : 262
   }
 }

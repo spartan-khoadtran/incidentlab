@@ -1012,6 +1012,10 @@
   border-left: 4px solid var(--crit);
 }
 
+.quiz-verdict.is-skipped {
+  border-left: 4px solid var(--rule-strong);
+}
+
 .quiz-verdict-title {
   font-weight: 780;
   font-size: 1.2rem;

@@ -57,23 +57,22 @@ class FormulasTest {
   }
 
   @Test
-  fun `the queue waits at rho 0,8 and S 10 ms are 40, 20 and 17,8 ms`() {
+  fun `the queue waits at rho 0,8 and S 10 ms are 40 and 17,8 ms`() {
     assertThat(Formulas.mm1Wait(0.8, 10.0)).isCloseTo(40.0, 1e-9)
-    assertThat(Formulas.md1Wait(0.8, 10.0)).isCloseTo(20.0, 1e-9)
     assertThat(Formulas.mm2Wait(0.8, 10.0)).isCloseTo(0.64 / (100 * 0.36) * 1000, 1e-9)
-    assertThat(Formulas.mm2WaitProbability(0.8)).isCloseTo(2 * 0.64 / 1.8, 1e-9)
+    assertThat(Formulas.sharedQueueGain(0.8)).isCloseTo(2.25, 1e-9)
   }
 
   @Test
   fun `M-G-1 scales the M-M-1 wait by (1 + CV squared) over 2, and a closed system caps at users over response time`() {
     assertThat(Formulas.mg1Wait(0.8, 10.0, 1.0)).isCloseTo(Formulas.mm1Wait(0.8, 10.0), 1e-12)
-    assertThat(Formulas.mg1Wait(0.8, 10.0, 0.0)).isCloseTo(Formulas.md1Wait(0.8, 10.0), 1e-12)
+    assertThat(Formulas.mg1Wait(0.8, 10.0, 0.0)).isCloseTo(Formulas.mm1Wait(0.8, 10.0) / 2, 1e-12)
     assertThat(Formulas.mg1Wait(0.8, 10.0, 2.0)).isCloseTo(100.0, 1e-9)
     assertThat(Formulas.closedThroughput(20, 0.05)).isCloseTo(400.0, 1e-9)
   }
 
   @Test
-  fun `the M-M-2 closed forms match Erlang C for two servers`() {
+  fun `the M-M-2 wait matches Erlang C for two servers`() {
     for (rho in listOf(0.3, 0.5, 0.8, 0.95)) {
       val service = 0.01
       val mu = 1 / service
@@ -81,10 +80,8 @@ class FormulasTest {
       val a = lambda / mu
       val p0 = 1 / (1 + a + a * a / (2 * (1 - rho)))
       val erlangC = p0 * a * a / (2 * (1 - rho))
-      assertThat(Formulas.mm2WaitProbability(rho)).isCloseTo(erlangC, 1e-12)
       assertThat(Formulas.mm2Wait(rho, service)).isCloseTo(erlangC / (2 * mu - lambda), 1e-12)
-      // one shared queue beats two separate M/M/1 queues by (1 + rho) / rho
-      assertThat(Formulas.mm1Wait(rho, service) / Formulas.mm2Wait(rho, service)).isCloseTo((1 + rho) / rho, 1e-9)
+      assertThat(Formulas.mm1Wait(rho, service) / Formulas.mm2Wait(rho, service)).isCloseTo(Formulas.sharedQueueGain(rho), 1e-9)
     }
   }
 }

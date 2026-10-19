@@ -11,8 +11,8 @@ internal object FoundationsNumbers {
 
   val generators: List<(Random) -> NumericQuestion> = listOf(
     ::harmonicMean, ::geometricMean, ::coefficientOfVariation, ::bimodalMean, ::bimodalTail, ::outlierShift, ::scaledTime,
-    ::readsPerTrip, ::amdahlSpeedup, ::amdahlCap, ::uslThroughput, ::uslPeak, ::md1Wait, ::mg1Wait, ::mm2Wait, ::mm2WaitProbability,
-    ::sharedQueueGain, ::closedThroughput
+    ::readsPerTrip, ::amdahlSpeedup, ::amdahlCap, ::uslThroughput, ::uslPeak, ::mg1Wait,
+    ::sharedQueueGain, ::queueLimit, ::closedThroughput
   )
 
   private fun harmonicMean(r: Random): NumericQuestion {
@@ -163,18 +163,6 @@ internal object FoundationsNumbers {
     )
   }
 
-  private fun md1Wait(r: Random): NumericQuestion {
-    val rho = listOf(0.5, 0.7, 0.8, 0.9).random(r)
-    val s = listOf(5, 10, 20).random(r)
-    val answer = Formulas.md1Wait(rho, s.toDouble())
-    return NumericQuestion(
-      "A single worker has a fixed service time of $s ms and runs at ${shown(rho * PERCENT)}% utilization (M/D/1). What is the mean wait in queue, in ms?",
-      answer, Tolerance.Relative(0.02), "ms",
-      "M/D/1: Wq = ρ / (2(1 − ρ)) × S = ${shown(rho)} / ${shown(2 * (1 - rho))} × $s = ${shown(answer)} ms. M/M/1 at the same load gives ${shown(Formulas.mm1Wait(rho, s.toDouble()))} ms, twice as much: half of that queue was service-time variance.",
-      "Modeling and scaling laws > Queue models"
-    )
-  }
-
   private fun mg1Wait(r: Random): NumericQuestion {
     val rho = listOf(0.5, 0.8, 0.9).random(r)
     val s = listOf(10, 20).random(r)
@@ -188,39 +176,26 @@ internal object FoundationsNumbers {
     )
   }
 
-  private fun mm2Wait(r: Random): NumericQuestion {
-    val s = listOf(5, 10, 20).random(r)
-    val rho = listOf(0.5, 0.7, 0.8, 0.9).random(r)
-    val mu = (MILLIS_PER_SECOND / s).roundToInt()
-    val lambda = (2 * rho * mu).roundToInt()
-    val answer = Formulas.mm2Wait(rho, s.toDouble())
-    return NumericQuestion(
-      "Two identical workers share one queue (M/M/2). The service time is $s ms each and requests arrive at $lambda per second. What is the mean wait in queue, in ms?",
-      answer, Tolerance.Relative(0.03), "ms",
-      "μ = 1000 / $s = $mu per s, so ρ = λ / (2μ) = $lambda / ${2 * mu} = ${shown(rho)}. Wq = ρ² / (μ(1 − ρ²)) = ${shown(rho * rho)} / ($mu × ${shown(1 - rho * rho)}) = ${shown(answer / MILLIS_PER_SECOND)} s = ${shown(answer)} ms. Two separate queues of ${lambda / 2} per s each would wait ${shown(Formulas.mm1Wait(rho, s.toDouble()))} ms.",
-      "Modeling and scaling laws > Queue models"
-    )
-  }
-
-  private fun mm2WaitProbability(r: Random): NumericQuestion {
-    val rho = listOf(0.5, 0.6, 0.7, 0.8, 0.9).random(r)
-    val answer = Formulas.mm2WaitProbability(rho) * PERCENT
-    return NumericQuestion(
-      "Two workers behind one queue (M/M/2) run at ${shown(rho * PERCENT)}% utilization each. What share of requests has to wait, in %?",
-      answer, Tolerance.Absolute(0.5), "%",
-      "P(wait) = 2ρ² / (1 + ρ) = ${shown(2 * rho * rho)} / ${shown(1 + rho)} = ${shown(answer)}%. In a single M/M/1 queue at the same ρ the share is ρ itself, ${shown(rho * PERCENT)}%.",
-      "Modeling and scaling laws > Queue models"
-    )
-  }
-
   private fun sharedQueueGain(r: Random): NumericQuestion {
     val rho = listOf(0.5, 0.7, 0.8, 0.9).random(r)
-    val answer = (1 + rho) / rho
+    val answer = Formulas.sharedQueueGain(rho)
     return NumericQuestion(
       "Two workers run at ${shown(rho * PERCENT)}% utilization each, each with its own queue. You merge the two queues into one shared queue (M/M/2). By what factor does the mean wait in queue fall?",
       answer, Tolerance.Relative(0.02), "times",
       "M/M/1 waits ρ / (1 − ρ) × S and M/M/2 waits ρ² / (μ(1 − ρ²)). Divide the two: (1 + ρ) / ρ = ${shown(1 + rho)} / ${shown(rho)} = ${shown(answer)} times shorter. A worker never idles while a request waits in the other worker's line.",
       "Modeling and scaling laws > Queue models"
+    )
+  }
+
+  private fun queueLimit(r: Random): NumericQuestion {
+    val rate = listOf(100, 200, 400, 800).random(r)
+    val budgetMs = listOf(200, 250, 500, 800).random(r)
+    val answer = rate * budgetMs / MILLIS_PER_SECOND
+    return NumericQuestion(
+      "A worker pool serves $rate requests/s. After the service time, the client timeout leaves $budgetMs ms for a request to wait in the queue. Past what queue position does a request time out before it starts?",
+      answer, Tolerance.Relative(0.02), "requests",
+      "A request at position n waits about n / X before it starts. n = X × wait = $rate × ${shown(budgetMs / MILLIS_PER_SECOND)} s = ${shown(answer)}. A longer queue only holds requests that will time out, so cap it near ${shown(answer)} and reject the rest fast.",
+      "Modeling and scaling laws > Bounded queues and load shedding"
     )
   }
 

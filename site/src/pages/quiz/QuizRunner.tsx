@@ -49,12 +49,14 @@ function QuestionCard({
   total,
   score,
   onAnswer,
+  onSkip,
 }: {
   question: QuizQuestion;
   position: number;
   total: number;
   score: number;
   onAnswer: (answer: number | string, shown: string) => Promise<void>;
+  onSkip: () => Promise<void>;
 }) {
   const [raw, setRaw] = useState("");
   const [choice, setChoice] = useState<string | null>(null);
@@ -66,6 +68,16 @@ function QuestionCard({
   useEffect(() => {
     (input.current ?? form.current?.querySelector<HTMLInputElement>("input[type=radio]"))?.focus();
   }, []);
+
+  const send = async (action: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async () => {
     let answer: number | string;
@@ -86,13 +98,7 @@ function QuestionCard({
       answer = choice;
       shown = choice;
     }
-    setBusy(true);
-    setError(null);
-    try {
-      await onAnswer(answer, shown);
-    } finally {
-      setBusy(false);
-    }
+    await send(() => onAnswer(answer, shown));
   };
 
   return (
@@ -140,6 +146,9 @@ function QuestionCard({
         <button type="submit" className="btn btn-primary" disabled={busy}>
           Check
         </button>
+        <button type="button" className="btn" disabled={busy} onClick={() => void send(onSkip)}>
+          Skip
+        </button>
         {question.kind === "choice" ? <span className="muted small">Keys 1 to {question.options?.length} pick an option, Enter checks.</span> : null}
       </div>
       {error ? (
@@ -157,8 +166,8 @@ function VerdictCard({ done, last, onNext }: { done: Done; last: boolean; onNext
     next.current?.focus();
   }, []);
   return (
-    <div className={`quiz-verdict ${done.verdict.correct ? "is-right" : "is-wrong"}`} role="status">
-      <p className="quiz-verdict-title">{done.verdict.correct ? "Right." : "Not quite."}</p>
+    <div className={`quiz-verdict ${done.verdict.correct ? "is-right" : done.verdict.skipped ? "is-skipped" : "is-wrong"}`} role="status">
+      <p className="quiz-verdict-title">{done.verdict.correct ? "Right." : done.verdict.skipped ? "Skipped." : "Not quite."}</p>
       <p className="quiz-text">{done.question.text}</p>
       <dl className="kv">
         <div>
@@ -212,6 +221,7 @@ export function QuizRunner() {
 
   const total = session.questions.length;
   const score = done.filter((d) => d.verdict.correct).length;
+  const skipped = done.filter((d) => d.verdict.skipped).length;
 
   if (showing) {
     return (
@@ -232,6 +242,7 @@ export function QuizRunner() {
           <span className="score-value">{score}</span>
           <span className="score-max">/ {total} right</span>
         </p>
+        {skipped ? <p className="muted">{skipped} skipped</p> : null}
         {missed.length ? (
           <>
             <h3 className="panel-title">Read these again</h3>
@@ -256,6 +267,16 @@ export function QuizRunner() {
   }
 
   const question = session.questions[done.length];
+  const record = async (grade: () => Promise<QuizVerdict>, given: string) => {
+    setError(null);
+    try {
+      const entry = { question, given, verdict: await grade() };
+      setDone((d) => [...d, entry]);
+      setShowing(entry);
+    } catch (e) {
+      setError(e);
+    }
+  };
   return (
     <>
       <QuestionCard
@@ -264,17 +285,8 @@ export function QuizRunner() {
         position={done.length + 1}
         total={total}
         score={score}
-        onAnswer={async (answer, given) => {
-          setError(null);
-          try {
-            const verdict = await api.quizAnswer(session.id, question.index, answer);
-            const entry = { question, given, verdict };
-            setDone((d) => [...d, entry]);
-            setShowing(entry);
-          } catch (e) {
-            setError(e);
-          }
-        }}
+        onAnswer={(answer, given) => record(() => api.quizAnswer(session.id, question.index, answer), given)}
+        onSkip={() => record(() => api.quizSkip(session.id, question.index), "Skipped")}
       />
       <ErrorNote error={error} />
     </>

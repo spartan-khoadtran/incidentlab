@@ -561,9 +561,16 @@ class LabApiTest {
     assertThat(keys(first)).containsOnly("index", "kind", "text", "options")
 
     val graded = post(base, "/api/quiz/$session/0", mapOf("answer" to first["options"][0].asText())).json
-    assertThat(keys(graded)).containsOnly("correct", "answer", "explanation", "guide")
+    assertThat(keys(graded)).containsOnly("correct", "skipped", "answer", "explanation", "guide")
+    assertThat(graded["skipped"].asBoolean()).isFalse()
     assertThat(graded["answer"].asText() in first["options"].map { it.asText() }).isTrue()
     assertThat(post(base, "/api/quiz/$session/0", mapOf("answer" to listOf(1))).json["error"].asText()).isEqualTo("bad_answer")
+    assertThat(post(base, "/api/quiz/$session/1", mapOf("skip" to true, "answer" to "x")).json["error"].asText()).isEqualTo("bad_answer")
+    assertThat(post(base, "/api/quiz/$session/1", mapOf("skip" to "yes")).json["error"].asText()).isEqualTo("bad_answer")
+    val skipped = post(base, "/api/quiz/$session/1", mapOf("skip" to true)).json
+    assertThat(skipped["skipped"].asBoolean()).isTrue()
+    assertThat(skipped["correct"].asBoolean()).isFalse()
+    assertThat(skipped["answer"].asText() in quiz.json["questions"][1]["options"].map { it.asText() }).isTrue()
     assertThat(post(base, "/api/quiz/$session/9", mapOf("answer" to "x")).json["error"].asText()).isEqualTo("no_question")
     assertThat(post(base, "/api/quiz/nope/0", mapOf("answer" to "x")).json["error"].asText()).isEqualTo("no_session")
 

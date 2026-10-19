@@ -29,6 +29,8 @@ data class QuizStart(
 
 data class QuizGrade(
   val correct: Boolean,
+  /** The learner chose to see the answer without one. It never counts as correct. */
+  val skipped: Boolean,
   /** The right answer as the CLI prints it: a number with its unit, or the option text. */
   val answer: String,
   val explanation: String,
@@ -40,6 +42,8 @@ sealed interface QuizAnswer {
 
   /** Typed text: an option, or a number written the way people type it. */
   data class Text(val value: String) : QuizAnswer
+
+  data object Skip : QuizAnswer
 }
 
 /**
@@ -76,7 +80,7 @@ class QuizSessions(
     return QuizStart(id, drills.mapIndexed { index, drill -> view(index, drill, options[index]) })
   }
 
-  /** The first answer to a question decides; posting again returns the same grade. */
+  /** The first answer or skip to a question decides; posting again returns the same grade. */
   @Synchronized
   fun grade(id: String, index: Int, given: QuizAnswer): Outcome<QuizGrade> {
     dropIdle()
@@ -85,11 +89,13 @@ class QuizSessions(
     sessions[id] = session
     val drill = session.drills.getOrNull(index) ?: return Refused(Refusal.UnknownQuestion(index))
     session.graded[index]?.let { return Done(it) }
-    val correct = when (drill) {
+    val skipped = given == QuizAnswer.Skip
+    val correct = !skipped && when (drill) {
       is NumericQuestion -> {
         val value = when (given) {
           is QuizAnswer.Number -> given.value
           is QuizAnswer.Text -> Quiz.parseNumber(given.value)
+          QuizAnswer.Skip -> null
         }?.takeIf { it.isFinite() } ?: return Refused(Refusal.BadAnswer("Question ${index + 1} takes a number, for example 12.5."))
         Quiz.isCorrect(value, drill.answer, drill.tolerance)
       }
@@ -103,7 +109,7 @@ class QuizSessions(
       is NumericQuestion -> "${Quiz.shown(drill.answer)} ${drill.unit}"
       is ChoiceQuestion -> drill.answer
     }
-    return Done(QuizGrade(correct, answer, drill.explanation, GuideIndex.pointers(drill.doc)).also { session.graded[index] = it })
+    return Done(QuizGrade(correct, skipped, answer, drill.explanation, GuideIndex.pointers(drill.doc)).also { session.graded[index] = it })
   }
 
   private fun dropIdle() {

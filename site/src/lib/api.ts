@@ -190,6 +190,7 @@ export interface QuizQuestion {
 
 export interface QuizVerdict {
   correct: boolean;
+  skipped: boolean;
   answer: string;
   explanation: string;
   guide: GuideRef[];
@@ -258,6 +259,7 @@ export const api = {
   /** A number question also takes the text as typed (`"12,5"`); the daemon reads it like the CLI. */
   quizAnswer: (session: string, index: number, answer: number | string) =>
     call<QuizVerdict>("POST", `/quiz/${encodeURIComponent(session)}/${index}`, { answer }),
+  quizSkip: (session: string, index: number) => call<QuizVerdict>("POST", `/quiz/${encodeURIComponent(session)}/${index}`, { skip: true }),
 };
 
 /** A number typed by a learner: a comma or a dot both work as the decimal sign, like the CLI. */
