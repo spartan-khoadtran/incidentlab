@@ -5,7 +5,7 @@ CTL      = $(COMPOSE) exec control $(LABCTL)
 GRADLE   = cd service && ./gradlew
 
 .DEFAULT_GOAL := help
-.PHONY: help up up-datadog wait new hint answer reveal clear status list history quiz load ramp bench \
+.PHONY: help up up-datadog fresh wait new hint answer reveal clear status list history quiz load ramp bench \
         toolbox shell open logs ps stop down nuke check build test lint format dashboards site
 
 help: ## List the commands
@@ -13,14 +13,24 @@ help: ## List the commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-11s\033[0m %s\n", $$1, $$2}'
 
 # ----------------------------------------------------------------------------- lifecycle
-up: check ## Build and start the whole lab
-	$(COMPOSE) up -d --build
+up: check fresh ## Build and start a fresh lab: no fault, load 1, no old data. Keeps the history unless CLEAN=1
+	$(COMPOSE) up -d
 	@$(MAKE) --no-print-directory wait
 
 up-datadog: check ## Like `up`, with the Datadog Agent (needs DD_API_KEY in .env)
 	@test -n "$$(grep -s '^DD_API_KEY=.' .env)" || (echo "DD_API_KEY is missing from .env (see .env.example)"; exit 1)
-	OTLP_ENDPOINT=http://datadog-agent:4318 LOADGEN_TRACE_SAMPLE_RATIO=1.0 $(COMPOSE) --profile datadog up -d --build
+	@$(MAKE) --no-print-directory fresh
+	OTLP_ENDPOINT=http://datadog-agent:4318 LOADGEN_TRACE_SAMPLE_RATIO=1.0 $(COMPOSE) --profile datadog up -d
 	@$(MAKE) --no-print-directory wait
+
+# Removes the containers and every volume but labstate (all of them with CLEAN=1), builds, then resets the state file before any service reads it.
+fresh:
+	$(COMPOSE) --profile datadog down --remove-orphans $(if $(filter 1 yes true,$(CLEAN)),-v)
+	@project=$$($(COMPOSE) config | sed -n 's/^name: //p'); \
+	  docker volume ls --filter label=com.docker.compose.project=$$project --format '{{.Name}} {{.Label "com.docker.compose.volume"}}' \
+	  | awk '$$2 != "labstate" { print $$1 }' | xargs -r docker volume rm >/dev/null
+	$(COMPOSE) build
+	@$(COMPOSE) run --rm --no-deps -T control $(LABCTL) reset
 
 wait:
 	@printf "Waiting for the system to come up"
@@ -39,7 +49,7 @@ wait:
 	@echo ""
 	@echo "Let the system run for 3-5 minutes to get a baseline, then type: make new"
 
-stop: ## Stop the containers, keep the data (start again with make up)
+stop: ## Stop the containers. `make up` starts a fresh lab again
 	$(COMPOSE) --profile datadog stop
 
 down: ## Stop and remove everything: containers, network, volumes (data, exercise history)

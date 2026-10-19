@@ -86,6 +86,7 @@ object Main : Logging {
         "answer" -> exercises.answer()
         "reveal" -> exercises.reveal()
         "clear" -> exercises.clear()
+        "reset" -> exercises.reset()
         "status" -> exercises.status()
         "list" -> exercises.list()
         "history" -> exercises.history()
@@ -126,7 +127,7 @@ object Main : Logging {
 
   private fun usage(): Int {
     println(
-      "usage: labctl daemon | api | new [--level N] [--topic T] [--id ID] [--force] [--mode incident|toolbox] | hint | answer | reveal | clear | status | list | history | load X | " +
+      "usage: labctl daemon | api | new [--level N] [--topic T] [--id ID] [--force] [--mode incident|toolbox] | hint | answer | reveal | clear | reset | status | list | history | load X | " +
         "quiz [-n N] [--kind numbers|concepts|all] | ramp [--every S] | bench [--clients N] [--seconds S] | export OUT.json"
     )
     return USAGE_EXIT

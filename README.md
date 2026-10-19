@@ -111,7 +111,7 @@ exercises need cores to spare.
 Nothing else is installed on your machine: the services are built inside Docker.
 
 ```bash
-make up        # build + start, wait until ready (the first build takes several minutes)
+make up        # build + start a fresh lab, wait until ready (the first build takes several minutes)
 # open http://localhost:3000 (Grafana: dashboards and traces)
 # open http://localhost:4000 (the handbook: guide, Play and Quiz in the browser)
 make new       # an incident on the live lab
@@ -122,6 +122,8 @@ make down      # stop and remove everything
 ```
 
 `make` with no target lists every command.
+
+Every `make up` starts a fresh lab. It ends any exercise still running, sets the load back to 1, and starts Postgres, Prometheus, Tempo and Pyroscope empty. Your exercise history stays. `make up CLEAN=1` wipes the history too.
 
 ### The handbook
 

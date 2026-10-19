@@ -77,6 +77,12 @@ data class LabState(
 )
 
 /**
+ * The state of a fresh lab: no exercise, the default load, only the history kept. The pending
+ * Grafana deletes go too, because a recreated Grafana numbers its annotations from 1 again.
+ */
+fun LabState.fresh(): LabState = LabState(history = history)
+
+/**
  * The state with the marks of [ended] that are still in the future at [now] queued for deletion.
  * Call it in the same locked write that ends the exercise, so no id is lost between the two.
  */

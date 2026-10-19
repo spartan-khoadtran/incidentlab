@@ -20,6 +20,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Answers
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
 import com.c0x12c.incidentlab.labctl.state.ActiveExercise
 import com.c0x12c.incidentlab.labctl.state.LabState
+import com.c0x12c.incidentlab.labctl.state.PlannedAnnotation
 import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import java.nio.file.Path
@@ -59,6 +60,26 @@ class ExercisesTest {
 
   private fun picks(nature: String, location: String, signal: String, cause: String): List<String> =
     listOf(index(Answers.NATURES, nature), index(Answers.LOCATIONS, location), index(Answers.SIGNALS, signal), index(Answers.CAUSES, cause))
+
+  @Test
+  fun `a reset ends the exercise, sets the load back and drops old marks, but keeps the history`(@TempDir dir: Path) {
+    val store = StateStore(dir.resolve("state.json"))
+    val history = HistoryEntry(n = 1, id = "pool_hold", title = "t", level = 1, score = 4.0, hints = 0, minutes = 5.0, at = NOW)
+    store.save(
+      LabState(
+        active = ActiveExercise(id = "pool_hold", params = emptyMap(), started = NOW, n = 2),
+        history = listOf(history),
+        base = mapOf("loadgen" to mapOf("rate_multiplier" to 2.0)),
+        pendingAnnotationDeletes = listOf(PlannedAnnotation(id = 7, at = NOW + 60))
+      )
+    )
+    val terminal = ScriptedTerminal(ArrayDeque())
+
+    assertThat(exercises(dir, terminal).reset()).isEqualTo(0)
+
+    assertThat(store.load()).isEqualTo(LabState(history = listOf(history)))
+    assertThat(terminal.lines.single()).isEqualTo("Fresh start: no exercise, load 1. History kept: 1 exercise(s).")
+  }
 
   @Test
   fun `a full round of new, hint and answer is scored with the hint penalty`(@TempDir dir: Path) {

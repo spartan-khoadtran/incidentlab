@@ -14,6 +14,7 @@ import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
 import com.c0x12c.incidentlab.labctl.state.Choices
 import com.c0x12c.incidentlab.labctl.state.LabState
 import com.c0x12c.incidentlab.labctl.state.StateStore
+import com.c0x12c.incidentlab.labctl.state.fresh
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -122,6 +123,12 @@ class Exercises(
   fun clear(): Int {
     engine.clear()
     terminal.out("No fault is running any more. The system recovers in about 10-60 seconds.")
+    return 0
+  }
+
+  fun reset(): Int {
+    val kept = store.update { it.fresh() }.history.size
+    terminal.out("Fresh start: no exercise, load 1. History kept: $kept exercise(s).")
     return 0
   }
 
