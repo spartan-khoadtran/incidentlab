@@ -11,6 +11,7 @@ import com.c0x12c.incidentlab.labctl.scenario.ExerciseContext
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Params
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
+import com.c0x12c.incidentlab.labctl.scenario.Symptom
 import kotlin.math.roundToInt
 
 /** Faults inside api: its code, its runtime and its cache. */
@@ -37,6 +38,7 @@ internal object AppScenarios {
       "At ${p.startedAt}, the DBA reports that the number of queries into Postgres multiplied and asks whether there is a marketing campaign. " +
         "Marketing says there is none."
     },
+    symptom = { Symptom.RATE_CHANGED },
     hints = listOf(
       "Compare the rate at the API with the query rate at Postgres. Do they rise in the same proportion?",
       "Split the query rate by query name. Which query is new or jumped?",
@@ -83,6 +85,7 @@ internal object AppScenarios {
       "At ${p.startedAt}, both /products and /checkout are slow although the rate is normal. " +
         "Someone proposes raising api's CPU limit from 2 to 4 cores."
     },
+    symptom = { Symptom.SLOW_EVERY_ROUTE },
     hints = listOf(
       "How much CPU does the api container use against its 2-core limit? Is it throttled?",
       "api runs on one event loop thread: how many cores can it really use? Look at process CPU and event loop lag.",
@@ -127,6 +130,7 @@ internal object AppScenarios {
     marker = { "Deploy checkout-api v2.34: configuration moved to the new config service" },
     decoy = 0.5,
     ticket = { p -> "At ${p.startedAt}, Postgres CPU is up and the DBA asks who is firing queries at the products table. API traffic is unchanged." },
+    symptom = { Symptom.RATE_CHANGED },
     hints = listOf(
       "Which query grew in Postgres? Did the API rate grow with it?",
       "What does a /products request pass through before it reaches the DB?",
@@ -174,6 +178,7 @@ internal object AppScenarios {
       "At ${p.startedAt}, /checkout p99 is many times higher than before. api CPU is low, pricing and Postgres look normal, and /products is fine. " +
         "The rate did not change. What is /checkout waiting for?"
     },
+    symptom = { Symptom.SLOW_ONE_ROUTE },
     hints = listOf(
       "Only /checkout is slow and every downstream is flat. Where does a request spend time when it neither computes nor waits on a downstream?",
       "USE for api's software resources: the pool is fine and admission is fine. Look at the inventory lock panels: threads waiting and wait time.",
@@ -232,6 +237,7 @@ internal object AppScenarios {
         "They ask whether that is why /products got slower at the same time: its p50 is many times higher than before, though its p99 did not move. " +
         "top shows nothing unusual."
     },
+    symptom = { Symptom.SLOW_ONE_ROUTE },
     hints = listOf(
       "Two things are true at once: the host forks a lot, and api is slower. Does the first explain the second? Check host saturation: load, PSI, api's throttled share.",
       "/products is the slow route, and it never touches the host's process table. Why would p50 jump while p99 stays? What does a /products request pass through before the DB?",

@@ -62,7 +62,7 @@ class Scenario(
   val faults: (Params) -> FaultSpec,
   val ticket: (Params) -> String,
   /** What [ticket] shows. It picks the signals and causes the exercise offers, so it must follow the ticket text. */
-  val symptom: (Params) -> Symptom = { Symptom.SLOW_EVERY_ROUTE },
+  val symptom: (Params) -> Symptom,
   val hints: List<String>,
   val answer: Answer,
   val steps: List<String>,

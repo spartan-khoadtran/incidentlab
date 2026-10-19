@@ -9,6 +9,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Baseline.PERCENT
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.PRICE_BASE_MS
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
+import com.c0x12c.incidentlab.labctl.scenario.Symptom
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -40,6 +41,7 @@ internal object DatabaseScenarios {
       "At ${p.startedAt}, alert: $symptom. The checkout team just deployed v2.31. " +
         "The DB team says 'Postgres is fine'. Who is right, and where is the problem?"
     },
+    symptom = { p -> if (p.bool("overload")) Symptom.ERRORS else Symptom.SLOW_ONE_ROUTE },
     hints = listOf(
       "Compare 'DB as seen from api' (db_client_session_seconds) with 'DB as seen from Postgres' (exec time from pgobserver).",
       "Where is the gap? Look at dashboard 02, row 1 (Software resources inside api): pool in use, waiting, acquire wait.",
@@ -99,6 +101,7 @@ internal object DatabaseScenarios {
       "At ${p.startedAt}, /checkout p99 rose several times over. The DB team says Postgres is nearly idle. " +
         "The checkout team says their code did not change."
     },
+    symptom = { Symptom.SLOW_ONE_ROUTE },
     hints = listOf(
       "Compare DB session time from api with exec time inside Postgres. Where is the gap?",
       "The pool panels on dashboard 02, row 1: in use, waiting, and the max. Did the hold time change, or the limit?",
@@ -148,6 +151,7 @@ internal object DatabaseScenarios {
       "At ${p.startedAt}, a small share of /checkout requests fail with 503, in short bursts. " +
         "The requests that succeed are about as fast as before, and Postgres is idle."
     },
+    symptom = { Symptom.ERRORS },
     hints = listOf(
       "Which layer creates the 503s? Compare the LB, api and the downstreams.",
       "USE for the pool, errors first: look at Pool timeouts/s next to in use and max.",
@@ -192,6 +196,7 @@ internal object DatabaseScenarios {
     marker = { "Deploy checkout-api v2.33: reserve inventory when placing an order" },
     decoy = 0.5,
     ticket = { p -> "At ${p.startedAt}, /checkout is slow with 503s. The DB team reports that query execution time inside Postgres went up." },
+    symptom = { Symptom.ERRORS },
     hints = listOf(
       "Which query's exec time rose inside Postgres?",
       "Exec time is up, but what is Postgres doing? Look at pg_lock_waiters and connections by state.",

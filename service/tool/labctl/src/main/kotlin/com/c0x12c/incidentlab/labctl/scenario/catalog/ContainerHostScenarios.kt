@@ -7,6 +7,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Baseline.SECONDS_PER_MINUTE
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.round2
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
+import com.c0x12c.incidentlab.labctl.scenario.Symptom
 import kotlin.math.roundToInt
 
 /** Faults at the container and the host: CPU limits, memory limits and shared CPU. */
@@ -32,6 +33,7 @@ internal object ContainerHostScenarios {
       "At ${p.startedAt}, p99 rose on every endpoint, including /products which is normally very fast. The rate is normal. " +
         "A teammate looked at the host's CPU and said 'plenty of CPU left, it is not CPU'."
     },
+    symptom = { Symptom.SLOW_EVERY_ROUTE },
     hints = listOf(
       "Rate flat, duration up on every route: suspect architecture. Do the LB and api rise together?",
       "Do USE per layer for api: host, container, runtime. Which layer's limit should utilization be measured against?",
@@ -78,6 +80,7 @@ internal object ContainerHostScenarios {
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("leak_kb" to p.int("leak")))) },
     decoy = 0.5,
     ticket = { p -> "Since ${p.startedAt}, about once a minute there is a burst of 503s that lasts a few seconds and then clears. Nobody deployed anything." },
+    symptom = { Symptom.ERRORS },
     hints = listOf(
       "During the errors, is api still receiving requests? Look at process_start_time_seconds (the restart count).",
       "What does the api container's memory look like right before each restart, against its limit?",
@@ -124,6 +127,7 @@ internal object ContainerHostScenarios {
       "Since ${p.startedAt}, api's memory has been climbing on the container panel. Nothing fails yet. " +
         "Is this a problem, and if so, about how long do we have? A rough number is fine."
     },
+    symptom = { Symptom.RESOURCE_ALARM },
     hints = listOf(
       "Container memory against its limit: is it a step, a sawtooth, or a straight line?",
       "How many MB per minute does it grow? Read two points 5 minutes apart, not 1: the JVM's own memory moves a few MB on its own.",
@@ -171,6 +175,7 @@ internal object ContainerHostScenarios {
     faults = { p -> FaultSpec(services = mapOf("noisy" to mapOf("burners" to p.int("burners")))) },
     decoy = 0.5,
     ticket = { p -> "At ${p.startedAt}, every service is slower, including pricing and the worker. The rate is normal and nobody deployed anything." },
+    symptom = { Symptom.SLOW_EVERY_ROUTE },
     hints = listOf(
       "When everything slows down at once, think of the shared resources.",
       "USE at the host / VM layer: CPU by mode, load against the CPU count, CPU PSI.",
@@ -217,6 +222,7 @@ internal object ContainerHostScenarios {
       "At ${p.startedAt}, api moved to a smaller burstable VM to save cost. Right now every panel looks normal. The on-call lead asks you to keep " +
         "watching for a few minutes, because this kind of VM does not always stay fast. When something changes, tell us what changed and why."
     },
+    symptom = { Symptom.CHANGE_TO_JUDGE },
     hints = listOf(
       "Nothing is wrong yet. Write down the baseline now: api p99 by route, CPU usage against the limit, the throttled share. Then wait.",
       "When p99 rises on every route with a flat rate and no deploy, do USE for api at the container layer: did the usage move, or did the limit?",

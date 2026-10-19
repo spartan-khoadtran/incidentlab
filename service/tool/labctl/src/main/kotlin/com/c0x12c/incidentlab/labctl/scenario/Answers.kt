@@ -23,34 +23,34 @@ object Answers {
     "host" to "The shared host / VM"
   )
 
-  /** The one comparison or panel that separates the cause from its look-alikes. */
+  /** The one comparison or panel that separates the cause from its look-alikes. A label names what to compare, never what it showed. */
   val SIGNALS: List<Pair<String, String>> = listOf(
-    "client_rate_by_tenant" to "Client rate split by tenant: one grew, all grew, or one vanished",
-    "rate_by_route" to "Rate split by route: the mix moved while the total stayed flat",
-    "attempts_vs_requests" to "Attempts per user request at the client (retries)",
-    "client_errors_vs_server" to "Client timeouts against server-side 200s and the server p99",
-    "lb_vs_api_errors" to "5xx at the LB against 5xx at api, the rate reaching api, healthy upstreams",
-    "lb_vs_api_duration" to "LB p99 against api p99: the gap is time spent before the app",
-    "api_vs_downstream" to "api's client view of pricing (duration, outcome) against pricing's own RED",
-    "one_core_event_loop" to "Process CPU near one core and event loop lag (api or pricing)",
-    "pool" to "Pool in use against max, waiting, acquire wait; DB session time against Postgres exec time",
+    "client_rate_by_tenant" to "Client rate split by tenant",
+    "rate_by_route" to "Rate split by route, against the total rate",
+    "attempts_vs_requests" to "Attempts sent against user requests at the client",
+    "client_errors_vs_server" to "Errors the client sees against the status codes and p99 the server records",
+    "lb_vs_api_errors" to "5xx at the LB against 5xx at api, and the healthy backends",
+    "lb_vs_api_duration" to "LB p99 against api p99",
+    "api_vs_downstream" to "api's view of pricing (duration, outcome) against pricing's own RED",
+    "one_core_event_loop" to "Process CPU in cores and event loop lag (api or pricing)",
+    "pool" to "Pool in use against max, waiting and acquire wait; DB session time against Postgres exec time",
     "query_rate_by_name" to "Query rate per query name against the API rate",
     "cache_hit_ratio" to "Cache hit ratio",
     "pg_locks" to "pg_lock_waiters and Postgres connections by state",
     "cgroup_cpu" to "cgroup CPU usage against the limit, and the share of throttled periods",
-    "memory_restarts" to "Container memory against its limit (sawtooth) and the restart count",
+    "memory_restarts" to "Container memory against its limit, and the restart count",
     "host_cpu" to "Host CPU and load, split by container",
     "consumer_lag" to "Produce rate against consume rate, processing time, lag over time",
     "lag_per_partition" to "Lag and retries per partition",
-    "worker_cpu_vs_lag" to "Worker process CPU against its lag and consume rate: busy while there is no work",
-    "lock_wait" to "Lock wait time and threads waiting on a lock inside api, while CPU, pool and downstream stay flat",
-    "cpu_profile" to "A CPU profile of api: one code path owns most of the samples",
-    "tcp_retransmits" to "TCP retransmits and RTO timeouts counted inside api, against pricing's own p99 which stays flat",
-    "tcp_connections" to "New TCP connections per second and TIME_WAIT count at api against its call rate",
-    "disk_io" to "Disk await and busy share on the host against Postgres wait events (WAL sync, checkpoint) and exec time by query",
-    "jvm_gc" to "GC pause rate and pause p99 against live data after GC and heap max",
-    "vthread_pinned" to "Pinned virtual-thread events per second against in-flight requests, with CPU low",
-    "user_vs_sys" to "Process CPU split into user and system time: system time rises with syscalls"
+    "worker_cpu_vs_lag" to "Worker process CPU against its lag and consume rate",
+    "lock_wait" to "Lock wait time and threads waiting on api's inventory lock",
+    "cpu_profile" to "A CPU profile of api over the incident window",
+    "tcp_retransmits" to "TCP retransmits and RTO timeouts per service, against pricing's own p99",
+    "tcp_connections" to "New TCP connections per second and the TIME_WAIT count at api, against its call rate",
+    "disk_io" to "Host disk await and busy share against Postgres wait events and exec time",
+    "jvm_gc" to "GC pause rate and pause p99 against live data after GC and the heap max",
+    "vthread_pinned" to "Pinned virtual-thread events per second against in-flight requests",
+    "user_vs_sys" to "Process CPU split into user and system time"
   )
 
   /** Causes by layer, outermost first. The prompt prints one header per layer. */
@@ -134,14 +134,94 @@ object Answers {
     "red", "load", "layers", "use", "container", "runtime", "db", "async", "host", "little", "cpu", "jvm", "disk", "network", "profiling", "capacity"
   )
 
+  /** The causes a ticket with each symptom could have: its real look-alikes, and at least one distractor. */
+  private val CAUSES_BY_SYMPTOM: Map<Symptom, Set<String>> = mapOf(
+    Symptom.SLOW_ONE_ROUTE to setOf(
+      "app_lock", "pool_exhausted", "db_lock", "missing_index", "iops_limit", "downstream_slow", "single_thread_cpu", "cache_miss", "tenant_spike", "global_load"
+    ),
+    Symptom.SLOW_EVERY_ROUTE to setOf(
+      "single_thread_cpu", "cpu_throttle", "noisy_neighbor", "vthread_pinning", "app_lock", "hot_code_path", "sync_logging", "rtt_amplified", "n_plus_one", "thread_pool_exhausted"
+    ),
+    Symptom.SLOW_BUT_API_FINE to setOf("queue_before_app", "global_load", "tenant_spike", "gc_pause", "packet_loss", "noisy_neighbor", "dns_slow"),
+    Symptom.TAIL_ONLY to setOf("gc_pause", "memory_leak", "downstream_slow", "packet_loss", "cpu_throttle", "noisy_neighbor", "checkpoint_bursts", "dns_slow"),
+    Symptom.ERRORS to setOf(
+      "oom", "pool_exhausted", "pool_timeout_short", "db_lock", "downstream_errors", "downstream_slow", "client_timeout", "lb_no_healthy", "retry_storm", "disk_full"
+    ),
+    Symptom.RATE_CHANGED to setOf(
+      "n_plus_one", "cache_miss", "workload_mix", "client_outage", "retry_storm", "client_timeout", "downstream_slow", "tenant_spike", "global_load", "dns_slow"
+    ),
+    Symptom.WORK_LATE to setOf("consumer_backlog", "consumer_slow", "poison_message", "slow_drain", "busy_poll", "db_lock", "iops_limit", "disk_io_contention"),
+    Symptom.RESOURCE_ALARM to setOf("busy_poll", "memory_leak", "oom", "hot_code_path", "sync_logging", "gc_pause", "consumer_backlog", "noisy_neighbor", "disk_full"),
+    Symptom.CHANGE_TO_JUDGE to setOf(
+      "cpu_credits", "cpu_throttle", "downstream_slow", "downstream_errors", "client_timeout", "no_keepalive", "rtt_amplified", "packet_loss", "dns_slow"
+    )
+  )
+
+  /** The signals that tell apart the causes of each symptom. */
+  private val SIGNALS_BY_SYMPTOM: Map<Symptom, Set<String>> = mapOf(
+    Symptom.SLOW_ONE_ROUTE to setOf(
+      "lock_wait", "pool", "disk_io", "api_vs_downstream", "one_core_event_loop", "cache_hit_ratio", "query_rate_by_name", "client_rate_by_tenant"
+    ),
+    Symptom.SLOW_EVERY_ROUTE to setOf("one_core_event_loop", "cgroup_cpu", "host_cpu", "vthread_pinned", "cpu_profile", "user_vs_sys", "pool", "lock_wait"),
+    Symptom.SLOW_BUT_API_FINE to setOf("lb_vs_api_duration", "client_rate_by_tenant", "jvm_gc", "tcp_retransmits", "host_cpu"),
+    Symptom.TAIL_ONLY to setOf("jvm_gc", "api_vs_downstream", "tcp_retransmits", "cgroup_cpu", "lb_vs_api_duration", "disk_io"),
+    Symptom.ERRORS to setOf("memory_restarts", "pool", "pg_locks", "api_vs_downstream", "lb_vs_api_errors", "client_errors_vs_server", "attempts_vs_requests"),
+    Symptom.RATE_CHANGED to setOf("query_rate_by_name", "cache_hit_ratio", "rate_by_route", "client_rate_by_tenant", "attempts_vs_requests", "client_errors_vs_server"),
+    Symptom.WORK_LATE to setOf("consumer_lag", "lag_per_partition", "worker_cpu_vs_lag", "pg_locks", "disk_io"),
+    Symptom.RESOURCE_ALARM to setOf("worker_cpu_vs_lag", "memory_restarts", "cpu_profile", "user_vs_sys", "jvm_gc", "consumer_lag"),
+    Symptom.CHANGE_TO_JUDGE to setOf("cgroup_cpu", "api_vs_downstream", "tcp_connections", "tcp_retransmits", "client_errors_vs_server", "host_cpu")
+  )
+
   /** The ticket symptoms each cause can produce. An exercise offers a cause only when its ticket shows one of them. */
-  val CAUSE_SYMPTOMS: Map<String, Set<Symptom>> = CAUSES.associate { it.first to Symptom.entries.toSet() }
+  val CAUSE_SYMPTOMS: Map<String, Set<Symptom>> = CAUSES.associate { (key, _) -> key to CAUSES_BY_SYMPTOM.filterValues { key in it }.keys }
 
   /** The ticket symptoms each signal can tell apart. An exercise offers a signal only when its ticket shows one of them. */
-  val SIGNAL_SYMPTOMS: Map<String, Set<Symptom>> = SIGNALS.associate { it.first to Symptom.entries.toSet() }
+  val SIGNAL_SYMPTOMS: Map<String, Set<Symptom>> = SIGNALS.associate { (key, _) -> key to SIGNALS_BY_SYMPTOM.filterValues { key in it }.keys }
 
   /** For each cause, what you would see if it were the one: the check that rules it in or out. Shown only after the answer. */
-  val RULE_OUTS: Map<String, String> = CAUSES.associate { it.first to it.second }
+  val RULE_OUTS: Map<String, String> = mapOf(
+    "tenant_spike" to "Client requests/s split by tenant: one tenant grows while the others stay flat.",
+    "global_load" to "Client requests/s grows for every tenant at once, and api's rate grows with it.",
+    "workload_mix" to "The total rate stays flat while the split by route moves toward the heavy route.",
+    "client_outage" to "One tenant's rate falls toward 0 at the client, and every service stays green.",
+    "retry_storm" to "Attempts at the client grow faster than user requests: each user request is sent more than once.",
+    "client_timeout" to "The caller counts timeouts while the server records 200s for the same calls.",
+    "queue_before_app" to "LB p99 rises far above api's own p99, and requests wait at api's admission gate.",
+    "lb_no_healthy" to "The LB returns 5xx that api never records, and its healthy backends drop to 0.",
+    "single_thread_cpu" to "The process uses about 1 core and event loop lag rises, while the CPU limit is not reached.",
+    "n_plus_one" to "Queries per second for one query name grow to many times the API rate.",
+    "cache_miss" to "The cache hit ratio drops and product queries to Postgres rise, with the API rate flat.",
+    "gc_pause" to "GC pause p99 jumps, and live data after a full GC sits near the old gen max.",
+    "memory_leak" to "Memory grows in a straight line and never comes back down.",
+    "app_lock" to "Lock wait time and threads waiting on the lock rise, while CPU and the pool stay low.",
+    "hot_code_path" to "CPU rises with the same traffic, and one function owns most of the samples in the CPU profile.",
+    "thread_pool_exhausted" to "Busy threads sit at the pool max, the task queue grows, and rejected tasks appear.",
+    "vthread_pinning" to "Pinned virtual-thread events rise and in-flight requests pile up, while CPU stays low.",
+    "sync_logging" to "System CPU time climbs close to user time, with the same traffic.",
+    "pool_exhausted" to "Pool in use sits at the max and waiting rises, while Postgres exec time stays flat.",
+    "pool_timeout_short" to "Pool timeouts come in short bursts while the pool is full only for moments.",
+    "db_lock" to "pg_lock_waiters rises, and Postgres exec time per query grows.",
+    "missing_index" to "One query's exec time inside Postgres grows with the table size, and Postgres CPU rises.",
+    "downstream_slow" to "pricing's own p99 rises along with api's view of it.",
+    "downstream_errors" to "pricing's own 5xx rise and match the errors api sees on its calls.",
+    "consumer_backlog" to "The produce rate stays above the consume rate, and lag grows on every partition.",
+    "consumer_slow" to "Processing time per message rises and the consume rate falls, while the produce rate is normal.",
+    "poison_message" to "Lag and retries grow on one partition only, while the others stay near 0.",
+    "slow_drain" to "After the fix, the consume rate is only a little above the produce rate, so the lag falls slowly.",
+    "busy_poll" to "Worker CPU sits near its limit while the lag stays at 0 and the consume rate is normal.",
+    "packet_loss" to "TCP retransmits and RTO timeouts rise at the sender, while the receiver's own p99 stays flat.",
+    "rtt_amplified" to "Each query takes a fixed extra delay from api, Postgres exec time stays flat, and pool use rises.",
+    "no_keepalive" to "New TCP connections per second equal calls per second, and TIME_WAIT sockets pile up on the side that closes.",
+    "dns_slow" to "Calls stall or fail before any connection opens, while calls by IP address are fine.",
+    "disk_full" to "Writes fail with a no space left on device error, and free disk space is at 0.",
+    "disk_io_contention" to "Host disk busy share and await rise, and another process writes to the same disk as Postgres.",
+    "checkpoint_bursts" to "Write latency spikes line up with each checkpoint, then calm down until the next one.",
+    "iops_limit" to "Postgres waits on IO while the host disk shows a low busy share and a low await.",
+    "cpu_throttle" to "cgroup CPU usage sits at the limit and throttled periods rise, while the host has CPU to spare.",
+    "oom" to "Memory climbs to the container limit, then the process restarts and the OOM kill count rises.",
+    "noisy_neighbor" to "Host CPU and load rise from another container, and every service slows at once.",
+    "cpu_credits" to "Nothing changes at first, then the CPU limit drops to the VM's baseline and throttling starts."
+  )
 
   fun causesFor(symptom: Symptom): List<Pair<String, String>> = CAUSES.filter { symptom in CAUSE_SYMPTOMS.getValue(it.first) }
 

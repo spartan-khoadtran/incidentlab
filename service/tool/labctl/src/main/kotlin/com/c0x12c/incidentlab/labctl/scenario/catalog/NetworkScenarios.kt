@@ -11,6 +11,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Baseline.SECONDS_PER_MINUTE
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Params
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
+import com.c0x12c.incidentlab.labctl.scenario.Symptom
 import kotlin.math.roundToInt
 
 /**
@@ -41,6 +42,7 @@ internal object NetworkScenarios {
       "At ${p.startedAt}, /checkout p99 jumped and p50 did not move. The pricing team shows that their own p99 on /price is flat " +
         "and says the problem is not on their side. Find where the time goes."
     },
+    symptom = { Symptom.TAIL_ONLY },
     hints = listOf(
       "Which downstream call of /checkout has the same tail? Compare api's view of pricing with pricing's own p99.",
       "The time is lost between api and pricing, not inside either one. What does the kernel inside api count when a segment never arrives?",
@@ -102,6 +104,7 @@ internal object NetworkScenarios {
       "At ${p.startedAt}, /checkout p99 is up a lot and /products is up a little. The DBA says Postgres is fine: " +
         "mean exec time per query is flat, and the extra queries are cheap."
     },
+    symptom = { Symptom.SLOW_EVERY_ROUTE },
     hints = listOf(
       "Compare the query time api sees with the exec time Postgres counts. Then compare the DB session time with both.",
       "How many queries does one checkout send now? How much longer does each one take at api than inside Postgres?",
@@ -169,6 +172,7 @@ internal object NetworkScenarios {
         "api's calls to pricing now cost more than that, and pricing's own p99 is flat. Someone ran ss -s in the api container " +
         "and saw about ${timeWait()} sockets in TIME_WAIT."
     },
+    symptom = { Symptom.CHANGE_TO_JUDGE },
     hints = listOf(
       "How much slower are api's calls to pricing, against the round trip the zone move adds? Compare p50, not only p99.",
       "A call over a reused connection costs one round trip. What else costs a round trip before the request can go?",
