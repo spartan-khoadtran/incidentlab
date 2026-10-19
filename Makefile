@@ -1,7 +1,8 @@
 # Incident investigation lab (RED & USE). `make` (no target) lists the commands.
 COMPOSE ?= docker compose
 LABCTL   = /run/app/labctl/bin/labctl
-CTL      = $(COMPOSE) exec control $(LABCTL)
+CLI_JAVA = -Xms8m -Xmx64m -XX:TieredStopAtLevel=1 -XX:MaxMetaspaceSize=64m -XX:ReservedCodeCacheSize=16m -XX:+UseSerialGC -Xss512k
+CTL      = $(COMPOSE) exec -e JAVA_OPTS="$(CLI_JAVA)" control $(LABCTL)
 GRADLE   = cd service && ./gradlew
 
 .DEFAULT_GOAL := help
