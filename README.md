@@ -33,7 +33,7 @@ back at a section of it.
 | Needs the lab running | Yes (`make up` first) | No |
 | Time | 10 to 30 minutes per exercise | About 1 minute per question |
 | What it trains | The whole investigation: find the layer, the signal and the cause | The ideas and the math behind it: Little's Law, queueing, tail latency, what each metric means |
-| How many | 45 scenarios, random numbers every run | 137 number drills with new numbers every run, and 261 multiple choice questions |
+| How many | 45 scenarios, random numbers every run | 135 number drills with new numbers every run, and 262 multiple choice questions |
 | Score | 0 to 5 per exercise, kept in `make history` | Right answers out of the questions asked, not saved |
 
 A good order: run `make quiz` until the guide makes sense, then `make new` to use it on a live system.

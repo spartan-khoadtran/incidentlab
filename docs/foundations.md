@@ -154,6 +154,16 @@ Compare with the same 160/s split over two separate M/M/1 queues of 80/s each. E
 
 One more fact from the same example. One server twice as fast (S = 5 ms) at the same 160/s waits 20 ms and answers in 25 ms. The pair answers in 27.8 ms. A faster single server beats two slower ones. Scale up before you scale out, when you can.
 
+### Bounded queues and load shedding
+
+The models above have a queue with no limit. A real server needs a limit. Under overload a queue with no limit grows until memory runs out. Every request in it waits longer than its client does. The client times out, often retries, and the server spends its work on answers nobody reads. The pool is 100% busy and the goodput is close to 0.
+
+A limit turns a long wait into a fast error. A thread pool with 8 threads and a queue of 100 holds 108 requests at most, so it rejects request 109 at once. That rejection is the Errors column of USE for a software resource: rejected tasks for a pool, a 429 for a rate limiter. A limit with no queue at all (the limit equals the number of workers) is a semaphore or a bulkhead: when every permit is taken, the next request fails at once.
+
+Size the queue from the time a request may wait, not from memory. A request at position n waits about n / X before it starts, where X is the throughput of the pool (Little's Law). Worked example: the pool serves X = 200 requests/s and the client timeout leaves 500 ms for the wait. Then n = 200 × 0.5 = 100. A request at position 101 or later times out before it starts, so a longer queue only holds dead work.
+
+The order matters under overload too. FIFO serves the oldest request first, and under overload the oldest request is the one most likely abandoned by its client. LIFO serves the newest first: fresh requests finish in time and only old ones fail. A common setup keeps FIFO while the queue is short, switches to LIFO when it stays long, and drops a request that waited past a target time before any work starts on it. The same check works without a queue change: when a request starts, compare its age with the client deadline and drop it if the client has already given up.
+
 ### When a model lies
 
 - Arrivals are not Poisson in a retry storm. Retries arrive in waves tied to the timeout, and a restart brings a thundering herd. Cron jobs fire at the top of the minute. Real arrivals are often burstier than Poisson, so real queues are longer than M/M/1 says.

@@ -199,26 +199,37 @@ internal object FoundationsConcepts {
       doc = "Modeling and scaling laws > Queue models"
     ),
     ChoiceQuestion(
-      text = "What does the D in M/D/1 change against M/M/1, and by how much?",
-      answer = "The service time is fixed, with no variance, and the queue wait is exactly half",
+      text = "A thread pool has 8 threads and a queue of 100. Requests arrive faster than it serves them. What happens to request 109, and where do you see it?",
+      answer = "It is rejected at once, and it shows in the Errors column of USE for the pool as a rejected task",
       others = listOf(
-        "The arrivals are deterministic, and the queue wait is zero",
-        "The server is doubled, and the wait is a quarter",
-        "Nothing measurable: D and M are two names for the same model"
+        "It waits until a thread is free, and it shows as a longer queue",
+        "The pool adds a ninth thread for it, and it shows as higher utilization",
+        "It takes the place of the oldest request in the queue, and nothing shows"
       ),
-      explanation = "Wq(M/D/1) = ρ / (2(1 − ρ)) × S against ρ / (1 − ρ) × S. Half of a queue is service-time variance.",
-      doc = "Modeling and scaling laws > Queue models"
+      explanation = "8 threads plus 100 places hold 108 requests. The limit turns a long wait into a fast error, so watch the rejected count next to the queue length.",
+      doc = "Modeling and scaling laws > Bounded queues and load shedding"
     ),
     ChoiceQuestion(
-      text = "In A/S/c notation, what does M/M/2 describe?",
-      answer = "Poisson arrivals, exponential service times, two servers behind one shared queue",
+      text = "Clients time out at 1 s. A pool serves 200 requests/s, and its queue has no limit. During an overload the queue reaches 2,000. The pool is 100% busy. Why do almost no users get an answer?",
+      answer = "A new request waits about 10 s before it starts, so the client of every request the pool serves has already timed out",
       others = listOf(
-        "Two queues with one server each",
-        "Two arrival streams into one server",
-        "A model where M stands for the mean service time"
+        "The pool spends its time switching between 2,000 requests",
+        "Little's Law does not hold once the pool is at 100%",
+        "The queue makes each request take longer to process"
       ),
-      explanation = "M means memoryless for both arrivals and service. c = 2 servers, one queue. The exact results: P(wait) = 2ρ² / (1 + ρ), Wq = ρ² / (μ(1 − ρ²)).",
-      doc = "Modeling and scaling laws > Queue models"
+      explanation = "Wait before start = position / throughput = 2,000 / 200 = 10 s. The pool works on answers nobody reads. A queue limit near 200 × the wait budget would fail the extra requests fast instead.",
+      doc = "Modeling and scaling laws > Bounded queues and load shedding"
+    ),
+    ChoiceQuestion(
+      text = "Under overload, why can a server that serves the newest request first (LIFO) answer more users in time than one that serves the oldest first (FIFO)?",
+      answer = "The oldest request's client has most likely given up, while the newest one's client is still waiting",
+      others = listOf(
+        "LIFO makes each request take less time to process",
+        "LIFO uses less memory for each request in the queue",
+        "LIFO keeps utilization under 100%, so the queue stops growing"
+      ),
+      explanation = "Under overload FIFO spends its work on requests that are already timed out. LIFO lets fresh requests finish and fails only the old ones. Many servers switch to LIFO only while the queue stays long.",
+      doc = "Modeling and scaling laws > Bounded queues and load shedding"
     ),
     ChoiceQuestion(
       text = "A load test with 20 fixed virtual users shows latency rising gently as you slow the server. In production the same slowdown caused a collapse. Why?",
