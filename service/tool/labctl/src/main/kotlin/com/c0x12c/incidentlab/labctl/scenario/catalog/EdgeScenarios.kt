@@ -28,7 +28,7 @@ internal object EdgeScenarios {
     ticket = { p -> "At ${p.startedAt}, users complain the app is slow. The api team looks at APM and says their p99 is still normal, so it must be the network." },
     hints = listOf(
       "Put the LB (Envoy) p99 and the api p99 on the same chart.",
-      "The gap between the two lines is time the request spends where? See the Software resources row of the USE dashboard.",
+      "The gap between the two lines is time the request spends where? See dashboard 02, row 1 (Software resources inside api).",
       "Look at the Admission wait p99 panel (app_admission_wait_seconds)."
     ),
     answer = Answer(nature = setOf("arch"), location = setOf("lb", "api"), signal = setOf("lb_vs_api_duration"), cause = "queue_before_app"),

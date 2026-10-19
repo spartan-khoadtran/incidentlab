@@ -1,6 +1,6 @@
 # The runtime layer: GC, virtual threads, system time
 
-The investigation guide puts the runtime between the container and the app's own pools. This file goes one level down for the JVM services of the lab. It covers garbage collection, virtual threads, and the CPU the kernel spends for a process. The JVM row of dashboard `02 · USE by layer` shows every metric named here.
+The investigation guide puts the runtime between the container and the app's own pools. This file goes one level down for the JVM services of the lab. It covers garbage collection, virtual threads, and the CPU the kernel spends for a process. Dashboard `03 · USE · Runtime and JVM`, row 2 shows every metric named here.
 
 ## Garbage collection
 

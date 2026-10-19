@@ -42,7 +42,7 @@ internal object DatabaseScenarios {
     },
     hints = listOf(
       "Compare 'DB as seen from api' (db_client_session_seconds) with 'DB as seen from Postgres' (exec time from pgobserver).",
-      "Where is the gap? Look at the Software resources row of the USE dashboard: pool in use, waiting, acquire wait.",
+      "Where is the gap? Look at dashboard 02, row 1 (Software resources inside api): pool in use, waiting, acquire wait.",
       "Little's Law: the /checkout rate times the connection hold time, against pool_max = 4. In a /checkout trace, which call sits inside db.session?"
     ),
     answer = Answer(nature = setOf("arch"), location = setOf("api_db", "api"), signal = setOf("pool"), cause = "pool_exhausted"),
@@ -101,7 +101,7 @@ internal object DatabaseScenarios {
     },
     hints = listOf(
       "Compare DB session time from api with exec time inside Postgres. Where is the gap?",
-      "Pool row on the USE dashboard: in use, waiting, and the max. Did the hold time change, or the limit?",
+      "The pool panels on dashboard 02, row 1: in use, waiting, and the max. Did the hold time change, or the limit?",
       "Little's Law: $CHECKOUTS_PER_SECOND checkouts/s times about $BASE_CHECKOUT_HOLD_MS ms is about ${String.format(Locale.ROOT, "%.1f", BASE_CONNECTIONS_IN_USE)} connections. " +
         "Against which pool_max is that now a problem?"
     ),

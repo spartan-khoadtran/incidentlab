@@ -76,8 +76,10 @@ The diagram shows the checkout system, the fault loop and the main monitoring to
   `state.json`, sends the fault settings to each service on `PUT /admin/faults`, and sets the api CPU
   limit. A manual change is reverted on the next tick.
 - **What you look at.** Prometheus scrapes `/metrics` on every service. Every service sends spans to
-  Tempo. Grafana has the RED and USE dashboards by layer, and the traces too. Each dot on a latency
-  panel is an exemplar: click it to open one real request that landed in that bucket. api, pricing and
+  Tempo. Grafana opens on `00 · Start here`, one screen across every layer. Each of its panels links
+  to the board with the detail: RED along the request path (01), then USE for the app's pools (02),
+  the runtime and JVM (03), the container, host and network (04), and Postgres and the disk (05).
+  Each dot on a latency panel is an exemplar: click it to open one real request that landed in that bucket. api, pricing and
   worker also run a profiling agent: Explore > Pyroscope shows which code uses their CPU.
 
 ### One exercise

@@ -97,7 +97,7 @@ Every Kotlin service in the lab (api, pricing, worker, loadgen, noisy, pgobserve
 
 ### The network row
 
-Dashboard `02 · USE by layer`, row "Network (per service)", and one panel in row 4 of `01 · RED by layer`.
+Dashboard `04 · USE · Container, host, network`, row 3, and one panel in row 4 of `01 · RED by layer`.
 
 | Panel | Metric | Healthy lab | What a change means |
 |---|---|---|---|
@@ -106,7 +106,7 @@ Dashboard `02 · USE by layer`, row "Network (per service)", and one panel in ro
 | TCP connections opened/s | `rate(net_tcp_active_opens_total[1m])` | Low: the clients reuse their connections | Connections are not reused, or they keep breaking |
 | Sockets in TIME_WAIT | `net_tcp_time_wait` | Low | This side closes connections first. About closes/s × 60 |
 | TCP connections established | `net_tcp_current_established` | Flat | A pool that grows or a client that leaks connections |
-| Calls to pricing: new TCP connections/s vs calls/s (RED row 4) | `http_client_connections_total` against `http_client_requests_total` | Opens near 0 while calls flow | One open per call: every call pays a handshake |
+| Calls to pricing: new TCP connections/s vs calls/s (dashboard 01, row 4) | `http_client_connections_total` against `http_client_requests_total` | Opens near 0 while calls flow | One open per call: every call pays a handshake |
 
 - `net_tcp_syn_retrans_total`, `net_tcp_lost_retransmit_total`, `net_tcp_attempt_fails_total`, `net_tcp_estab_resets_total`, `net_tcp_listen_overflows_total`, `net_tcp_passive_opens_total` and `net_tcp_out_segs_total` are exported too. Use them in Explore.
 - Retransmits mean little alone. Divide by `net_tcp_out_segs_total` for a loss share, and compare with the latency of the calls on that path.

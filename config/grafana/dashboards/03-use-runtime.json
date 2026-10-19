@@ -1,0 +1,940 @@
+{
+  "uid" : "use-runtime",
+  "title" : "03 · USE · Runtime and JVM",
+  "description" : "The process, the JVM (heap, GC, virtual threads) and where the CPU goes.",
+  "tags" : [
+    "lab"
+  ],
+  "timezone" : "browser",
+  "schemaVersion" : 39,
+  "version" : 1,
+  "editable" : true,
+  "refresh" : "5s",
+  "time" : {
+    "from" : "now-30m",
+    "to" : "now"
+  },
+  "links" : [
+    {
+      "type" : "dashboards",
+      "tags" : [
+        "lab"
+      ],
+      "title" : "Lab",
+      "asDropdown" : false,
+      "includeVars" : false,
+      "keepTime" : true
+    }
+  ],
+  "annotations" : {
+    "list" : [
+      {
+        "builtIn" : 1,
+        "datasource" : {
+          "type" : "grafana",
+          "uid" : "-- Grafana --"
+        },
+        "enable" : true,
+        "hide" : true,
+        "iconColor" : "rgba(0, 211, 255, 1)",
+        "name" : "Annotations & Alerts",
+        "type" : "dashboard"
+      },
+      {
+        "datasource" : {
+          "type" : "grafana",
+          "uid" : "-- Grafana --"
+        },
+        "enable" : true,
+        "hide" : false,
+        "iconColor" : "orange",
+        "name" : "Lab: deploy / config change",
+        "target" : {
+          "type" : "tags",
+          "tags" : [
+            "lab"
+          ],
+          "limit" : 100,
+          "matchAny" : true
+        }
+      }
+    ]
+  },
+  "templating" : {
+    "list" : [ ]
+  },
+  "panels" : [
+    {
+      "type" : "text",
+      "title" : "",
+      "id" : 1,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 0,
+        "w" : 24,
+        "h" : 2
+      },
+      "options" : {
+        "mode" : "markdown",
+        "content" : "**Each layer has its own limit.** Utilization only means something against the limit of that same layer. Order of reading: Errors, Saturation, then Utilization."
+      }
+    },
+    {
+      "type" : "row",
+      "title" : "1 · Runtime (process)",
+      "collapsed" : false,
+      "id" : 2,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 2,
+        "w" : 24,
+        "h" : 1
+      },
+      "panels" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Event loop lag p99",
+      "description" : "Saturation of a single-threaded event loop: work waiting for the loop to be free.",
+      "id" : 3,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 3,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "histogram_quantile(0.99, sum by (le, job) (rate(event_loop_lag_seconds_bucket[$__rate_interval])))",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : true
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "s",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Process CPU (cores)",
+      "description" : "The event loop is one thread: work on it uses at most about 1 core, whatever the limit.",
+      "id" : 4,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 3,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(process_cpu_seconds_total{job=~\"api|pricing|worker|loadgen|pgobserver\"}[$__rate_interval])",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Memory (RSS)",
+      "description" : "",
+      "id" : 5,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 16,
+        "y" : 3,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "process_resident_memory_bytes{job=~\"api|pricing|worker|loadgen|pgobserver\"}",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "bytes",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Restarts in 10 minutes",
+      "description" : "",
+      "id" : 6,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 11,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "changes(process_start_time_seconds{job=~\"api|pricing|worker|loadgen\"}[10m])",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "CPU user against system (cores)",
+      "description" : "From the container's cpu.stat. System time is the kernel working for the process: syscalls such as writes to a socket, a pipe or a file.",
+      "id" : 7,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 11,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "sum by (job, mode) (rate(cgroup_cpu_mode_seconds_total{job=~\"api|pricing|worker\"}[$__rate_interval]))",
+          "legendFormat" : "{{job}} {{mode}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "row",
+      "title" : "2 · JVM (heap, GC, virtual threads)",
+      "collapsed" : false,
+      "id" : 8,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 19,
+        "w" : 24,
+        "h" : 1
+      },
+      "panels" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "api heap by pool against the old gen max",
+      "description" : "Serial collector pools: Eden Space and Survivor Space are the young generation, Tenured Gen the old one. Old gen usage grows between full GCs.",
+      "id" : 9,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 20,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "jvm_memory_used_bytes{job=\"api\",area=\"heap\"}",
+          "legendFormat" : "{{id}}",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "jvm_memory_max_bytes{job=\"api\",id=\"Tenured Gen\"}",
+          "legendFormat" : "Tenured Gen max",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "bytes",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "GC pause p99",
+      "description" : "Every pause stops all application threads. A request in flight during a pause waits for it.",
+      "id" : 10,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 20,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "histogram_quantile(0.99, sum by (le, job) (rate(jvm_gc_pause_seconds_bucket{job=~\"api|pricing|worker\"}[$__rate_interval])))",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : true
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "s",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "heatmap",
+      "title" : "api GC pauses (pauses per bucket)",
+      "description" : "One cell per pause-length bucket and interval. A full GC shows as a cell far above the young GC band.",
+      "id" : 11,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 16,
+        "y" : 20,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "sum by (le) (increase(jvm_gc_pause_seconds_bucket{job=\"api\"}[$__rate_interval]))",
+          "format" : "heatmap",
+          "legendFormat" : "{{le}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : { },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "calculate" : false,
+        "yAxis" : {
+          "axisPlacement" : "left",
+          "unit" : "s"
+        },
+        "rowsFrame" : {
+          "layout" : "auto"
+        },
+        "color" : {
+          "mode" : "scheme",
+          "scheme" : "Oranges",
+          "fill" : "dark-orange",
+          "scale" : "exponential",
+          "exponent" : 0.5,
+          "steps" : 64,
+          "reverse" : false
+        },
+        "filterValues" : {
+          "le" : 1.0E-9
+        },
+        "cellGap" : 1,
+        "showValue" : "never",
+        "legend" : {
+          "show" : true
+        },
+        "tooltip" : {
+          "mode" : "single",
+          "yHistogram" : false,
+          "showColorScale" : false
+        },
+        "exemplars" : {
+          "color" : "rgba(255,0,255,0.7)"
+        }
+      }
+    },
+    {
+      "type" : "timeseries",
+      "title" : "GC runs per second by collector and cause",
+      "description" : "Copy is the young collector, MarkSweepCompact the full one.",
+      "id" : 12,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 28,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "sum by (job, gc, cause) (rate(jvm_gc_pause_seconds_count{job=~\"api|pricing|worker\"}[$__rate_interval]))",
+          "legendFormat" : "{{job}} {{gc}} {{cause}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Allocation rate",
+      "description" : "Bytes allocated in the young generation per second, counted at each GC.",
+      "id" : 13,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 28,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(jvm_gc_memory_allocated_bytes_total{job=~\"api|pricing|worker\"}[$__rate_interval])",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "Bps",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Live data after full GC against the old gen max",
+      "description" : "What a full GC could not free. Close to the max: each GC frees little, so the next one comes soon.",
+      "id" : 14,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 16,
+        "y" : 28,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "jvm_gc_live_data_size_bytes{job=~\"api|pricing|worker\"}",
+          "legendFormat" : "{{job}} live after GC",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "jvm_memory_max_bytes{job=~\"api|pricing|worker\",id=\"Tenured Gen\"}",
+          "legendFormat" : "{{job}} old gen max",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "bytes",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Pinned virtual threads per second",
+      "description" : "JFR jdk.VirtualThreadPinned events above 1 ms: a virtual thread blocked while it could not leave its carrier thread.",
+      "id" : 15,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 36,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(jvm_virtual_thread_pinned_total{job=~\"api|pricing|worker\"}[$__rate_interval])",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Time pinned per second (carriers blocked)",
+      "description" : "Seconds of pinned blocking per second, about the number of carriers blocked at once. api has 2 carriers, one per core.",
+      "id" : 16,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 36,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(jvm_virtual_thread_pinned_seconds_total{job=~\"api|pricing|worker\"}[$__rate_interval])",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "row",
+      "title" : "3 · CPU profiles (Pyroscope)",
+      "collapsed" : false,
+      "id" : 17,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 44,
+        "w" : 24,
+        "h" : 1
+      },
+      "panels" : [ ]
+    },
+    {
+      "type" : "flamegraph",
+      "title" : "api: where the CPU goes",
+      "description" : "Summed over the time range. Width is a share of CPU samples, and the x-axis is not time. Narrow the range to the incident, and compare with a range before it.",
+      "id" : 18,
+      "datasource" : {
+        "type" : "grafana-pyroscope-datasource",
+        "uid" : "pyroscope"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 45,
+        "w" : 12,
+        "h" : 12
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "grafana-pyroscope-datasource",
+            "uid" : "pyroscope"
+          },
+          "refId" : "A",
+          "queryType" : "profile",
+          "profileTypeId" : "process_cpu:cpu:nanoseconds:cpu:nanoseconds",
+          "labelSelector" : "{service_name=\"api\"}",
+          "groupBy" : [ ]
+        }
+      ]
+    },
+    {
+      "type" : "flamegraph",
+      "title" : "pricing: where the CPU goes",
+      "description" : "",
+      "id" : 19,
+      "datasource" : {
+        "type" : "grafana-pyroscope-datasource",
+        "uid" : "pyroscope"
+      },
+      "gridPos" : {
+        "x" : 12,
+        "y" : 45,
+        "w" : 12,
+        "h" : 12
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "grafana-pyroscope-datasource",
+            "uid" : "pyroscope"
+          },
+          "refId" : "A",
+          "queryType" : "profile",
+          "profileTypeId" : "process_cpu:cpu:nanoseconds:cpu:nanoseconds",
+          "labelSelector" : "{service_name=\"pricing\"}",
+          "groupBy" : [ ]
+        }
+      ]
+    }
+  ]
+}

@@ -785,13 +785,13 @@ internal object InvestigationConcepts {
     ),
     ChoiceQuestion(
       text = "Where in the incidentlab dashboards do you find the DB pool in use, max and waiting?",
-      answer = "Dashboard 02 (USE by layer), row 1, Software resources",
+      answer = "Dashboard 02, row 1, Software resources inside api",
       others = listOf(
         "Dashboard 01, row 1, Client",
-        "Dashboard 02, row 5, Postgres",
+        "Dashboard 05, row 1, Postgres",
         "Explore > Tempo"
       ),
-      explanation = "The pool is a software resource inside api. Postgres' own view (row 5) shows connections by state, not the app's pool.",
+      explanation = "The pool is a software resource inside api. Postgres' own view (dashboard 05, row 1) shows connections by state, not the app's pool.",
       doc = "In this lab"
     ),
     ChoiceQuestion(

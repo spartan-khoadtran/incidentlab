@@ -15,8 +15,8 @@ import jakarta.inject.Singleton
 
 // One registry per process, built by hand rather than through micronaut-micrometer: the lab's
 // panels name every series, so no auto binder may add or rename one. The process, cgroup and
-// netstat binders are the Runtime, Container and Network rows of the USE dashboard, the JVM and JFR
-// binders its JVM row. The JVM binder goes first: its GC bucket filter only shapes meters registered
+// netstat binders feed the Runtime, Container and Network rows of the USE boards, the JVM and JFR
+// binders the JVM row. The JVM binder goes first: its GC bucket filter only shapes meters registered
 // after it. Every binder is a bean of its own because Micrometer only holds a weak reference to a
 // gauge's state object: a binder nobody else references is collected, and its gauges read NaN from
 // then on.

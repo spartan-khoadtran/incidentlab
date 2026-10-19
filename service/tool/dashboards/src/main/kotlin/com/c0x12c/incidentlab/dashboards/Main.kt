@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import java.nio.file.Files
 import java.nio.file.Path
 
-// Usage: dashboards <output dir>. Writes 01-red-layers.json and 02-use-layers.json.
+// Usage: dashboards <output dir>. Writes one JSON file per board in Boards and removes the lab's older files.
 object Main {
 
   @JvmStatic
@@ -15,9 +15,19 @@ object Main {
     Files.createDirectories(out)
     val printer = DefaultPrettyPrinter().withArrayIndenter(DefaultIndenter.SYSTEM_LINEFEED_INSTANCE)
     val writer = ObjectMapper().writer(printer)
-    for ((name, board) in listOf("01-red-layers.json" to RedBoard.build(), "02-use-layers.json" to UseBoard.build())) {
-      Files.writeString(out.resolve(name), writer.writeValueAsString(board.toJson()) + "\n")
-      println("wrote ${out.resolve(name)} (${board.panels.size} panels)")
+    val boards = Boards.all()
+    val names = boards.map { it.fileName }.toSet()
+    Files.list(out).use { files ->
+      files.filter { it.fileName.toString().matches(BOARD_FILE) && it.fileName.toString() !in names }.forEach {
+        Files.delete(it)
+        println("removed $it")
+      }
+    }
+    for (board in boards) {
+      Files.writeString(out.resolve(board.fileName), writer.writeValueAsString(board.toJson()) + "\n")
+      println("wrote ${out.resolve(board.fileName)} (${board.panels.size} panels)")
     }
   }
+
+  private val BOARD_FILE = Regex("\\d{2}-[a-z-]+\\.json")
 }

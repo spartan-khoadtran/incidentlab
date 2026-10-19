@@ -1,0 +1,797 @@
+{
+  "uid" : "use-app",
+  "title" : "02 · USE · App resources",
+  "description" : "Pools, the admission gate and the lock inside api, and the queue in the Kafka consumer.",
+  "tags" : [
+    "lab"
+  ],
+  "timezone" : "browser",
+  "schemaVersion" : 39,
+  "version" : 1,
+  "editable" : true,
+  "refresh" : "5s",
+  "time" : {
+    "from" : "now-30m",
+    "to" : "now"
+  },
+  "links" : [
+    {
+      "type" : "dashboards",
+      "tags" : [
+        "lab"
+      ],
+      "title" : "Lab",
+      "asDropdown" : false,
+      "includeVars" : false,
+      "keepTime" : true
+    }
+  ],
+  "annotations" : {
+    "list" : [
+      {
+        "builtIn" : 1,
+        "datasource" : {
+          "type" : "grafana",
+          "uid" : "-- Grafana --"
+        },
+        "enable" : true,
+        "hide" : true,
+        "iconColor" : "rgba(0, 211, 255, 1)",
+        "name" : "Annotations & Alerts",
+        "type" : "dashboard"
+      },
+      {
+        "datasource" : {
+          "type" : "grafana",
+          "uid" : "-- Grafana --"
+        },
+        "enable" : true,
+        "hide" : false,
+        "iconColor" : "orange",
+        "name" : "Lab: deploy / config change",
+        "target" : {
+          "type" : "tags",
+          "tags" : [
+            "lab"
+          ],
+          "limit" : 100,
+          "matchAny" : true
+        }
+      }
+    ]
+  },
+  "templating" : {
+    "list" : [ ]
+  },
+  "panels" : [
+    {
+      "type" : "text",
+      "title" : "",
+      "id" : 1,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 0,
+        "w" : 24,
+        "h" : 2
+      },
+      "options" : {
+        "mode" : "markdown",
+        "content" : "**Each layer has its own limit.** Utilization only means something against the limit of that same layer. Order of reading: Errors, Saturation, then Utilization."
+      }
+    },
+    {
+      "type" : "row",
+      "title" : "1 · Software resources inside api",
+      "collapsed" : false,
+      "id" : 2,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 2,
+        "w" : 24,
+        "h" : 1
+      },
+      "panels" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "DB pool: in use, max, waiting",
+      "description" : "",
+      "id" : 3,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 3,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "db_pool_in_use{job=\"api\"}",
+          "legendFormat" : "in use",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "db_pool_max{job=\"api\"}",
+          "legendFormat" : "max",
+          "refId" : "B",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "db_pool_waiting{job=\"api\"}",
+          "legendFormat" : "waiting (saturation)",
+          "refId" : "C",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Wait for a connection p99",
+      "description" : "",
+      "id" : 4,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 3,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "histogram_quantile(0.99, sum by (le) (rate(db_pool_acquire_seconds_bucket{job=\"api\"}[$__rate_interval])))",
+          "legendFormat" : "acquire wait p99",
+          "refId" : "A",
+          "exemplar" : true
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "s",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Pool timeouts/s (errors)",
+      "description" : "",
+      "id" : 5,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 16,
+        "y" : 3,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(db_pool_timeouts_total{job=\"api\"}[$__rate_interval])",
+          "legendFormat" : "timeouts/s",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Admission: in handler and waiting",
+      "description" : "Requests waiting here are not yet counted in api's duration.",
+      "id" : 6,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 11,
+        "w" : 10,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "app_admission_inflight{job=\"api\"}",
+          "legendFormat" : "in flight",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "app_admission_waiting{job=\"api\"}",
+          "legendFormat" : "waiting (saturation)",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "stat",
+      "title" : "Admission limit",
+      "description" : "",
+      "id" : 7,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 10,
+        "y" : 11,
+        "w" : 4,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "app_admission_limit{job=\"api\"}",
+          "refId" : "A",
+          "instant" : true
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short"
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "reduceOptions" : {
+          "calcs" : [
+            "lastNotNull"
+          ]
+        },
+        "colorMode" : "none",
+        "graphMode" : "none"
+      }
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Admission wait p99",
+      "description" : "",
+      "id" : 8,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 14,
+        "y" : 11,
+        "w" : 10,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "histogram_quantile(0.99, sum by (le) (rate(app_admission_wait_seconds_bucket{job=\"api\"}[$__rate_interval])))",
+          "legendFormat" : "wait p99",
+          "refId" : "A",
+          "exemplar" : true
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "s",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Inventory lock: wait p99",
+      "description" : "Time a checkout waits for api's one inventory lock. Off-CPU time: the thread uses no CPU while it waits.",
+      "id" : 9,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 19,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "histogram_quantile(0.99, sum by (le) (rate(app_lock_wait_seconds_bucket{job=\"api\"}[$__rate_interval])))",
+          "legendFormat" : "lock wait p99",
+          "refId" : "A",
+          "exemplar" : true
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "s",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Inventory lock: threads waiting (saturation)",
+      "description" : "",
+      "id" : 10,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 19,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "app_lock_waiting{job=\"api\"}",
+          "legendFormat" : "waiting",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Inventory lock: utilization",
+      "description" : "Share of time the lock is held. By M/M/1 the mean wait is utilization / (1 - utilization) times the hold time.",
+      "id" : 11,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 16,
+        "y" : 19,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "100 * rate(app_lock_held_seconds_total{job=\"api\"}[$__rate_interval])",
+          "legendFormat" : "held %",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "percent",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "row",
+      "title" : "2 · Kafka consumer (worker)",
+      "collapsed" : false,
+      "id" : 12,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 27,
+        "w" : 24,
+        "h" : 1
+      },
+      "panels" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Lag (seconds) by partition",
+      "description" : "",
+      "id" : 13,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 28,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "kafka_consumer_lag_seconds",
+          "legendFormat" : "p{{partition}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "s",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Messages waiting in worker memory",
+      "description" : "",
+      "id" : 14,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 28,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "kafka_partition_queue",
+          "legendFormat" : "p{{partition}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Processing errors/s",
+      "description" : "",
+      "id" : 15,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 16,
+        "y" : 28,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "sum by (source) (rate(kafka_consumed_total{outcome=\"error\"}[$__rate_interval])) or vector(0)",
+          "legendFormat" : "{{source}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    }
+  ]
+}

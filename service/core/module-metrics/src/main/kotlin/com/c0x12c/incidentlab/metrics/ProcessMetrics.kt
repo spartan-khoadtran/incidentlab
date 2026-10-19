@@ -9,7 +9,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * The three process gauges the USE dashboard's Runtime row reads, named as the Prometheus client
+ * The three process gauges the Runtime (process) panels read, named as the Prometheus client
  * libraries name them so the panels work unchanged: CPU seconds, resident memory, start time.
  */
 class ProcessMetrics(

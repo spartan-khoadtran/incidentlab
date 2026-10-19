@@ -63,7 +63,7 @@ class BenchExercise(
     terminal.out()
     terminal.out("What to watch:")
     terminal.out("  - Client requests/s (dashboard 01, row 1): how high does a closed loop push the rate?")
-    terminal.out("  - api in-flight and the Little's Law panel (row 3): how many requests are inside api at once?")
+    terminal.out("  - api in-flight and the Little's Law panel (dashboard 01, row 3): how many requests are inside api at once?")
     terminal.out("  - DB pool in use and waiting (dashboard 02, row 1): is a resource full?")
     terminal.out("  - p99 at the client and at api. Errors.")
     terminal.out()

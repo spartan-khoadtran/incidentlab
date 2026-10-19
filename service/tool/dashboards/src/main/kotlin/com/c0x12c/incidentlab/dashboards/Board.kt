@@ -1,27 +1,34 @@
 package com.c0x12c.incidentlab.dashboards
 
-/** A Grafana dashboard assembled left to right, top to bottom, on the 24-column grid. */
+/** A Grafana dashboard assembled left to right, top to bottom, on the 24-column grid. Rows are numbered from 1, so a pointer can name a row by its number. */
 class Board(
-  private val uid: String,
-  private val title: String,
+  val uid: String,
+  val title: String,
   private val description: String
 ) {
 
   val panels = mutableListOf<Map<String, Any?>>()
+  val rows = mutableListOf<String>()
   private var y = 0
   private var x = 0
   private var rowHeight = 0
   private var nextId = 1
+
+  /** The two digits the title starts with, which the docs use to name the board. */
+  val number: String get() = title.substringBefore(" ·")
+
+  val fileName: String get() = "$number-$uid.json"
 
   fun row(title: String) {
     if (x > 0) {
       y += rowHeight
       x = 0
     }
+    rows.add(title)
     panels.add(
       mapOf(
         "type" to "row",
-        "title" to title,
+        "title" to "${rows.size} · $title",
         "collapsed" to false,
         "id" to id(),
         "gridPos" to mapOf("x" to 0, "y" to y, "w" to FULL_WIDTH, "h" to 1),
@@ -40,7 +47,8 @@ class Board(
     width: Int = DEFAULT_WIDTH,
     height: Int = DEFAULT_HEIGHT,
     minZero: Boolean = true,
-    stack: Boolean = false
+    stack: Boolean = false,
+    linkTo: Board? = null
   ) {
     val defaults = mutableMapOf<String, Any?>(
       "unit" to unit,
@@ -76,7 +84,8 @@ class Board(
         "options" to mapOf(
           "legend" to mapOf("displayMode" to "list", "placement" to "bottom", "showLegend" to true),
           "tooltip" to mapOf("mode" to "multi", "sort" to "desc")
-        )
+        ),
+        "links" to listOfNotNull(linkTo?.let { mapOf("title" to "Open ${it.title}", "url" to "/d/${it.uid}?\${__url_time_range}") })
       )
     )
   }
@@ -179,6 +188,14 @@ class Board(
         "gridPos" to place(width, height),
         "options" to mapOf("mode" to "markdown", "content" to content)
       )
+    )
+  }
+
+  fun useIntro() {
+    text(
+      "**Each layer has its own limit.** Utilization only means something against the limit of that same layer. " +
+        "Order of reading: Errors, Saturation, then Utilization.",
+      height = 2
     )
   }
 

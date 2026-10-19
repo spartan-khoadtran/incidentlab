@@ -114,7 +114,7 @@ export function HowItWorks() {
           <li>
             <h3>Investigate</h3>
             <p>
-              Dashboards <em>01 · RED by layer</em> and <em>02 · USE by layer</em>, traces in Explore &gt; Tempo, profiles in Explore &gt; Pyroscope. Compare with the minutes before the ticket. An orange line on a chart is a change event, and some of them are decoys.
+              Dashboard <em>00 · Start here</em> first, then the board of the layer that moved. Traces in Explore &gt; Tempo, profiles in Explore &gt; Pyroscope. Compare with the minutes before the ticket. An orange line on a chart is a change event, and some of them are decoys.
             </p>
           </li>
           <li>

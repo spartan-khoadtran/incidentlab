@@ -145,7 +145,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -200,7 +201,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -275,7 +277,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -330,7 +333,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -395,7 +399,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -450,7 +455,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "row",
@@ -518,7 +524,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -593,7 +600,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -678,7 +686,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -743,7 +752,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -808,7 +818,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "row",
@@ -876,7 +887,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -931,7 +943,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -986,7 +999,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -1051,7 +1065,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -1106,7 +1121,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "heatmap",
@@ -1242,7 +1258,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -1297,12 +1314,13 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
       "title" : "Mean query time as seen from the app",
-      "description" : "Excludes the pool wait. Compare with exec time in row 5.",
+      "description" : "Excludes the pool wait. Compare with the exec time Postgres measures, in the next row.",
       "id" : 25,
       "datasource" : {
         "type" : "prometheus",
@@ -1352,7 +1370,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -1407,7 +1426,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -1462,7 +1482,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -1517,7 +1538,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -1582,7 +1604,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "row",
@@ -1650,7 +1673,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -1705,7 +1729,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -1760,7 +1785,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -1815,7 +1841,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "row",
@@ -1903,7 +1930,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -1968,7 +1996,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -2023,7 +2052,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -2078,7 +2108,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -2133,7 +2164,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     },
     {
       "type" : "timeseries",
@@ -2188,7 +2220,8 @@
           "mode" : "multi",
           "sort" : "desc"
         }
-      }
+      },
+      "links" : [ ]
     }
   ]
 }

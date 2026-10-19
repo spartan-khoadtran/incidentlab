@@ -91,7 +91,7 @@ The same rule applies during an incident: see `Working an incident > One change 
 
 A benchmark result without the limiting resource is a number with no reason. The next question is always why the rate did not go higher. Only an active run can answer it.
 
-In the lab: `make load X=4`, then dashboard 02 while it runs. Row 1 shows the pool: `db_pool_in_use` against `db_pool_max`, and `db_pool_waiting`. Row 3 shows the cgroup: `cgroup_cpu_usage_seconds_total` against `cgroup_cpu_limit_cores`, and throttled periods. The one that is full is the limit, and the result of the test is that resource, not the rps.
+In the lab: `make load X=4`, then watch two boards while it runs. Dashboard 02, row 1 shows the pool: `db_pool_in_use` against `db_pool_max`, and `db_pool_waiting`. Dashboard 04, row 1 shows the cgroup: `cgroup_cpu_usage_seconds_total` against `cgroup_cpu_limit_cores`, and throttled periods. The one that is full is the limit, and the result of the test is that resource, not the rps.
 
 ## Open and closed load models
 

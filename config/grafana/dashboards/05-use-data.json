@@ -1,0 +1,887 @@
+{
+  "uid" : "use-data",
+  "title" : "05 · USE · Postgres and disk",
+  "description" : "Postgres from the server side, and the host disks under it.",
+  "tags" : [
+    "lab"
+  ],
+  "timezone" : "browser",
+  "schemaVersion" : 39,
+  "version" : 1,
+  "editable" : true,
+  "refresh" : "5s",
+  "time" : {
+    "from" : "now-30m",
+    "to" : "now"
+  },
+  "links" : [
+    {
+      "type" : "dashboards",
+      "tags" : [
+        "lab"
+      ],
+      "title" : "Lab",
+      "asDropdown" : false,
+      "includeVars" : false,
+      "keepTime" : true
+    }
+  ],
+  "annotations" : {
+    "list" : [
+      {
+        "builtIn" : 1,
+        "datasource" : {
+          "type" : "grafana",
+          "uid" : "-- Grafana --"
+        },
+        "enable" : true,
+        "hide" : true,
+        "iconColor" : "rgba(0, 211, 255, 1)",
+        "name" : "Annotations & Alerts",
+        "type" : "dashboard"
+      },
+      {
+        "datasource" : {
+          "type" : "grafana",
+          "uid" : "-- Grafana --"
+        },
+        "enable" : true,
+        "hide" : false,
+        "iconColor" : "orange",
+        "name" : "Lab: deploy / config change",
+        "target" : {
+          "type" : "tags",
+          "tags" : [
+            "lab"
+          ],
+          "limit" : 100,
+          "matchAny" : true
+        }
+      }
+    ]
+  },
+  "templating" : {
+    "list" : [ ]
+  },
+  "panels" : [
+    {
+      "type" : "text",
+      "title" : "",
+      "id" : 1,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 0,
+        "w" : 24,
+        "h" : 2
+      },
+      "options" : {
+        "mode" : "markdown",
+        "content" : "**Each layer has its own limit.** Utilization only means something against the limit of that same layer. Order of reading: Errors, Saturation, then Utilization."
+      }
+    },
+    {
+      "type" : "row",
+      "title" : "1 · Postgres (server side)",
+      "collapsed" : false,
+      "id" : 2,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 2,
+        "w" : 24,
+        "h" : 1
+      },
+      "panels" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Connections by state vs max",
+      "description" : "",
+      "id" : 3,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 3,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "pg_connections",
+          "legendFormat" : "{{state}}",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "pg_max_connections",
+          "legendFormat" : "max_connections",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Backends waiting on a lock",
+      "description" : "",
+      "id" : 4,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 3,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "pg_lock_waiters",
+          "legendFormat" : "lock waiters",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Time Postgres spends executing (seconds per second)",
+      "description" : "By Little's Law, this is the mean number of queries running inside Postgres.",
+      "id" : 5,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 16,
+        "y" : 3,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "sum(rate(pg_query_exec_seconds_total[$__rate_interval]))",
+          "legendFormat" : "exec seconds/s",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Wait events (mean backends waiting)",
+      "description" : "Sampled every 100 ms from pg_stat_activity. IO / WALSync: waiting for a WAL fsync (a commit or the WAL writer). IO / DataFileSync: mostly the checkpointer flushing table files.",
+      "id" : 6,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 11,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "pg_wait_events > 0",
+          "legendFormat" : "{{type}} / {{event}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 10,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "normal"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Mean WAL sync time",
+      "description" : "Every commit waits for one of these. It grows when the disk under the WAL is busy.",
+      "id" : 7,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 11,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(pg_wal_sync_seconds_total[$__rate_interval]) / rate(pg_wal_syncs_total[$__rate_interval])",
+          "legendFormat" : "per WAL fsync",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "s",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "WAL written per second",
+      "description" : "The first change to a page after a checkpoint writes an image of the whole page to WAL, so WAL jumps right after each checkpoint.",
+      "id" : 8,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 16,
+        "y" : 11,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(pg_wal_bytes_total[$__rate_interval])",
+          "legendFormat" : "WAL bytes/s",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "Bps",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Checkpoints in the last minute, by kind",
+      "description" : "timed: checkpoint_timeout fired. requested: WAL reached max_wal_size (or someone ran CHECKPOINT).",
+      "id" : 9,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 19,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "increase(pg_checkpoints_total[1m])",
+          "legendFormat" : "{{kind}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Checkpoint write and sync (seconds per second)",
+      "description" : "Both counters move once per checkpoint, when it ends. Write time includes the pauses that spread a checkpoint out, so a long write is healthy. Sync time is the burst of flushes at the end.",
+      "id" : 10,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 19,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(pg_checkpoint_write_seconds_total[1m])",
+          "legendFormat" : "write",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(pg_checkpoint_sync_seconds_total[1m])",
+          "legendFormat" : "sync",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "row",
+      "title" : "2 · Disk (host, node-exporter)",
+      "collapsed" : false,
+      "id" : 11,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 27,
+        "w" : 24,
+        "h" : 1
+      },
+      "panels" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "IOPS by device",
+      "description" : "Completed I/Os per second as the host sees each disk. A cgroup IOPS limit holds I/O back before it reaches this count.",
+      "id" : 12,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 28,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(node_disk_writes_completed_total[$__rate_interval])",
+          "legendFormat" : "{{device}} writes",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(node_disk_reads_completed_total[$__rate_interval])",
+          "legendFormat" : "{{device}} reads",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Throughput by device",
+      "description" : "",
+      "id" : 13,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 28,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(node_disk_written_bytes_total[$__rate_interval])",
+          "legendFormat" : "{{device}} written",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(node_disk_read_bytes_total[$__rate_interval])",
+          "legendFormat" : "{{device}} read",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "Bps",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Await (mean time per I/O)",
+      "description" : "Queue time in the device plus service time, like iostat's w_await and r_await.",
+      "id" : 14,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 16,
+        "y" : 28,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(node_disk_write_time_seconds_total[$__rate_interval]) / rate(node_disk_writes_completed_total[$__rate_interval])",
+          "legendFormat" : "{{device}} write",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(node_disk_read_time_seconds_total[$__rate_interval]) / rate(node_disk_reads_completed_total[$__rate_interval])",
+          "legendFormat" : "{{device}} read",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "s",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Busy share (utilization)",
+      "description" : "Share of time with at least one I/O in flight, like iostat's %util. A disk that serves I/Os in parallel can take more work at 100%.",
+      "id" : 15,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 36,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "100 * rate(node_disk_io_time_seconds_total[$__rate_interval])",
+          "legendFormat" : "{{device}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "percent",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Queue (mean I/Os in flight)",
+      "description" : "Saturation, like iostat's aqu-sz. By Little's Law it is IOPS times await.",
+      "id" : 16,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 36,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(node_disk_io_time_weighted_seconds_total[$__rate_interval])",
+          "legendFormat" : "{{device}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    }
+  ]
+}

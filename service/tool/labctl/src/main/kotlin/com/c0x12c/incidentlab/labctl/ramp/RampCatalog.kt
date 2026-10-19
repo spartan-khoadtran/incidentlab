@@ -98,7 +98,7 @@ object RampCatalog : FaultSource {
         "The hidden limit was api cpus = $cpus (the default is $BASE_CPUS). The pool was opened to $OPEN_POOL, so it stayed out of the way. " +
           "api uses about $API_CORES_AT_BASE cores at $BASE_RPS rps, so the limit is used up at about $cpus / $API_CORES_AT_BASE x $BASE_RPS = $total rps. " +
           "Throttled periods climb before that, because the quota runs out inside single 100 ms periods when requests come in a burst. " +
-          "The panels that showed it: dashboard 02, row 3, CPU usage against the limit and the share of throttled periods."
+          "The panels that showed it: dashboard 04, row 1, CPU usage against the limit and the share of throttled periods."
       }
       else -> {
         val poolAt = poolFullRps(OPEN_POOL).roundToInt()

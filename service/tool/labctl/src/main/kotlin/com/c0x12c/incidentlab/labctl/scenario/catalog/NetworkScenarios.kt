@@ -44,7 +44,7 @@ internal object NetworkScenarios {
     hints = listOf(
       "Which downstream call of /checkout has the same tail? Compare api's view of pricing with pricing's own p99.",
       "The time is lost between api and pricing, not inside either one. What does the kernel inside api count when a segment never arrives?",
-      "Open the Network row of the USE board: retransmits and RTO timeouts at api. How long does Linux wait before it resends a lost segment?"
+      "Open dashboard 04, row 3 (Network): retransmits and RTO timeouts at api. How long does Linux wait before it resends a lost segment?"
     ),
     answer = Answer(nature = setOf("arch"), location = setOf("network"), signal = setOf("tcp_retransmits"), cause = "packet_loss", partial = setOf("downstream_slow")),
     explain = { p ->
@@ -190,7 +190,7 @@ internal object NetworkScenarios {
       "Problem statement: pricing moved to a zone a few ms away, calls cost more than that, pricing's p99 is flat, and api holds many TIME_WAIT sockets.",
       "Compare api's view of pricing with pricing's own p50 and p99: api's p50 rose by about two round trips, pricing did not move. The time is outside pricing.",
       "A reused connection costs one round trip per call. The second round trip is a TCP handshake.",
-      "Network row (dashboard 02): api opens about $CHECKOUTS_PER_SECOND TCP connections per second. On dashboard 01, row 4, connections opened per second equal calls per second: no reuse.",
+      "Dashboard 04, row 3 (Network): api opens about $CHECKOUTS_PER_SECOND TCP connections per second. On dashboard 01, row 4, connections opened per second equal calls per second: no reuse.",
       "TIME_WAIT at api is about $CHECKOUTS_PER_SECOND x $TIME_WAIT_SECONDS = ${CHECKOUTS_PER_SECOND * TIME_WAIT_SECONDS}, because api closes each connection first and keeps the socket for $TIME_WAIT_SECONDS s.",
       "The cause: the new client settings turned off connection reuse. Turn it back on. The zone move is fine."
     ),

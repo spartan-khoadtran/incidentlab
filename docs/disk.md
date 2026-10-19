@@ -137,7 +137,7 @@ Two signs of a limit: IOPS stay flat at one round number while demand grows, and
 
 ## Disk panels in this lab
 
-Dashboard `02 · USE by layer` has the Postgres server view above the Kafka row and the host disk row after the network row. Read them together: the disk row says how busy the disk is, the Postgres row says who waits for it.
+Dashboard `05 · USE · Postgres and disk` holds both: the Postgres server view is dashboard 05, row 1, and the host disk is dashboard 05, row 2. Read them together: the disk row says how busy the disk is, the Postgres row says who waits for it.
 
 ### The host disk row
 

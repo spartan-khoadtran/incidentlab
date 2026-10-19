@@ -78,7 +78,7 @@ A request is either on a CPU or waiting for something: a CPU, a lock, I/O, a dow
 - Little's Law gives the same picture from the other side: threads waiting ≈ arrival rate × mean wait.
 - How to find the lock. A trace shows a span with no child and no CPU. A thread dump shows many threads BLOCKED or WAITING on the same monitor or `ReentrantLock`. A profiler in wall-clock mode, not CPU mode, shows the frames where the time passes.
 - Fix, in the order of the performance mantras: do not take the lock on the request path (refresh in the background), do it once (one refresh per interval, not per request), do less under the lock (move the slow part outside), or shard the lock (one per key).
-- In this lab: `app_lock_wait_seconds`, `app_lock_waiting` and `app_lock_held_seconds_total` for api's inventory lock, in the Software resources row of the USE dashboard. Its hold times are random, so the panels follow the table.
+- In this lab: `app_lock_wait_seconds`, `app_lock_waiting` and `app_lock_held_seconds_total` for api's inventory lock, in dashboard 02, row 1 (Software resources inside api). Its hold times are random, so the panels follow the table.
 
 ### Thread states
 

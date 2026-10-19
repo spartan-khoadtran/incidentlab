@@ -1,0 +1,1078 @@
+{
+  "uid" : "use-host",
+  "title" : "04 · USE · Container, host, network",
+  "description" : "The cgroup limits of each container, the host or VM under them, and TCP per service.",
+  "tags" : [
+    "lab"
+  ],
+  "timezone" : "browser",
+  "schemaVersion" : 39,
+  "version" : 1,
+  "editable" : true,
+  "refresh" : "5s",
+  "time" : {
+    "from" : "now-30m",
+    "to" : "now"
+  },
+  "links" : [
+    {
+      "type" : "dashboards",
+      "tags" : [
+        "lab"
+      ],
+      "title" : "Lab",
+      "asDropdown" : false,
+      "includeVars" : false,
+      "keepTime" : true
+    }
+  ],
+  "annotations" : {
+    "list" : [
+      {
+        "builtIn" : 1,
+        "datasource" : {
+          "type" : "grafana",
+          "uid" : "-- Grafana --"
+        },
+        "enable" : true,
+        "hide" : true,
+        "iconColor" : "rgba(0, 211, 255, 1)",
+        "name" : "Annotations & Alerts",
+        "type" : "dashboard"
+      },
+      {
+        "datasource" : {
+          "type" : "grafana",
+          "uid" : "-- Grafana --"
+        },
+        "enable" : true,
+        "hide" : false,
+        "iconColor" : "orange",
+        "name" : "Lab: deploy / config change",
+        "target" : {
+          "type" : "tags",
+          "tags" : [
+            "lab"
+          ],
+          "limit" : 100,
+          "matchAny" : true
+        }
+      }
+    ]
+  },
+  "templating" : {
+    "list" : [ ]
+  },
+  "panels" : [
+    {
+      "type" : "text",
+      "title" : "",
+      "id" : 1,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 0,
+        "w" : 24,
+        "h" : 2
+      },
+      "options" : {
+        "mode" : "markdown",
+        "content" : "**Each layer has its own limit.** Utilization only means something against the limit of that same layer. Order of reading: Errors, Saturation, then Utilization."
+      }
+    },
+    {
+      "type" : "row",
+      "title" : "1 · Container (cgroup)",
+      "collapsed" : false,
+      "id" : 2,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 2,
+        "w" : 24,
+        "h" : 1
+      },
+      "panels" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "CPU usage per container (cores)",
+      "description" : "",
+      "id" : 3,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 3,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(cgroup_cpu_usage_seconds_total[$__rate_interval])",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "api: CPU usage vs limit",
+      "description" : "",
+      "id" : 4,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 3,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(cgroup_cpu_usage_seconds_total{job=\"api\"}[$__rate_interval])",
+          "legendFormat" : "usage",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "cgroup_cpu_limit_cores{job=\"api\"}",
+          "legendFormat" : "limit",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Share of throttled periods",
+      "description" : "",
+      "id" : 5,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 16,
+        "y" : 3,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "100 * rate(cgroup_cpu_throttled_periods_total[$__rate_interval]) / rate(cgroup_cpu_periods_total[$__rate_interval])",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "percent",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Memory vs limit",
+      "description" : "",
+      "id" : 6,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 11,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "100 * cgroup_memory_usage_bytes / (cgroup_memory_limit_bytes > 0)",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "percent",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "PSI cpu per container (seconds waited per second)",
+      "description" : "May be empty if the kernel has PSI off.",
+      "id" : 7,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 11,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(cgroup_pressure_waiting_seconds_total{resource=\"cpu\",kind=\"some\"}[$__rate_interval])",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "OOM kills (10 minutes)",
+      "description" : "When a container's main process is killed, the container restarts with a new cgroup and its own counter starts at 0. The host line still counts that kill.",
+      "id" : 8,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 16,
+        "y" : 11,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "increase(node_vmstat_oom_kill[10m])",
+          "legendFormat" : "host: any container",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "increase(cgroup_memory_oom_kills_total[10m])",
+          "legendFormat" : "{{job}}",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "row",
+      "title" : "2 · Host / VM (node-exporter)",
+      "collapsed" : false,
+      "id" : 9,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 19,
+        "w" : 24,
+        "h" : 1
+      },
+      "panels" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Host CPU by mode (cores)",
+      "description" : "",
+      "id" : 10,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 20,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "sum by (mode) (rate(node_cpu_seconds_total{mode!=\"idle\"}[$__rate_interval]))",
+          "legendFormat" : "{{mode}}",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "count(node_cpu_seconds_total{mode=\"idle\"})",
+          "legendFormat" : "CPU count",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Load (1 min) vs CPU count",
+      "description" : "Load above the CPU count for long: a run queue, which is CPU saturation.",
+      "id" : 11,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 20,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "node_load1",
+          "legendFormat" : "load1",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "count(node_cpu_seconds_total{mode=\"idle\"})",
+          "legendFormat" : "CPU count",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Host PSI: CPU and memory (seconds waited per second)",
+      "description" : "",
+      "id" : 12,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 16,
+        "y" : 20,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(node_pressure_cpu_waiting_seconds_total[$__rate_interval])",
+          "legendFormat" : "cpu",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(node_pressure_memory_waiting_seconds_total[$__rate_interval])",
+          "legendFormat" : "memory",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Memory available",
+      "description" : "",
+      "id" : 13,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 28,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "100 * node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes",
+          "legendFormat" : "available %",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "percent",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Steal time (cores)",
+      "description" : "",
+      "id" : 14,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 28,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "sum(rate(node_cpu_seconds_total{mode=\"steal\"}[$__rate_interval]))",
+          "legendFormat" : "steal",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "row",
+      "title" : "3 · Network (per service)",
+      "collapsed" : false,
+      "id" : 15,
+      "gridPos" : {
+        "x" : 0,
+        "y" : 36,
+        "w" : 24,
+        "h" : 1
+      },
+      "panels" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "TCP segments retransmitted/s",
+      "description" : "Counted by the kernel in each container's own network namespace. Near 0 on a healthy network.",
+      "id" : 16,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 37,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(net_tcp_retrans_segs_total{job=~\"api|pricing|worker|loadgen|pgobserver\"}[$__rate_interval])",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "RTO timeouts and tail loss probes/s",
+      "description" : "Each one is a sender that waited for a lost segment. On Linux an RTO waits at least 200 ms.",
+      "id" : 17,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 37,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(net_tcp_timeouts_total{job=~\"api|pricing|worker|loadgen|pgobserver\"}[$__rate_interval])",
+          "legendFormat" : "{{job}} RTO",
+          "refId" : "A",
+          "exemplar" : false
+        },
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(net_tcp_loss_probes_total{job=~\"api|pricing|worker|loadgen|pgobserver\"}[$__rate_interval])",
+          "legendFormat" : "{{job}} probe",
+          "refId" : "B",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "TCP connections opened/s (active opens)",
+      "description" : "",
+      "id" : 18,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 16,
+        "y" : 37,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "rate(net_tcp_active_opens_total{job=~\"api|pricing|worker|loadgen|pgobserver\"}[$__rate_interval])",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "Sockets in TIME_WAIT",
+      "description" : "The side that closes first keeps the socket for 60 s. About closes per second x 60.",
+      "id" : 19,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 0,
+        "y" : 45,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "net_tcp_time_wait{job=~\"api|pricing|worker|loadgen|pgobserver\"}",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    },
+    {
+      "type" : "timeseries",
+      "title" : "TCP connections established",
+      "description" : "",
+      "id" : 20,
+      "datasource" : {
+        "type" : "prometheus",
+        "uid" : "prometheus"
+      },
+      "gridPos" : {
+        "x" : 8,
+        "y" : 45,
+        "w" : 8,
+        "h" : 8
+      },
+      "targets" : [
+        {
+          "datasource" : {
+            "type" : "prometheus",
+            "uid" : "prometheus"
+          },
+          "expr" : "net_tcp_current_established{job=~\"api|pricing|worker|loadgen|pgobserver\"}",
+          "legendFormat" : "{{job}}",
+          "refId" : "A",
+          "exemplar" : false
+        }
+      ],
+      "fieldConfig" : {
+        "defaults" : {
+          "unit" : "short",
+          "custom" : {
+            "lineWidth" : 1,
+            "fillOpacity" : 0,
+            "showPoints" : "never",
+            "spanNulls" : true,
+            "stacking" : {
+              "mode" : "none"
+            }
+          },
+          "min" : 0
+        },
+        "overrides" : [ ]
+      },
+      "options" : {
+        "legend" : {
+          "displayMode" : "list",
+          "placement" : "bottom",
+          "showLegend" : true
+        },
+        "tooltip" : {
+          "mode" : "multi",
+          "sort" : "desc"
+        }
+      },
+      "links" : [ ]
+    }
+  ]
+}

@@ -15,7 +15,7 @@ object RedBoard {
       height = 2
     )
 
-    b.row("1 · Client (loadgen): what users see")
+    b.row("Client (loadgen): what users see")
     b.timeseries(
       "User requests/s by outcome",
       listOf("sum by (outcome) (rate(client_requests_total[RI]))" to "{{outcome}}"),
@@ -41,7 +41,7 @@ object RedBoard {
     )
     b.timeseries("p99 by endpoint (client)", listOf(quantile(0.99, "client_duration_seconds", "endpoint") to "{{endpoint}}"), "s")
 
-    b.row("2 · Load balancer (Envoy)")
+    b.row("Load balancer (Envoy)")
     b.timeseries("Requests/s at the LB", listOf("sum(rate(envoy_http_downstream_rq_total{$LB}[RI]))" to "LB received"), "reqps")
     b.timeseries(
       "5xx at the LB vs 5xx api records itself",
@@ -78,7 +78,7 @@ object RedBoard {
       "short"
     )
 
-    b.row("3 · api (APM): from the moment the handler starts")
+    b.row("api (APM): from the moment the handler starts")
     b.timeseries("Requests/s by route and status", listOf("sum by (route, status) (rate(http_server_requests_total{job=\"api\"}[RI]))" to "{{route}} {{status}}"), "reqps")
     b.timeseries(
       "Error rate by route",
@@ -113,7 +113,7 @@ object RedBoard {
       exemplars = true
     )
 
-    b.row("4 · Downstream as seen from api")
+    b.row("Downstream as seen from api")
     b.timeseries(
       "DB session p99 (pool wait + connection held)",
       listOf(quantile(0.99, "db_client_session_seconds", "op", "{job=\"api\"}") to "{{op}}"),
@@ -128,7 +128,7 @@ object RedBoard {
           "sum by (query) (rate(db_client_duration_seconds_count{job=\"api\"}[RI]))" to "{{query}}"
       ),
       "s",
-      "Excludes the pool wait. Compare with exec time in row 5."
+      "Excludes the pool wait. Compare with the exec time Postgres measures, in the next row."
     )
     b.timeseries("Calls to pricing: p99 as seen from api", listOf(quantile(0.99, "http_client_duration_seconds", "route", "{job=\"api\"}") to "{{route}}"), "s")
     b.timeseries("Calls to pricing: outcomes/s", listOf("sum by (route, outcome) (rate(http_client_requests_total{job=\"api\"}[RI]))" to "{{route}} {{outcome}}"), "reqps")
@@ -143,7 +143,7 @@ object RedBoard {
       "With connection reuse, opens stay near 0 while calls flow. One open per call means every call pays a handshake."
     )
 
-    b.row("5 · Downstream as seen by itself")
+    b.row("Downstream as seen by itself")
     b.timeseries("pricing: requests/s by route and status", listOf("sum by (route, status) (rate(http_server_requests_total{job=\"pricing\"}[RI]))" to "{{route}} {{status}}"), "reqps")
     b.timeseries("pricing: p99 by route (server side)", listOf(quantile(0.99, "http_server_duration_seconds", "route", "{job=\"pricing\"}") to "{{route}}"), "s")
     b.timeseries("Postgres: queries/s (counted by Postgres)", listOf("sum by (query) (rate(pg_query_calls_total[RI]))" to "{{query}}"), "reqps")
@@ -154,7 +154,7 @@ object RedBoard {
       "Measured inside Postgres: includes lock waits, excludes network and the app's pool wait."
     )
 
-    b.row("6 · Async (Kafka)")
+    b.row("Async (Kafka)")
     b.timeseries(
       "Produce/s and consume/s",
       listOf(

@@ -350,7 +350,7 @@ class Exercises(
     private const val TOOLBOX_TAG = "[toolbox]"
     const val CHANGED = "The exercise changed while you answered: it was cleared, or another one started. Nothing was saved. `make status` shows what is open now."
     const val NOT_CLEARED = "That exercise was already closed, so nothing was cleared. `make status` shows what is open now."
-    const val LINKS = "  Grafana     http://localhost:3000   (dashboards '01 · RED by layer' and '02 · USE by layer')\n" +
+    const val LINKS = "  Grafana     http://localhost:3000   (start on '00 · Start here', the Lab menu lists every board)\n" +
       "  Traces      in Grafana: Explore > Tempo (search, service graph), or click an exemplar dot on a latency panel\n" +
       "  Profiles    in Grafana: Explore > Pyroscope (service = api, pricing, worker), or http://localhost:4040\n" +
       "  Prometheus  http://localhost:9090\n" +

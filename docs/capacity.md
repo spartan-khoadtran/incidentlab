@@ -87,9 +87,9 @@ A hidden setup changes every run. It can set a small DB pool, lower the api CPU 
 
 What to watch, step by step:
 
-- Client requests/s (dashboard 01, row 1) against api requests/s by status (row 3).
-- api p99 and in-flight (row 3). An annotation on the charts marks the start of each step.
-- DB pool in use, max and waiting (dashboard 02, row 1). CPU usage against the limit and throttled periods (row 3).
+- Client requests/s (dashboard 01, row 1) against api requests/s by status (dashboard 01, row 3).
+- api p99 and in-flight (dashboard 01, row 3). An annotation on the charts marks the start of each step.
+- DB pool in use, max and waiting (dashboard 02, row 1). CPU usage against the limit and throttled periods (dashboard 04, row 1).
 
 `make answer` reads one row per step from Prometheus, then asks three questions. Each window skips the first 10 s of its step.
 
