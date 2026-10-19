@@ -11,6 +11,13 @@ export interface MockReply {
 const OPTION = (key: string, label: string, group?: string) => (group ? { key, label, group } : { key, label });
 
 export const OPTIONS = {
+  levels: [1, 2, 3],
+  topics: ["red", "load"],
+  modes: ["incident", "toolbox"],
+};
+
+/** What the mock ticket offers. The lab knows more keys than this, and the answer refuses the others. */
+export const ANSWER_OPTIONS = {
   natures: [OPTION("mock_load", "Mock nature: real load"), OPTION("mock_arch", "Mock nature: the system itself")],
   locations: [OPTION("mock_lb", "Mock location: before the app"), OPTION("mock_app", "Mock location: inside the app")],
   signals: [OPTION("mock_gap", "Mock signal: the gap between two layers"), OPTION("mock_rate", "Mock signal: rate by route")],
@@ -19,9 +26,18 @@ export const OPTIONS = {
     OPTION("mock_retry", "Mock cause: retries", "Mock layer one"),
     OPTION("mock_cpu", "Mock cause: one hot core", "Mock layer two"),
   ],
-  levels: [1, 2, 3],
-  topics: ["red", "load"],
-  modes: ["incident", "toolbox"],
+};
+
+/** Keys the mock lab knows but this ticket does not offer. */
+export const NOT_OFFERED = {
+  signal: OPTION("mock_disk_wait", "Mock signal: disk wait on the host"),
+  cause: OPTION("mock_disk_full", "Mock cause: a full disk", "Mock layer three"),
+};
+
+const CHECKS: Record<string, string> = {
+  mock_queue: "Mock check: the LB p99 rises while the api p99 stays flat.",
+  mock_retry: "Mock check: attempts per request stay at 1, so it is not retries.",
+  mock_cpu: "Mock check: process CPU stays far below one core.",
 };
 
 export const MOCK_REVEAL = {
@@ -29,12 +45,19 @@ export const MOCK_REVEAL = {
   title: "Mock fault for the handbook tests",
   level: 2,
   topics: ["red"],
-  answer: { nature: [OPTIONS.natures[1]], location: [OPTIONS.locations[0]], signal: [OPTIONS.signals[0]], cause: OPTIONS.causes[0], partial: [OPTIONS.causes[1]] },
+  answer: {
+    nature: [ANSWER_OPTIONS.natures[1]],
+    location: [ANSWER_OPTIONS.locations[0]],
+    signal: [ANSWER_OPTIONS.signals[0]],
+    cause: ANSWER_OPTIONS.causes[0],
+    partial: [ANSWER_OPTIONS.causes[1]],
+  },
   explanation: "Mock explanation. The numbers of this run would be here.",
   steps: ["Mock step one.", "Mock step two.", "Mock step three.", "Mock step four."],
   evidence: ['sum(rate(http_server_requests_total{job="api"}[1m]))'],
   cli: ["curl -s http://api:8000/metrics | grep inflight   # mock: what to read"],
   guide: [{ pointer: "RED method in detail > Rate (mock note)", file: "investigation-guide.md" }],
+  rule_outs: ANSWER_OPTIONS.causes.map((cause) => ({ cause, check: CHECKS[cause.key], correct: cause.key === "mock_queue" })),
 };
 
 const MOCK_HINTS = ["Mock hint one, broad.", "Mock hint two.", "Mock hint three, specific."];
@@ -82,6 +105,7 @@ export class MockLab {
       hints: MOCK_HINTS.slice(0, a.hints_used),
       answered: a.answered,
       rules: a.mode === "toolbox" ? "Mock rules: no Grafana, prove it from make shell." : null,
+      ...(a.mode === "incident" || a.mode === "toolbox" ? { options: ANSWER_OPTIONS } : {}),
       ...((a.answered || a.revealed) && (a.mode === "incident" || a.mode === "toolbox") ? { reveal: MOCK_REVEAL } : {}),
       ...(a.answered && a.result ? { result: a.result } : {}),
       ...(a.mode === "ramp" ? { plan: this.plan } : {}),
@@ -156,13 +180,13 @@ export class MockLab {
       }
       case route === "POST /exercise/answer": {
         const keys = ["nature", "location", "signal", "cause"] as const;
-        const lists = { nature: OPTIONS.natures, location: OPTIONS.locations, signal: OPTIONS.signals, cause: OPTIONS.causes };
+        const lists = { nature: ANSWER_OPTIONS.natures, location: ANSWER_OPTIONS.locations, signal: ANSWER_OPTIONS.signals, cause: ANSWER_OPTIONS.causes };
         const missing = keys.find((k) => typeof body[k] !== "string");
         if (missing) return err(400, "missing_field", `The field '${missing}' is needed.`);
         const unknown = keys.find((k) => !lists[k].some((o) => o.key === body[k]));
-        if (unknown) return err(400, "unknown_key", `'${String(body[unknown])}' is not a ${unknown} key.`);
         const refused = incident();
         if (refused) return refused;
+        if (unknown) return err(400, "unknown_key", `'${String(body[unknown])}' is not a ${unknown} this exercise offers.`);
         if (this.active!.answered) return err(409, "already_answered", "This exercise was already submitted.");
         const verdicts = {
           nature: body.nature === "mock_arch" ? "correct" : "wrong",
@@ -205,7 +229,7 @@ export class MockLab {
             average: mean(scored),
             scored_count: scored.length,
             by_topic: scored.length ? [{ topic: "red", average: 3.5, count: scored.length }] : [],
-            most_missed_cause: scored.length ? { group: null, ...OPTIONS.causes[2], count: 1 } : null,
+            most_missed_cause: scored.length ? { group: null, ...ANSWER_OPTIONS.causes[2], count: 1 } : null,
             ramp_average: mean(ramps),
             ramp_count: ramps.length,
           },
