@@ -13,6 +13,7 @@ import com.c0x12c.incidentlab.labctl.scenario.ExerciseContext
 import com.c0x12c.incidentlab.labctl.scenario.Params
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
+import com.c0x12c.incidentlab.labctl.scenario.Symptom
 import com.c0x12c.incidentlab.labctl.state.ActiveExercise
 import com.c0x12c.incidentlab.labctl.state.Choices
 import com.c0x12c.incidentlab.labctl.state.HistoryEntry
@@ -46,10 +47,6 @@ interface ModeEngine {
 }
 
 data class OptionsView(
-  val natures: List<Option>,
-  val locations: List<Option>,
-  val signals: List<Option>,
-  val causes: List<Option>,
   val levels: List<Int>,
   val topics: List<String>,
   val modes: List<String>
@@ -69,7 +66,8 @@ class ExerciseEngine(
   private val now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
   private val zone: ZoneId = ZoneId.systemDefault(),
   private val modes: List<ModeEngine> = emptyList(),
-  private val capabilities: Capabilities = Capabilities.ALL
+  private val capabilities: Capabilities = Capabilities.ALL,
+  private val offer: (Symptom) -> AnswerOptions = { answerOptions(it) }
 ) {
 
   private val dockerNeeds = ConcurrentHashMap<String, Set<String>>()
@@ -143,39 +141,35 @@ class ExerciseEngine(
     }
 
   /**
-   * Whether [submit] would take an answer now, and the key of the exercise it would score. The CLI
-   * asks before it prompts for the four picks, then submits with that key.
+   * The open exercise if [submit] would take an answer now. The CLI asks before it prompts with its
+   * options, then submits with its key.
    */
-  fun answerable(): Outcome<String> =
+  fun answerable(): Outcome<ActiveView> =
     when (val found = incident(store.load())) {
       is Refused -> found
-      is Done -> if (found.value.active.answered) Refused(Refusal.AlreadyAnswered) else Done(found.value.active.key)
+      is Done -> if (found.value.active.answered) Refused(Refusal.AlreadyAnswered) else Done(view(found.value.active, found.value.scenario))
     }
 
   /**
    * Scores the four picks and keeps the history entry. The fault keeps running until [clear]. With a
    * [key], the answer is refused when another exercise is open by the time it is written.
    */
-  fun submit(choices: Choices, note: String = "", key: String? = null): Outcome<Result> {
-    unknownKey(choices)?.let { return Refused(it) }
-    return store.withLock { state, write ->
+  fun submit(choices: Choices, note: String = "", key: String? = null): Outcome<Result> =
+    store.withLock { state, write ->
       if (!state.active.matches(key)) return@withLock Refused(Refusal.ExerciseChanged)
       when (val found = incident(state)) {
         is Refused -> found
         is Done -> {
           val (active, scenario) = found.value
-          if (active.answered) {
-            Refused(Refusal.AlreadyAnswered)
-          } else {
-            val result = score(active, scenario, choices)
-            val entry = entry(active, scenario.title, scenario.level, result.score, result.missed, note)
-            write(state.copy(active = active.copy(answered = true, choices = choices), history = state.history + entry))
-            Done(result)
-          }
+          if (active.answered) return@withLock Refused(Refusal.AlreadyAnswered)
+          unknownKey(choices, options(active, scenario))?.let { return@withLock Refused(it) }
+          val result = score(active, scenario, choices)
+          val entry = entry(active, scenario.title, scenario.level, result.score, result.missed, note)
+          write(state.copy(active = active.copy(answered = true, choices = choices), history = state.history + entry))
+          Done(result)
         }
       }
     }
-  }
 
   /** Sets the note of the latest history entry numbered [n]. */
   fun note(n: Int, note: String) {
@@ -258,10 +252,6 @@ class ExerciseEngine(
 
   fun options(): OptionsView =
     OptionsView(
-      natures = Answers.NATURES.map { (key, label) -> Option(key, label) },
-      locations = Answers.LOCATIONS.map { (key, label) -> Option(key, label) },
-      signals = Answers.SIGNALS.map { (key, label) -> Option(key, label) },
-      causes = Answers.CAUSES.map { (key, label) -> Option(key, label, Answers.CAUSE_GROUPS[key]) },
       levels = levels(),
       topics = Answers.TOPICS,
       modes = NEW_MODES
@@ -315,18 +305,18 @@ class ExerciseEngine(
   private fun incident(state: LabState): Outcome<Found> {
     val active = state.active ?: return Refused(Refusal.NoExercise)
     if (active.mode !in NEW_MODES) return Refused(Refusal.WrongMode(active.mode, active.n))
-    val scenario = catalog.byId[active.id]?.takeIf { runCatching { it.ticket(rendered(active)) }.isSuccess }
+    val scenario = catalog.byId[active.id]?.takeIf { candidate -> runCatching { rendered(active).let { candidate.ticket(it) to candidate.symptom(it) } }.isSuccess }
       ?: return Refused(Refusal.Stale(active.n))
     return Done(Found(active, scenario))
   }
 
-  private fun unknownKey(choices: Choices): Refusal? =
+  private fun unknownKey(choices: Choices, offered: AnswerOptions): Refusal? =
     listOf(
-      Triple("nature", choices.nature, Answers.NATURES),
-      Triple("location", choices.location, Answers.LOCATIONS),
-      Triple("signal", choices.signal, Answers.SIGNALS),
-      Triple("cause", choices.cause, Answers.CAUSES)
-    ).firstOrNull { (_, key, options) -> options.none { it.first == key } }?.let { (question, key, _) -> Refusal.UnknownKey(question, key) }
+      Triple("nature", choices.nature, offered.natures),
+      Triple("location", choices.location, offered.locations),
+      Triple("signal", choices.signal, offered.signals),
+      Triple("cause", choices.cause, offered.causes)
+    ).firstOrNull { (_, key, options) -> options.none { it.key == key } }?.let { (question, key, _) -> Refusal.UnknownKey(question, key) }
 
   private fun score(active: ActiveExercise, scenario: Scenario, choices: Choices): Result {
     val expected = scenario.answer
@@ -371,8 +361,11 @@ class ExerciseEngine(
       hintPenalty = HINT_PENALTY,
       hints = scenario.hints.take(active.hints),
       answered = active.answered,
-      rules = if (active.mode == TOOLBOX) TOOLBOX_RULES else null
+      rules = if (active.mode == TOOLBOX) TOOLBOX_RULES else null,
+      options = options(active, scenario)
     )
+
+  private fun options(active: ActiveExercise, scenario: Scenario): AnswerOptions = offer(scenario.symptom(rendered(active)))
 
   private fun reveal(active: ActiveExercise, scenario: Scenario): Reveal {
     val answer = scenario.answer
@@ -392,7 +385,8 @@ class ExerciseEngine(
       steps = scenario.steps,
       evidence = scenario.evidence,
       cli = scenario.cli,
-      guide = GuideIndex.pointers(scenario.doc)
+      guide = GuideIndex.pointers(scenario.doc),
+      ruleOuts = options(active, scenario).causes.map { RuleOut(it, Answers.RULE_OUTS.getValue(it.key), it.key == answer.cause) }
     )
   }
 
@@ -466,6 +460,15 @@ class ExerciseEngine(
         val params = Params(scenario.params(Random(NEEDS_SEED), ExerciseContext()), startedAt = "", elapsedSeconds = NEEDS_ELAPSED_SECONDS)
         scenario.faults(params).docker.values.flatMap { it.keys }.toSet()
       }.getOrDefault(emptySet())
+
+    /** What an exercise whose ticket shows [symptom] offers. It reads nothing else, so it cannot give the scenario away. */
+    fun answerOptions(symptom: Symptom): AnswerOptions =
+      AnswerOptions(
+        natures = Answers.NATURES.map { (key, label) -> Option(key, label) },
+        locations = Answers.LOCATIONS.map { (key, label) -> Option(key, label) },
+        signals = Answers.signalsFor(symptom).map { (key, label) -> Option(key, label) },
+        causes = Answers.causesFor(symptom).map { (key, label) -> Option(key, label, Answers.CAUSE_GROUPS[key]) }
+      )
 
     fun loadMultiplier(state: LabState): Double = (state.base["loadgen"]?.get("rate_multiplier") as? Number)?.toDouble() ?: 1.0
 

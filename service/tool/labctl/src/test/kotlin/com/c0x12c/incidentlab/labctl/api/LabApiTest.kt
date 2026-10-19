@@ -14,15 +14,19 @@ import com.c0x12c.incidentlab.labctl.LabJson
 import com.c0x12c.incidentlab.labctl.ScriptedTerminal
 import com.c0x12c.incidentlab.labctl.bench.BenchEngine
 import com.c0x12c.incidentlab.labctl.control.Capabilities
+import com.c0x12c.incidentlab.labctl.exercise.AnswerOptions
 import com.c0x12c.incidentlab.labctl.exercise.ExerciseEngine
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
 import com.c0x12c.incidentlab.labctl.exercise.NewOptions
+import com.c0x12c.incidentlab.labctl.exercise.Option
+import com.c0x12c.incidentlab.labctl.exercise.Outcome
 import com.c0x12c.incidentlab.labctl.quiz.QuizSessions
 import com.c0x12c.incidentlab.labctl.ramp.RampCatalog
 import com.c0x12c.incidentlab.labctl.ramp.RampEngine
 import com.c0x12c.incidentlab.labctl.ramp.RampPlan
 import com.c0x12c.incidentlab.labctl.scenario.Answers
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
+import com.c0x12c.incidentlab.labctl.scenario.Symptom
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import com.fasterxml.jackson.databind.JsonNode
 import java.net.Socket
@@ -68,11 +72,16 @@ class LabApiTest {
 
   private fun store(name: String = "state.json") = StateStore(dir.resolve(name))
 
-  private fun server(probe: FakePrometheus = prometheus, store: StateStore = store(), capabilities: Capabilities = Capabilities.ALL): String {
+  private fun server(
+    probe: FakePrometheus = prometheus,
+    store: StateStore = store(),
+    capabilities: Capabilities = Capabilities.ALL,
+    offer: (Symptom) -> AnswerOptions = { ExerciseEngine.answerOptions(it) }
+  ): String {
     val zone = ZoneId.of("UTC")
     val ramp = RampEngine(store, probe, annotator, Random(1), { clock }, zone)
     val bench = BenchEngine(store, probe, annotator, { clock }, zone)
-    val exercises = ExerciseEngine(store, probe, annotator, random = Random(1), now = { clock }, zone = zone, modes = listOf(ramp, bench), capabilities = capabilities)
+    val exercises = ExerciseEngine(store, probe, annotator, random = Random(1), now = { clock }, zone = zone, modes = listOf(ramp, bench), capabilities = capabilities, offer = offer)
     val quiz = QuizSessions(Random(2))
     val server = LabApi(exercises, ramp, bench, quiz).start(0)
     servers += server
@@ -171,6 +180,7 @@ class LabApiTest {
     val opened = post(base, "/api/exercises", mapOf("id" to "pool_hold"))
     assertThat(opened.status).isEqualTo(201)
     assertThat(keys(opened.json)).containsOnly(*ACTIVE_VIEW_KEYS)
+    assertThat(keys(opened.json["options"])).containsOnly("natures", "locations", "signals", "causes")
     assertThat(opened.json["n"].asInt()).isEqualTo(1)
     assertThat(opened.json["level"].asInt()).isEqualTo(ScenarioCatalog.byId.getValue("pool_hold").level)
     assertThat(opened.json["ticket"].asText().contains("22:13")).isTrue()
@@ -281,6 +291,37 @@ class LabApiTest {
   }
 
   @Test
+  fun `an answer key the exercise did not offer is refused, even when it exists, and the rule-outs list only what was offered`() {
+    val expected = ScenarioCatalog.byId.getValue("pool_hold").answer
+    val causes = setOf(expected.cause) + expected.partial
+    val narrow = { symptom: Symptom ->
+      ExerciseEngine.answerOptions(symptom).let { all -> all.copy(signals = all.signals.filter { it.key in expected.signal }, causes = all.causes.filter { it.key in causes }) }
+    }
+    val base = server(offer = narrow)
+    val opened = post(base, "/api/exercises", mapOf("id" to "pool_hold")).json
+    val notOffered = Answers.CAUSES.first { it.first !in causes }.first
+
+    assertThat(opened["options"]["signals"].map { it["key"].asText() }).isEqualTo(Answers.SIGNALS.map { it.first }.filter { it in expected.signal })
+    assertThat(opened["options"]["causes"].map { it["key"].asText() }).isEqualTo(Answers.CAUSES.map { it.first }.filter { it in causes })
+    post(base, "/api/exercise/answer", choices("arch", "api_db", "pool", notOffered)).let {
+      assertThat(it.status).isEqualTo(400)
+      assertThat(it.json["error"].asText()).isEqualTo("unknown_key")
+      assertThat(it.json["message"].asText()).isEqualTo("'$notOffered' is not a cause this exercise offers.")
+    }
+    assertThat(post(base, "/api/exercise/answer", choices("arch", "api_db", "host_cpu", expected.cause)).json["error"].asText()).isEqualTo("unknown_key")
+    assertThat(store().load().active!!.answered).isFalse()
+    assertThat(store().load().history).isEmpty()
+
+    val result = post(base, "/api/exercise/answer", choices("arch", "api_db", "pool", expected.cause)).json
+    assertThat(result["score"].asDouble()).isEqualTo(5.0)
+    val ruleOuts = result["reveal"]["rule_outs"]
+    assertThat(ruleOuts.map { it["cause"]["key"].asText() }).isEqualTo(opened["options"]["causes"].map { it["key"].asText() })
+    assertThat(ruleOuts.filter { it["correct"].asBoolean() }.map { it["cause"]["key"].asText() }).containsExactly(expected.cause)
+    assertThat(ruleOuts.all { it["check"].asText() == Answers.RULE_OUTS.getValue(it["cause"]["key"].asText()) }).isTrue()
+    assertThat(ruleOuts.all { it["cause"]["group"].asText() == Answers.CAUSE_GROUPS.getValue(it["cause"]["key"].asText()) }).isTrue()
+  }
+
+  @Test
   fun `a write that names an exercise which is no longer open is a 409 and changes nothing`() {
     val base = server()
     val first = post(base, "/api/exercises", mapOf("id" to "pool_hold")).json["key"].asText()
@@ -368,21 +409,24 @@ class LabApiTest {
     val picked = ScenarioCatalog.all.shuffled(random).take(SCORED_SCENARIOS)
     for (scenario in picked) {
       repeat(PICKS_PER_SCENARIO) { round ->
-        val expected = scenario.answer
-        val nature = if (round == 0) expected.nature.first() else Answers.NATURES.random(random).first
-        val location = if (round == 0) expected.location.first() else Answers.LOCATIONS.random(random).first
-        val signal = if (round == 0) expected.signal.first() else Answers.SIGNALS.random(random).first
-        val cause = listOf(expected.cause, expected.partial.firstOrNull() ?: expected.cause, Answers.CAUSES.random(random).first)[round]
         val hints = round % 2
-
-        val terminal = ScriptedTerminal(*(picks(nature, location, signal, cause) + listOf("", "y")).toTypedArray())
+        val terminal = ScriptedTerminal()
         val cli = Exercises(cliStore, prometheus, annotator, terminal, random = Random(1), now = { clock })
         cli.newExercise(NewOptions(id = scenario.id))
         repeat(hints) { cli.hint() }
-        cli.answer()
-
-        post(base, "/api/exercises", mapOf("id" to scenario.id, "force" to true))
+        val web = post(base, "/api/exercises", mapOf("id" to scenario.id, "force" to true)).json["options"]
         repeat(hints) { post(base, "/api/exercise/hint") }
+
+        val cliOptions = (ExerciseEngine(cliStore, prometheus, annotator, now = { clock }).active() as Outcome.Done).value.active.options!!
+        val both = { question: String, offered: List<Option> -> web[question].map { it["key"].asText() }.filter { key -> offered.any { it.key == key } } }
+        val expected = scenario.answer
+        val nature = if (round == 0) expected.nature.first() else both("natures", cliOptions.natures).random(random)
+        val location = if (round == 0) expected.location.first() else both("locations", cliOptions.locations).random(random)
+        val signal = if (round == 0) expected.signal.first() else both("signals", cliOptions.signals).random(random)
+        val cause = listOf(expected.cause, expected.partial.firstOrNull() ?: expected.cause, both("causes", cliOptions.causes).random(random))[round]
+
+        terminal.queue(*(picks(cliOptions, nature, location, signal, cause) + listOf("", "y")).toTypedArray())
+        cli.answer()
         val result = post(base, "/api/exercise/answer", choices(nature, location, signal, cause)).json
         post(base, "/api/exercise/clear")
 
@@ -403,7 +447,9 @@ class LabApiTest {
 
     val reveal = post(base, "/api/exercise/reveal").json
     assertThat(reveal["id"].asText()).isEqualTo("oom")
-    assertThat(keys(reveal)).containsOnly("id", "title", "level", "topics", "answer", "explanation", "steps", "evidence", "cli", "guide")
+    assertThat(keys(reveal)).containsOnly("id", "title", "level", "topics", "answer", "explanation", "steps", "evidence", "cli", "guide", "rule_outs")
+    assertThat(reveal["rule_outs"].map { it["cause"]["key"].asText() }).isEqualTo(get(base, "/api/exercise").json["options"]["causes"].map { it["key"].asText() })
+    assertThat(reveal["rule_outs"].filter { it["correct"].asBoolean() }.map { it["cause"]["key"].asText() }).containsExactly("oom")
     assertThat(reveal["answer"]["cause"]["group"].asText()).isEqualTo(Answers.CAUSE_GROUPS.getValue("oom"))
     post(base, "/api/exercise/reveal")
     assertThat(post(base, "/api/exercise/hint").json["error"].asText()).isEqualTo("already_answered")
@@ -437,12 +483,11 @@ class LabApiTest {
   }
 
   @Test
-  fun `options list every key the answer takes`() {
+  fun `options list the levels, topics and modes, and no answer keys`() {
     val options = get(server(), "/api/options").json
 
-    assertThat(options["natures"].map { it["key"].asText() }).isEqualTo(Answers.NATURES.map { it.first })
-    assertThat(options["causes"].map { it["group"].asText() }).isEqualTo(Answers.CAUSES.map { Answers.CAUSE_GROUPS.getValue(it.first) })
-    assertThat(options["natures"].none { it.has("group") }).isTrue()
+    assertThat(keys(options)).containsOnly("levels", "topics", "modes")
+    assertThat(options["topics"].map { it.asText() }).isEqualTo(Answers.TOPICS)
     assertThat(options["modes"].map { it.asText() }).containsExactly("incident", "toolbox")
     assertThat(options["levels"].map { it.asInt() }).containsExactly(1, 2, 3)
   }
@@ -459,6 +504,7 @@ class LabApiTest {
     assertThat(started.status).isEqualTo(201)
     assertThat(started.json["mode"].asText()).isEqualTo("ramp")
     assertThat(started.json["level"].isNull).isTrue()
+    assertThat(started.json.has("options")).isFalse()
     assertThat(started.json["plan"]["steps"].map { it.asInt() }).isEqualTo(RampPlan.rates)
     assertThat(started.json["plan"]["total_seconds"].asInt()).isEqualTo(RampPlan.totalSeconds(EVERY))
     pinPoolOfThree()
@@ -521,6 +567,7 @@ class LabApiTest {
     val started = post(base, "/api/bench", mapOf("clients" to 20, "seconds" to 120))
     assertThat(started.status).isEqualTo(201)
     assertThat(started.json["ends_at"].asDouble()).isEqualTo(BENCH_START + 120)
+    assertThat(started.json.has("options")).isFalse()
     assertThat(get(base, "/api/exercise").json["ends_at"].asDouble()).isEqualTo(BENCH_START + 120)
     assertThat(post(base, "/api/ramp").json["error"].asText()).isEqualTo("exercise_open")
 
@@ -589,10 +636,10 @@ class LabApiTest {
 
   private fun rampAnswer(knee: Int, max: Int, resource: String): Map<String, Any> = mapOf("knee_rps" to knee, "max_rps" to max, "resource" to resource)
 
-  private fun picks(nature: String, location: String, signal: String, cause: String): List<String> =
-    listOf(index(Answers.NATURES, nature), index(Answers.LOCATIONS, location), index(Answers.SIGNALS, signal), index(Answers.CAUSES, cause))
+  private fun picks(options: AnswerOptions, nature: String, location: String, signal: String, cause: String): List<String> =
+    listOf(index(options.natures, nature), index(options.locations, location), index(options.signals, signal), index(options.causes, cause))
 
-  private fun index(options: List<Pair<String, String>>, key: String): String = (options.indexOfFirst { it.first == key } + 1).toString()
+  private fun index(options: List<Option>, key: String): String = (options.indexOfFirst { it.key == key }.also { check(it >= 0) { "$key is not offered" } } + 1).toString()
 
   private companion object {
     const val START = 1_700_000_000.0
@@ -603,7 +650,7 @@ class LabApiTest {
     val WEB = mapOf("Content-Type" to "application/json", "X-Lab-Client" to "web")
     val WEB_HEADERS = arrayOf("Content-Type", "application/json", "X-Lab-Client", "web")
     val ACTIVE_VIEW_KEYS = arrayOf(
-      "n", "key", "mode", "level", "ticket", "started_at", "elapsed_seconds", "hints_used", "hints_total", "hint_penalty", "hints", "answered", "rules"
+      "n", "key", "mode", "level", "ticket", "started_at", "elapsed_seconds", "hints_used", "hints_total", "hint_penalty", "hints", "answered", "rules", "options"
     )
   }
 }

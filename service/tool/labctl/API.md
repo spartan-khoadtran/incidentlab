@@ -35,7 +35,9 @@ Every POST must send `Content-Type: application/json` and `X-Lab-Client: web`. W
 
 ## No-spoiler rule
 
-Before an exercise is answered or revealed, no response holds its scenario id, title, answer keys or labels, explanation, steps, evidence, cli or guide pointer. `ActiveView` is the only view of an open exercise, and its type has no field for any of them. A quiz answer comes back only after the learner posted an answer to that question.
+Before an exercise is answered or revealed, no response holds its scenario id, title, answer keys or labels (outside `options`), explanation, steps, evidence, cli, guide pointer or rule-outs. `ActiveView` is the only view of an open exercise, and its type has no field for any of them. A quiz answer comes back only after the learner posted an answer to that question.
+
+The one place the answer keys show early is `options`, where the right ones sit among the others. The lists come from the ticket's symptom only, so two exercises whose tickets show the same symptom offer the same lists. They tell the learner nothing the ticket did not.
 
 ## Types
 
@@ -47,15 +49,22 @@ ActiveView = {
   hints_used: int, hints_total: int, hint_penalty: number,   // 0.5
   hints: [string],                 // the hints already taken, in order
   answered: bool,
-  rules: string|null               // the toolbox rules in toolbox mode
+  rules: string|null,              // the toolbox rules in toolbox mode
+  options?: AnswerOptions          // incident and toolbox only, left out for a ramp or a bench
+}
+AnswerOptions = {
+  natures: [Option], locations: [Option],   // always every key
+  signals: [Option], causes: [Option]       // only the ones that fit the ticket's symptom; causes carry group
 }
 Option = { key: string, label: string, group?: string }      // group only on causes
+RuleOut = { cause: Option, check: string, correct: bool }      // check: what you would see if this cause were the one
 GuidePointer = { pointer: string, file: string|null }         // file is a name under docs/, like "capacity.md"
 Reveal = {
   id, title, level: int, topics: [string],
   answer: { nature: [Option], location: [Option], signal: [Option], cause: Option, partial: [Option] },
   explanation: string, steps: [string], evidence: [string] /* PromQL */, cli: [string],
-  guide: [GuidePointer]            // one per "; " part of the doc pointer
+  guide: [GuidePointer],           // one per "; " part of the doc pointer
+  rule_outs: [RuleOut]             // every cause in options.causes, in the same order; correct is true for one
 }
 Result = {
   n: int, score: number, raw: number, max: number, hints_used: int,
@@ -65,13 +74,30 @@ Result = {
 HistoryEntry = { n, id, mode, title, level: int (0 for a ramp or a bench), score: number|null, hints, minutes, at, missed: [string], note }
 ```
 
+`options.causes` keeps the order of the full cause list, which goes layer by layer, so a page can print one header per `group`.
+
+An example, with the lists cut short:
+
+```
+"options": {
+  "natures": [{ "key": "load", "label": "Real load change: ..." }, ...],
+  "locations": [{ "key": "client", "label": "Client side / the load source" }, ...],
+  "signals": [{ "key": "pool", "label": "Pool in use against max, ..." }, ...],
+  "causes": [{ "key": "pool_exhausted", "label": "Connection pool exhausted: ...", "group": "DB client and Postgres" }, ...]
+}
+"rule_outs": [
+  { "cause": { "key": "app_lock", "label": "A lock inside the app ...", "group": "Inside the app" }, "check": "...", "correct": false },
+  { "cause": { "key": "pool_exhausted", "label": "Connection pool exhausted: ...", "group": "DB client and Postgres" }, "check": "...", "correct": true }
+]
+```
+
 ## Endpoints
 
 ### Lab
 
 - `GET /api/health` -> `{ ok: true }`
 - `GET /api/status` -> `{ services: { api: null|"<error>", pricing, worker, loadgen, noisy, pgobserver }, active: ActiveView|null, load_multiplier: number, base_rps: number, links: { grafana, prometheus, pyroscope } }`. A service is `null` when it answers. `active` is null for a stale exercise too.
-- `GET /api/options` -> `{ natures: [Option], locations: [Option], signals: [Option], causes: [Option with group], levels: [int], topics: [string], modes: ["incident", "toolbox"] }`
+- `GET /api/options` -> `{ levels: [int], topics: [string], modes: ["incident", "toolbox"] }`: what `POST /api/exercises` takes. The answer options are not here: each open exercise has its own in `options`.
 - `POST /api/load` body `{ multiplier: number }` (0.1 to 6) -> `{ multiplier, rps }`. 400 `bad_multiplier` outside the range. 409 `ramp_running` (with `seconds_left`) while a ramp step runs, because the ramp holds the load at 1 until its last step ends.
 - `GET /api/history` -> `{ entries: [HistoryEntry], average: number|null, scored_count: int, by_topic: [{ topic, average, count }], most_missed_cause: { key, label, group, count }|null, ramp_average: number|null, ramp_count: int }`. `average`, `scored_count`, `by_topic` and `most_missed_cause` count scored incident and toolbox entries only. A ramp is scored on other questions, so `ramp_average` and `ramp_count` count scored ramps on their own. `by_topic` lists the weakest topic first.
 
@@ -85,8 +111,8 @@ HistoryEntry = { n, id, mode, title, level: int (0 for a ramp or a bench), score
 
   404 `no_exercise`. 409 `stale_exercise`.
 - `POST /api/exercise/hint` body `{ key?: string }` -> `ActiveView` with the new hint at the end of `hints`. 409 `no_hints_left` (also for a ramp or a bench), `already_answered`, `exercise_changed` or `stale_exercise`.
-- `POST /api/exercise/answer` body `{ nature, location, signal, cause, note?: string, key?: string }` -> `Result`. Keys come from `/api/options`. 400 `unknown_key` or `missing_field`. 409 `already_answered`, or `exercise_changed`. Keeps the history entry like `make answer`, note included (one line, at most 500 characters). Does not clear the fault.
-- `POST /api/exercise/reveal` body `{ key?: string }` -> `Reveal`. Not scored. 409 `exercise_changed`. The first reveal adds a history entry with `score: null`, like `make reveal`. Does not clear the fault.
+- `POST /api/exercise/answer` body `{ nature, location, signal, cause, note?: string, key?: string }` -> `Result`. Each key must come from the matching list in the exercise's `options`. A key that exists but is not in that list is a 400 `unknown_key`, like a key that does not exist. 400 `missing_field`. 409 `already_answered`, or `exercise_changed`. Keeps the history entry like `make answer`, note included (one line, at most 500 characters). Does not clear the fault.
+- `POST /api/exercise/reveal` body `{ key?: string }` -> `Reveal`, with the same `rule_outs` as an answer. Not scored. 409 `exercise_changed`. The first reveal adds a history entry with `score: null`, like `make reveal`. Does not clear the fault.
 - `POST /api/exercise/clear` body `{ key?: string }` -> `{ cleared: true }` when it ended an exercise, `{ cleared: false }` when none was open. Ends the open exercise of any mode, with the annotation "lab: fault cleared". A ramp or a bench that ends before its time also loses its annotations that are still in the future: the call queues them and the control daemon deletes them within a few seconds, so a slow Grafana does not slow the call. 409 `exercise_changed` when `key` names another exercise than the open one. With no exercise open, it answers `{ cleared: false }` and adds no annotation.
 
 ### Capacity ramp
@@ -135,7 +161,7 @@ From the host, through the site's nginx, with the lab up. The site's nginx answe
 curl -s localhost:4000/api/status
 curl -s -X POST -H 'Content-Type: application/json' -H 'X-Lab-Client: web' localhost:4000/api/exercises -d '{"level": 2}'
 curl -s -X POST -H 'Content-Type: application/json' -H 'X-Lab-Client: web' localhost:4000/api/exercise/hint
-curl -s localhost:4000/api/options
+curl -s localhost:4000/api/exercise
 curl -s -X POST -H 'Content-Type: application/json' -H 'X-Lab-Client: web' localhost:4000/api/exercise/answer \
   -d '{"nature": "<key>", "location": "<key>", "signal": "<key>", "cause": "<key>", "note": "what I read"}'
 curl -s -X POST -H 'Content-Type: application/json' -H 'X-Lab-Client: web' localhost:4000/api/exercise/clear
