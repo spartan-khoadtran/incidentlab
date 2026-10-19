@@ -6,7 +6,7 @@ import { MemoryRouter } from "react-router";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { LabProvider } from "../src/lib/lab.tsx";
 import { Play } from "../src/pages/Play.tsx";
-import { MOCK_REVEAL, MockLab } from "./mock-lab.ts";
+import { ANSWER_OPTIONS, MOCK_REVEAL, MockLab, NOT_OFFERED } from "./mock-lab.ts";
 import { mockServer } from "./msw.ts";
 
 const { server, state } = mockServer();
@@ -36,7 +36,7 @@ const JSON_POST = { "content-type": "application/json", "x-lab-client": "web" };
 const ANSWER = { nature: "mock_arch", location: "mock_lb", signal: "mock_gap", cause: "mock_queue" };
 const STATUS_POLL_MS = 15_000;
 
-const SCENARIO_TEXT = [MOCK_REVEAL.id, MOCK_REVEAL.title, MOCK_REVEAL.explanation, ...MOCK_REVEAL.steps, ...MOCK_REVEAL.evidence];
+const SCENARIO_TEXT = [MOCK_REVEAL.id, MOCK_REVEAL.title, MOCK_REVEAL.explanation, ...MOCK_REVEAL.steps, ...MOCK_REVEAL.evidence, ...MOCK_REVEAL.rule_outs.map((r) => r.check)];
 
 describe("Play", () => {
   it("says how to start the lab when the API does not answer", async () => {
@@ -223,6 +223,59 @@ describe("Play", () => {
     await screen.findByText(/a mock teammate reports/);
     await waitFor(() => expect(state.calls.length).toBeGreaterThan(3));
     expect(state.calls.map((c) => c.path).filter((p) => /reveal|answer/.test(p))).toEqual([]);
+  });
+
+  it("offers only the options the ticket shows", async () => {
+    state.lab.handle("POST", "/api/exercises", JSON_POST, {});
+    renderPlay();
+    await screen.findByText(/a mock teammate reports/);
+    const form = screen.getByRole("form", { name: "Your answer" });
+    const offered = [...ANSWER_OPTIONS.natures, ...ANSWER_OPTIONS.locations, ...ANSWER_OPTIONS.signals, ...ANSWER_OPTIONS.causes];
+    expect(within(form).getAllByRole("radio")).toHaveLength(offered.length);
+    for (const o of offered) expect(within(form).getByLabelText(o.label)).toBeTruthy();
+    expect(within(form).queryByText(NOT_OFFERED.signal.label)).toBeNull();
+    expect(within(form).queryByText(NOT_OFFERED.cause.label)).toBeNull();
+    expect(within(form).getByRole("group", { name: "Mock layer two" })).toBeTruthy();
+
+    const refused = state.lab.handle("POST", "/api/exercise/answer", JSON_POST, { ...ANSWER, cause: NOT_OFFERED.cause.key });
+    expect(refused.status).toBe(400);
+    expect((refused.body as { error: string }).error).toBe("unknown_key");
+  });
+
+  it("lists every offered cause with its check after the answer, and marks a wrong pick", async () => {
+    const user = userEvent.setup();
+    state.lab.handle("POST", "/api/exercises", JSON_POST, {});
+    renderPlay();
+    await user.click(await screen.findByLabelText("Mock nature: the system itself"));
+    await user.click(screen.getByLabelText("Mock location: before the app"));
+    await user.click(screen.getByLabelText("Mock signal: the gap between two layers"));
+    await user.click(screen.getByLabelText("Mock cause: one hot core"));
+    expect(screen.queryByRole("region", { name: "Rule out the look-alikes" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Submit the answer" }));
+
+    const section = await screen.findByRole("region", { name: "Rule out the look-alikes" });
+    const items = within(section).getAllByRole("listitem");
+    expect(items.map((li) => li.querySelector(".ruleout-label")?.textContent)).toEqual(ANSWER_OPTIONS.causes.map((c) => c.label));
+    for (const r of MOCK_REVEAL.rule_outs) expect(within(section).getByText(r.check)).toBeTruthy();
+
+    const [queue, retry, cpu] = items;
+    expect(within(queue).getByText("The cause")).toBeTruthy();
+    expect(within(retry).getByText("1 point")).toBeTruthy();
+    expect(within(cpu).getByText("Your pick")).toBeTruthy();
+    expect(cpu.classList.contains("is-wrong-pick")).toBe(true);
+    expect(within(section).getAllByText("Your pick")).toHaveLength(1);
+    expect(within(section).getAllByText("The cause")).toHaveLength(1);
+  });
+
+  it("shows the rule-outs after a reveal, with no pick to mark", async () => {
+    const user = userEvent.setup();
+    state.lab.handle("POST", "/api/exercises", JSON_POST, {});
+    renderPlay();
+    await user.click(await screen.findByRole("button", { name: "Show the answer without a score" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Show the answer?" })).getByRole("button", { name: "Show it, no score" }));
+    const section = await screen.findByRole("region", { name: "Rule out the look-alikes" });
+    expect(within(section).getAllByRole("listitem")).toHaveLength(MOCK_REVEAL.rule_outs.length);
+    expect(within(section).queryByText("Your pick")).toBeNull();
   });
 
   it("lists the history with the average", async () => {

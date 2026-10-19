@@ -28,6 +28,8 @@ export interface ActiveView {
   hints: string[];
   answered: boolean;
   rules: string | null;
+  /** For an incident or a toolbox exercise: the only keys the answer takes. */
+  options?: AnswerOptions;
   /** From the start of a ramp. */
   plan?: RampPlan;
   /** From the start of a bench. */
@@ -36,6 +38,14 @@ export interface ActiveView {
   reveal?: Reveal;
   /** Once it is answered: a Result for an incident, a RampResult for a ramp. */
   result?: Result | RampResult;
+}
+
+/** Drawn from what the ticket shows, so they say nothing the ticket did not. Causes come in layer order with a `group`. */
+export interface AnswerOptions {
+  natures: Option[];
+  locations: Option[];
+  signals: Option[];
+  causes: Option[];
 }
 
 export interface GuideRef {
@@ -54,6 +64,14 @@ export interface Reveal {
   evidence: string[];
   cli: string[];
   guide: GuideRef[];
+  /** Every offered cause, in the offered order, with the check that rules it in or out. */
+  rule_outs: RuleOut[];
+}
+
+export interface RuleOut {
+  cause: Option;
+  check: string;
+  correct: boolean;
 }
 
 export interface Result {
@@ -76,10 +94,6 @@ export interface Status {
 }
 
 export interface Options {
-  natures: Option[];
-  locations: Option[];
-  signals: Option[];
-  causes: Option[];
   levels: number[];
   topics: string[];
   modes: string[];
