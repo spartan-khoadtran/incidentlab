@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Cmd } from "../../components/Copy";
 import { Elapsed, ErrorNote } from "../../components/LabUi";
+import { UnsettledNote } from "../../components/SettleCard";
 import type { ActiveView, Status } from "../../lib/api";
 import { dashboardUrl, exerciseRange, exploreUrl, grafana } from "../../lib/grafana";
 
@@ -105,14 +106,10 @@ export function ExplorePanel({ view, status }: { view: ActiveView; status: Statu
           Investigate
         </button>
       </h2>
-      {view.unsettled?.length ? (
-        <p className="small settle-warning">
-          The lab was not fully back to normal ({view.unsettled.join(", ")}), so the time before the ticket may hold part of the last exercise.
-        </p>
-      ) : null}
+      <UnsettledNote unsettled={view.unsettled} />
       {open ? (
         <>
-          <p className="small muted">From 15 minutes before the ticket, or from the end of the last exercise if that is later, to now.</p>
+          <p className="small muted">From 15 minutes before the ticket to now, or from when the lab was back to normal after the last exercise, if that is later.</p>
           <ul className="explore-links">
             {links
               .filter((l) => l.href)

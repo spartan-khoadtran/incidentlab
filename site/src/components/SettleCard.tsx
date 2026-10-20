@@ -8,6 +8,15 @@ function announcement(status: SettleStatus | null): string {
   return names.length ? `Still waiting for: ${names.join(", ")}.` : "Waiting for the lab to settle.";
 }
 
+export function UnsettledNote({ unsettled }: { unsettled?: string[] }) {
+  if (!unsettled?.length) return null;
+  return (
+    <p className="small settle-warning">
+      The lab was not fully back to normal ({unsettled.join(", ")}), so the time before the start may hold part of the last exercise.
+    </p>
+  );
+}
+
 export function SettleCard({ status, starting, level = 2, onCancel }: { status: SettleStatus | null; starting: boolean; level?: 2 | 3; onCancel: () => void }) {
   const id = useId();
   const heading = useRef<HTMLHeadingElement>(null);

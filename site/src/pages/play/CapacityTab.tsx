@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { focusIfLost, useSettledStart } from "../../lib/settle";
-import { SettleCard } from "../../components/SettleCard";
+import { SettleCard, UnsettledNote } from "../../components/SettleCard";
 import { Link } from "react-router";
 import { Confirm, Countdown, ErrorNote, GuideLinks, useSecondsSince } from "../../components/LabUi";
 import { api, ApiError, parseNumber, type ActiveView, type BenchReport, type BenchRow, type Option, type RampResult } from "../../lib/api";
@@ -603,6 +603,7 @@ export function CapacityTab() {
           <h2 id="ramp-run-title" className="panel-title" tabIndex={-1}>
             Ramp
           </h2>
+          <UnsettledNote unsettled={view.unsettled} />
           <RampRunning key={view.key} view={view} onDone={done} onGone={closed} />
         </section>
       ) : view && view.mode === "bench" ? (
@@ -610,6 +611,7 @@ export function CapacityTab() {
           <h2 id="bench-run-title" className="panel-title" tabIndex={-1}>
             Bench
           </h2>
+          <UnsettledNote unsettled={view.unsettled} />
           <BenchRunning key={view.key} view={view} onClosed={closed} />
         </section>
       ) : (
