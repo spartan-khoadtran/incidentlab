@@ -150,6 +150,11 @@ export function ExerciseTab() {
             setView(v);
             void refresh();
           }}
+          onWaiting={() => {
+            reset();
+            setStarting(false);
+            void refresh();
+          }}
         />
         {starting ? (
           <button type="button" className="btn btn-quiet" onClick={() => setStarting(false)}>

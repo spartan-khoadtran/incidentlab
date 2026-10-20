@@ -8,7 +8,8 @@ export const SETTLE_POLL_MS = 3000;
  * the start again once the lab is back to normal or the gate gave up. `start` gets `retry` true on
  * those later posts, so a caller can drop `force` and never clear an exercise opened meanwhile.
  */
-export function useSettledStart<T>(onStarted: (value: T) => void, onError: (e: unknown) => void) {
+/** `onWaiting` runs on the first 409 lab_settling of a start: a forced start has already cleared the open exercise by then. */
+export function useSettledStart<T>(onStarted: (value: T) => void, onError: (e: unknown) => void, onWaiting?: () => void) {
   const [waiting, setWaiting] = useState<SettleStatus | null>(null);
   const pending = useRef<object | null>(null);
   const timer = useRef<number | null>(null);
@@ -49,6 +50,7 @@ export function useSettledStart<T>(onStarted: (value: T) => void, onError: (e: u
             onError(e);
             return;
           }
+          if (!retry) onWaiting?.();
           setWaiting((e.body.settle as SettleStatus | undefined) ?? null);
         }
         for (;;) {
@@ -70,7 +72,7 @@ export function useSettledStart<T>(onStarted: (value: T) => void, onError: (e: u
         }
       }
     },
-    [onStarted, onError, stop],
+    [onStarted, onError, onWaiting, stop],
   );
 
   return { run, waiting, cancel: stop };

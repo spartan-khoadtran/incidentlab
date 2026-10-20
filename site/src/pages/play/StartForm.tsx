@@ -5,7 +5,17 @@ import { lab } from "../../lib/data";
 import { useSettledStart } from "../../lib/settle";
 import { SettleCard } from "../../components/SettleCard";
 
-export function StartForm({ options, openMode, onStarted }: { options: Options | null; openMode: string | null; onStarted: (view: ActiveView) => void }) {
+export function StartForm({
+  options,
+  openMode,
+  onStarted,
+  onWaiting,
+}: {
+  options: Options | null;
+  openMode: string | null;
+  onStarted: (view: ActiveView) => void;
+  onWaiting?: () => void;
+}) {
   const [mode, setMode] = useState<"incident" | "toolbox">("incident");
   const [level, setLevel] = useState("");
   const [topic, setTopic] = useState("");
@@ -22,7 +32,7 @@ export function StartForm({ options, openMode, onStarted }: { options: Options |
     if (e instanceof ApiError && e.code === "exercise_open") setConfirm(true);
     else setError(e);
   }, []);
-  const { run, waiting, cancel } = useSettledStart(onStarted, failed);
+  const { run, waiting, cancel } = useSettledStart(onStarted, failed, onWaiting);
 
   const start = async (force: boolean) => {
     setBusy(true);
