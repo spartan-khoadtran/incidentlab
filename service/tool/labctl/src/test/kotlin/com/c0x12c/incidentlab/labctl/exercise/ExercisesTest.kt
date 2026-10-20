@@ -102,6 +102,7 @@ class ExercisesTest {
     assertThat(terminal.lines).contains("The lab is back to normal.")
     assertThat(store.load().active?.id).isEqualTo("pool_hold")
     assertThat(store.load().normal).isEqualTo(NormalWindow(NOW - 120, NOW))
+    assertThat(probe.queries.count { it.startsWith("max_over_time((${SettleGate.LAG})") }).isEqualTo(2)
   }
 
   @Test
@@ -312,6 +313,22 @@ class ExercisesTest {
     exercises.load(9.0)
 
     assertThat(StateStore(dir.resolve("state.json")).load().base.getValue("loadgen")["rate_multiplier"]).isEqualTo(6.0)
+  }
+
+  @Test
+  fun `a new load drops normal, so the gate learns it again after the change`(@TempDir dir: Path) {
+    val store = StateStore(dir.resolve("state.json"))
+    val before = NormalWindow(NOW - 1000, NOW - 700)
+    store.save(LabState(normal = before))
+    val exercises = exercises(dir, ScriptedTerminal(ArrayDeque()))
+
+    exercises.load(1.0)
+    assertThat(store.load().normal).isEqualTo(before)
+    assertThat(store.load().loadSince).isNull()
+
+    exercises.load(2.0)
+    assertThat(store.load().normal).isNull()
+    assertThat(store.load().loadSince).isEqualTo(NOW)
   }
 
   @Test

@@ -20,7 +20,7 @@ data class ActiveExercise(
   val key: String = "legacy-$n-$started",
   /** Annotations written ahead of time, so an early end can delete the ones still in the future. */
   val annotations: List<PlannedAnnotation> = emptyList(),
-  /** Epoch seconds where a clean baseline starts: 15 minutes before the start, or the end of the exercise before, whichever is later. */
+  /** Epoch seconds where a clean baseline starts: 15 minutes before the start, or the first moment the lab was back to normal, whichever is later. */
   val baselineFrom: Double? = null,
   /** The settle checks still off when it started: the gate gave up, or the start skipped it. */
   val unsettled: List<String> = emptyList()
@@ -80,8 +80,10 @@ data class LabState(
   val pendingAnnotationDeletes: List<PlannedAnnotation> = emptyList(),
   /** Epoch seconds when the last exercise of any mode ended. The settle gate and the next baseline start from it. */
   val lastEnded: Double? = null,
-  /** What normal looks like: the clean stretch before the last start that waited for the lab to settle. */
-  val normal: NormalWindow? = null
+  /** What normal looks like: the clean stretch before the last start that waited for the lab to settle. A load change drops it. */
+  val normal: NormalWindow? = null,
+  /** Epoch seconds when `make load` last changed the load. The next normal starts after it. */
+  val loadSince: Double? = null
 )
 
 /** A stretch of time in epoch seconds, read with the PromQL `@` modifier. */

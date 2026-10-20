@@ -1,5 +1,6 @@
 package com.c0x12c.incidentlab.labctl.ramp
 
+import com.c0x12c.incidentlab.labctl.exercise.SettleEntry
 import com.c0x12c.incidentlab.labctl.exercise.SettleWait
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate
 import com.c0x12c.incidentlab.labctl.Terminal
@@ -53,8 +54,8 @@ class RampExercise(
   override val mode: String = MODE
 
   fun start(options: RampOptions): Int {
-    if (gate != null && options.settle && engine.check() == null) SettleWait(gate, store, terminal, sleep).await()
-    val view = when (val outcome = engine.start(options.every, settle = false)) {
+    val entry = if (gate != null && options.settle && engine.check() == null) SettleEntry.Waited(SettleWait(gate, store, terminal, sleep).await()) else SettleEntry.Skip
+    val view = when (val outcome = engine.start(options.every, entry)) {
       is Done -> outcome.value.active
       is Refused -> {
         val refusal = outcome.refusal
@@ -69,6 +70,7 @@ class RampExercise(
       }
     }
     Format.banner(terminal, "CAPACITY RAMP #${view.n}  ·  started at ${hhmm(view.startedAt)}")
+    if (view.unsettled.isNotEmpty()) terminal.out(Exercises.unsettledNote(view.unsettled))
     RampEngine.intro(options.every).forEach(terminal::out)
     terminal.out()
     terminal.out("What to watch:")

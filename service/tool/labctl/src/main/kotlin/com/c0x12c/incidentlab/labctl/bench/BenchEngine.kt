@@ -1,6 +1,8 @@
 package com.c0x12c.incidentlab.labctl.bench
 
+import com.c0x12c.incidentlab.labctl.exercise.SettleEntry
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate
+import com.c0x12c.incidentlab.labctl.exercise.admit
 import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.LabProbe
 import com.c0x12c.incidentlab.labctl.control.ScheduledAnnotations
@@ -54,11 +56,15 @@ class BenchEngine(
 
   override val mode: String = MODE
 
-  fun start(clients: Int, seconds: Int, settle: Boolean = true): Outcome<ExerciseView> {
-    if (store.load().active != null) return Refused(Refusal.ExerciseOpen)
-    if (gate != null && settle) gate.refusal(store.load())?.let { return Refused(it) }
+  fun start(clients: Int, seconds: Int, entry: SettleEntry = SettleEntry.Wait): Outcome<ExerciseView> {
+    val before = store.load()
+    if (before.active != null) return Refused(Refusal.ExerciseOpen)
+    val pass = when (val admitted = gate.admit(before, entry)) {
+      is Done -> admitted.value
+      is Refused -> return admitted
+    }
     val startedAt = now()
-    val mark = gate?.mark(store.load(), startedAt)
+    val mark = pass.mark(startedAt)
     val active = store.withLock { state, write ->
       if (state.active != null) return@withLock null
       ActiveExercise(
@@ -68,8 +74,9 @@ class BenchEngine(
         started = startedAt,
         n = state.history.size + 1,
         key = ActiveExercise.newKey(),
-        baselineFrom = ExerciseEngine.baselineFrom(startedAt, mark?.cleanFrom ?: state.lastEnded)
-      ).also { write(state.copy(active = it, normal = mark?.normal ?: state.normal)) }
+        baselineFrom = mark.baselineFrom(startedAt, state.lastEnded),
+        unsettled = mark.unsettled
+      ).also { write(state.copy(active = it, normal = mark.normal ?: state.normal)) }
     } ?: return Refused(Refusal.ExerciseOpen)
     val marks = listOf("bench: $clients closed-loop clients" to startedAt, "bench over: open load again" to startedAt + seconds)
     ScheduledAnnotations.write(store, annotator, active.key, listOf(TAG), marks, now)
@@ -93,7 +100,8 @@ class BenchEngine(
       hints = emptyList(),
       answered = active.answered,
       rules = null,
-      baselineFrom = active.baselineFrom ?: (active.started - ExerciseEngine.BASELINE_SECONDS)
+      baselineFrom = active.baselineFrom ?: (active.started - ExerciseEngine.BASELINE_SECONDS),
+      unsettled = active.unsettled
     )
     return ExerciseView(view, endsAt = active.started + seconds)
   }

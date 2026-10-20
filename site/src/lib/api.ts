@@ -30,7 +30,7 @@ export interface ActiveView {
   rules: string | null;
   /** For an incident or a toolbox exercise: the only keys the answer takes. */
   options?: AnswerOptions;
-  /** Epoch seconds where the charts should start: 15 minutes before the start, or the end of the exercise before, whichever is later. */
+  /** Epoch seconds where the charts should start: 15 minutes before the start, or the first moment the lab was back to normal, whichever is later. */
   baseline_from?: number;
   /** The settle checks still off when it started. Absent when every check was ok. */
   unsettled?: string[];

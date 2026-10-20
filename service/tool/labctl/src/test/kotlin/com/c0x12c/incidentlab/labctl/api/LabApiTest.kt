@@ -226,6 +226,20 @@ class LabApiTest {
   }
 
   @Test
+  fun `a ramp or a bench that starts before the lab settled says which checks were off`() {
+    val values = SettleValues(worst = { if (it == SettleGate.LAG) 30.0 else null })
+    val probe = FakePrometheus { expr, _ -> if (expr == SettleGate.UPTIME) 600.0 else values.answer(expr) }
+
+    val ramp = post(server(probe = probe, gate = SettleGate(probe) { clock }), "/api/ramp", mapOf("every" to 60))
+    val bench = post(server(probe = probe, store = store("bench.json"), gate = SettleGate(probe) { clock }), "/api/bench", emptyMap<String, Any>())
+
+    assertThat(ramp.status).isEqualTo(201)
+    assertThat(ramp.json["unsettled"].map { it.asText() }).containsOnly("Kafka lag")
+    assertThat(bench.status).isEqualTo(201)
+    assertThat(bench.json["unsettled"].map { it.asText() }).containsOnly("Kafka lag")
+  }
+
+  @Test
   fun `with no gate the lab is always settled`() {
     val settle = get(server(), "/api/settle").json
     assertThat(settle["settled"].asBoolean()).isTrue()

@@ -4,6 +4,7 @@ import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.Deletion
 import com.c0x12c.incidentlab.labctl.control.LabProbe
 import com.c0x12c.incidentlab.labctl.control.Sample
+import java.util.Collections
 
 /**
  * A terminal that answers from a script and keeps every printed line. [beforeAnswer] runs before
@@ -39,7 +40,7 @@ class FakePrometheus(
   private val up: Boolean = true,
   private val value: (expr: String, at: Double) -> Double?
 ) : LabProbe {
-  val queries = mutableListOf<String>()
+  val queries: MutableList<String> = Collections.synchronizedList(mutableListOf())
 
   override fun cpuCount(): Int = 4
 
