@@ -4,6 +4,7 @@ import { Confirm, ErrorNote } from "../../components/LabUi";
 import { api, ApiError, type ActiveView, type Options, type Result, type Reveal } from "../../lib/api";
 import { exerciseRange } from "../../lib/grafana";
 import { useLab } from "../../lib/lab";
+import { focusIfLost } from "../../lib/settle";
 import { AnswerForm, type Choices } from "./AnswerForm";
 import { ExplorePanel, Hints, TicketCard } from "./OpenExercise";
 import { ResultView } from "./ResultView";
@@ -28,6 +29,7 @@ export function ExerciseTab() {
   const [starting, setStarting] = useState(false);
   const shown = useRef<string | null>(null);
   const synced = useRef<string | null>(null);
+  const focusTicket = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -68,6 +70,12 @@ export function ExerciseTab() {
       window.clearTimeout(id);
     };
   }, [load]);
+
+  useEffect(() => {
+    if (!focusTicket.current || !view) return;
+    focusTicket.current = false;
+    focusIfLost(document.getElementById("ticket-title"));
+  }, [view]);
 
   const active = status?.active;
   const statusKey = status ? (active ? `${active.key}:${active.answered}` : "none") : null;
@@ -147,7 +155,13 @@ export function ExerciseTab() {
             reset();
             setStarting(false);
             shown.current = v.key;
+            focusTicket.current = true;
             setView(v);
+            void refresh();
+          }}
+          onWaiting={() => {
+            reset();
+            setStarting(false);
             void refresh();
           }}
         />
@@ -162,7 +176,7 @@ export function ExerciseTab() {
   }
 
   const toolbox = view.mode === "toolbox";
-  const range = exerciseRange(view.started_at);
+  const range = exerciseRange(view.started_at, view.baseline_from);
 
   if (reveal) {
     return (

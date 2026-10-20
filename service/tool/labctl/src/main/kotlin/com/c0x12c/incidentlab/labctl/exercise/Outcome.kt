@@ -44,6 +44,9 @@ sealed interface Refusal {
 
   data class UnknownKey(val question: String, val key: String) : Refusal
 
+  /** The lab is still coming back from the last exercise. */
+  data class LabSettling(val status: SettleStatus) : Refusal
+
   /** The ramp's steps, and the draws of a `baseLoad` scenario, assume the default load. */
   data class LoadNotOne(val multiplier: Double) : Refusal
 

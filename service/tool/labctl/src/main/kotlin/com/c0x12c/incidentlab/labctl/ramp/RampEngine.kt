@@ -1,5 +1,6 @@
 package com.c0x12c.incidentlab.labctl.ramp
 
+import com.c0x12c.incidentlab.labctl.exercise.SettleGate
 import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.LabProbe
 import com.c0x12c.incidentlab.labctl.control.ScheduledAnnotations
@@ -103,13 +104,17 @@ class RampEngine(
   private val annotator: Annotator,
   private val random: Random = Random.Default,
   private val now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
-  private val zone: ZoneId = ZoneId.systemDefault()
+  private val zone: ZoneId = ZoneId.systemDefault(),
+  private val gate: SettleGate? = null
 ) : ModeEngine {
 
   override val mode: String = MODE
 
-  fun start(every: Int): Outcome<ExerciseView> {
+  fun start(every: Int, settle: Boolean = true): Outcome<ExerciseView> {
+    check()?.let { return Refused(it) }
+    if (gate != null && settle) gate.refusal(store.load())?.let { return Refused(it) }
     val startedAt = now()
+    val mark = gate?.mark(store.load(), startedAt)
     val opened = store.withLock<Outcome<ActiveExercise>> { state, write ->
       val multiplier = ExerciseEngine.loadMultiplier(state)
       when {
@@ -122,9 +127,10 @@ class RampEngine(
             params = RampCatalog.params(random, every),
             started = startedAt,
             n = state.history.size + 1,
-            key = ActiveExercise.newKey()
+            key = ActiveExercise.newKey(),
+            baselineFrom = ExerciseEngine.baselineFrom(startedAt, mark?.cleanFrom ?: state.lastEnded)
           )
-          write(state.copy(active = active))
+          write(state.copy(active = active, normal = mark?.normal ?: state.normal))
           Done(active)
         }
       }
@@ -137,6 +143,17 @@ class RampEngine(
       ("ramp over: back to $BASE_RPS rps" to startedAt + RampPlan.totalSeconds(every))
     ScheduledAnnotations.write(store, annotator, active.key, listOf(TAG), marks, now)
     return Done(view(active))
+  }
+
+  /** What a start would be refused for before any wait: an open exercise, or a load that is not 1. */
+  fun check(): Refusal? {
+    val state = store.load()
+    val multiplier = ExerciseEngine.loadMultiplier(state)
+    return when {
+      state.active != null -> Refusal.ExerciseOpen
+      multiplier != 1.0 -> Refusal.LoadNotOne(multiplier)
+      else -> null
+    }
   }
 
   override fun view(active: ActiveExercise): ExerciseView {
@@ -154,7 +171,8 @@ class RampEngine(
       hintPenalty = ExerciseEngine.HINT_PENALTY,
       hints = emptyList(),
       answered = active.answered,
-      rules = null
+      rules = null,
+      baselineFrom = active.baselineFrom ?: (active.started - ExerciseEngine.BASELINE_SECONDS)
     )
     return ExerciseView(view, plan = PlanView(RampPlan.rates, every, RampPlan.totalSeconds(every)))
   }
@@ -238,7 +256,7 @@ class RampEngine(
   fun clearIf(key: String): Boolean {
     val at = now()
     store.withLock { state, write ->
-      state.active?.takeIf { it.key == key }?.also { write(state.queueFutureMarks(it, at).copy(active = null)) }
+      state.active?.takeIf { it.key == key }?.also { write(state.queueFutureMarks(it, at).copy(active = null, lastEnded = at)) }
     } ?: return false
     annotator.annotate("lab: ramp cleared", listOf("clear"), at)
     return true

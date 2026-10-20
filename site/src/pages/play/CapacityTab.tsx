@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { focusIfLost, useSettledStart } from "../../lib/settle";
+import { SettleCard } from "../../components/SettleCard";
 import { Link } from "react-router";
 import { Confirm, Countdown, ErrorNote, GuideLinks, useSecondsSince } from "../../components/LabUi";
 import { api, ApiError, parseNumber, type ActiveView, type BenchReport, type BenchRow, type Option, type RampResult } from "../../lib/api";
@@ -447,18 +449,32 @@ function StartCapacity({ onStarted }: { onStarted: (v: ActiveView) => void }) {
   const [seconds, setSeconds] = useState(lab.defaults.bench_seconds);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-  const run = async (fn: () => Promise<ActiveView>) => {
+  const settled = useSettledStart(onStarted, setError);
+  const origin = useRef<"ramp" | "bench">("ramp");
+  const rampButton = useRef<HTMLButtonElement>(null);
+  const benchButton = useRef<HTMLButtonElement>(null);
+  const wasWaiting = useRef(false);
+
+  useEffect(() => {
+    if (settled.isWaiting) wasWaiting.current = true;
+    else if (wasWaiting.current && !busy) {
+      wasWaiting.current = false;
+      focusIfLost((origin.current === "ramp" ? rampButton : benchButton).current);
+    }
+  }, [settled.isWaiting, busy]);
+
+  const run = async (from: "ramp" | "bench", fn: () => Promise<ActiveView>) => {
+    origin.current = from;
     setBusy(true);
     setError(null);
     try {
-      onStarted(await fn());
-    } catch (e) {
-      setError(e);
+      await settled.run(fn);
     } finally {
       setBusy(false);
     }
   };
   const rates = lab.defaults.ramp_rates;
+  if (settled.isWaiting) return <SettleCard status={settled.waiting} starting={settled.posting} onCancel={settled.cancel} />;
   return (
     <div className="capacity-start">
       <section className="panel" aria-labelledby="ramp-title">
@@ -475,7 +491,7 @@ function StartCapacity({ onStarted }: { onStarted: (v: ActiveView) => void }) {
         <p className="small muted">
           About {Math.round((every * rates.length) / 60)} minutes. Same as <code>make ramp STEP={every}</code>.
         </p>
-        <button type="button" className="btn btn-primary" disabled={busy} onClick={() => run(() => api.ramp(every))}>
+        <button ref={rampButton} type="button" className="btn btn-primary" disabled={busy} onClick={() => run("ramp", () => api.ramp(every))}>
           Start the ramp
         </button>
       </section>
@@ -497,7 +513,7 @@ function StartCapacity({ onStarted }: { onStarted: (v: ActiveView) => void }) {
         <p className="small muted">
           Same as <code>make bench CLIENTS={clients} SECONDS={seconds}</code>.
         </p>
-        <button type="button" className="btn btn-primary" disabled={busy} onClick={() => run(() => api.bench({ clients, seconds }))}>
+        <button ref={benchButton} type="button" className="btn btn-primary" disabled={busy} onClick={() => run("bench", () => api.bench({ clients, seconds }))}>
           Start the bench
         </button>
       </section>
@@ -515,6 +531,7 @@ export function CapacityTab() {
   const [view, setView] = useState<ActiveView | null | undefined>(undefined);
   const [error, setError] = useState<unknown>(null);
   const synced = useRef<string | null>(null);
+  const focusRun = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -530,6 +547,12 @@ export function CapacityTab() {
     const id = window.setTimeout(load, 0);
     return () => window.clearTimeout(id);
   }, [load]);
+
+  useEffect(() => {
+    if (!focusRun.current || !view) return;
+    focusRun.current = false;
+    focusIfLost(document.getElementById(view.mode === "bench" ? "bench-run-title" : "ramp-run-title"));
+  }, [view]);
 
   const active = status?.active;
   const statusKey = status ? (active ? `${active.key}:${active.answered}` : "none") : null;
@@ -577,14 +600,14 @@ export function CapacityTab() {
         </p>
       ) : view && view.mode === "ramp" ? (
         <section className="panel" aria-labelledby="ramp-run-title">
-          <h2 id="ramp-run-title" className="panel-title">
+          <h2 id="ramp-run-title" className="panel-title" tabIndex={-1}>
             Ramp
           </h2>
           <RampRunning key={view.key} view={view} onDone={done} onGone={closed} />
         </section>
       ) : view && view.mode === "bench" ? (
         <section className="panel" aria-labelledby="bench-run-title">
-          <h2 id="bench-run-title" className="panel-title">
+          <h2 id="bench-run-title" className="panel-title" tabIndex={-1}>
             Bench
           </h2>
           <BenchRunning key={view.key} view={view} onClosed={closed} />
@@ -592,6 +615,7 @@ export function CapacityTab() {
       ) : (
         <StartCapacity
           onStarted={(v) => {
+            focusRun.current = true;
             setView(v);
             void refresh();
           }}

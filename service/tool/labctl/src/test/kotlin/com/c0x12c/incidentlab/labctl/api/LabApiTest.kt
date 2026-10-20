@@ -10,6 +10,7 @@ import assertk.assertions.isNull
 import assertk.assertions.isTrue
 import com.c0x12c.incidentlab.labctl.FakeAnnotator
 import com.c0x12c.incidentlab.labctl.FakePrometheus
+import com.c0x12c.incidentlab.labctl.SettleValues
 import com.c0x12c.incidentlab.labctl.LabJson
 import com.c0x12c.incidentlab.labctl.ScriptedTerminal
 import com.c0x12c.incidentlab.labctl.bench.BenchEngine
@@ -17,6 +18,7 @@ import com.c0x12c.incidentlab.labctl.control.Capabilities
 import com.c0x12c.incidentlab.labctl.exercise.AnswerOptions
 import com.c0x12c.incidentlab.labctl.exercise.ExerciseEngine
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
+import com.c0x12c.incidentlab.labctl.exercise.SettleGate
 import com.c0x12c.incidentlab.labctl.exercise.NewOptions
 import com.c0x12c.incidentlab.labctl.exercise.Option
 import com.c0x12c.incidentlab.labctl.exercise.Outcome
@@ -77,11 +79,12 @@ class LabApiTest {
     store: StateStore = store(),
     capabilities: Capabilities = Capabilities.ALL,
     offer: (Symptom) -> AnswerOptions = { ExerciseEngine.answerOptions(it) },
-    random: Random = Random(1)
+    random: Random = Random(1),
+    gate: SettleGate? = null
   ): String {
-    val ramp = RampEngine(store, probe, annotator, Random(1), { clock }, ZONE)
-    val bench = BenchEngine(store, probe, annotator, { clock }, ZONE)
-    val exercises = ExerciseEngine(store, probe, annotator, random = random, now = { clock }, zone = ZONE, modes = listOf(ramp, bench), capabilities = capabilities, offer = offer)
+    val ramp = RampEngine(store, probe, annotator, Random(1), { clock }, ZONE, gate)
+    val bench = BenchEngine(store, probe, annotator, { clock }, ZONE, gate)
+    val exercises = ExerciseEngine(store, probe, annotator, random = random, now = { clock }, zone = ZONE, modes = listOf(ramp, bench), capabilities = capabilities, offer = offer, gate = gate)
     val quiz = QuizSessions(Random(2))
     val server = LabApi(exercises, ramp, bench, quiz).start(0)
     servers += server
@@ -192,6 +195,41 @@ class LabApiTest {
     assertThat(again.status).isEqualTo(409)
     assertThat(again.json["error"].asText()).isEqualTo("exercise_open")
     assertThat(post(base, "/api/exercises", mapOf("mode" to "toolbox", "force" to true)).json["rules"].asText()).isEqualTo(Exercises.TOOLBOX_RULES)
+  }
+
+  @Test
+  fun `a start waits for the lab to settle, and the next baseline begins where the last exercise ended`() {
+    var lag = 30.0
+    val healthy = mapOf(SettleGate.P99 to 0.1, SettleGate.ERRORS to 0.0, SettleGate.WAITING to 0.0)
+    val values = SettleValues(worst = { if (it == SettleGate.LAG) lag else healthy[it] }, normal = { healthy[it] })
+    val probe = FakePrometheus { expr, _ -> if (expr == SettleGate.UPTIME) 600.0 else values.answer(expr) }
+    val base = server(probe = probe, gate = SettleGate(probe) { clock })
+
+    assertThat(post(base, "/api/exercises", mapOf("id" to "pool_hold")).status).isEqualTo(201)
+    val ended = clock
+    val waiting = post(base, "/api/exercises", mapOf("id" to "oom", "force" to true))
+    assertThat(waiting.status).isEqualTo(409)
+    assertThat(waiting.json["error"].asText()).isEqualTo("lab_settling")
+    assertThat(keys(waiting.json["settle"])).containsOnly("settled", "checks", "waited_seconds", "gave_up")
+    assertThat(waiting.json["settle"]["checks"].filter { !it["ok"].asBoolean() }.map { it["name"].asText() })
+      .containsOnly("Time since the last exercise ended", "Kafka lag")
+    assertThat(get(base, "/api/exercise").json["error"].asText()).isEqualTo("no_exercise")
+    assertThat(post(base, "/api/ramp", mapOf("every" to 60)).json["error"].asText()).isEqualTo("lab_settling")
+    assertThat(post(base, "/api/bench", emptyMap<String, Any>()).json["error"].asText()).isEqualTo("lab_settling")
+
+    clock += 61
+    lag = 0.0
+    assertThat(get(base, "/api/settle").json["settled"].asBoolean()).isTrue()
+    val opened = post(base, "/api/exercises", mapOf("id" to "oom"))
+    assertThat(opened.status).isEqualTo(201)
+    assertThat(opened.json["baseline_from"].asDouble()).isEqualTo(ended)
+  }
+
+  @Test
+  fun `with no gate the lab is always settled`() {
+    val settle = get(server(), "/api/settle").json
+    assertThat(settle["settled"].asBoolean()).isTrue()
+    assertThat(settle["checks"].size()).isEqualTo(0)
   }
 
   @Test
@@ -674,7 +712,7 @@ class LabApiTest {
     val WEB = mapOf("Content-Type" to "application/json", "X-Lab-Client" to "web")
     val WEB_HEADERS = arrayOf("Content-Type", "application/json", "X-Lab-Client", "web")
     val ACTIVE_VIEW_KEYS = arrayOf(
-      "n", "key", "mode", "level", "ticket", "started_at", "elapsed_seconds", "hints_used", "hints_total", "hint_penalty", "hints", "answered", "rules", "options"
+      "n", "key", "mode", "level", "ticket", "started_at", "elapsed_seconds", "hints_used", "hints_total", "hint_penalty", "hints", "answered", "rules", "options", "baseline_from"
     )
   }
 }

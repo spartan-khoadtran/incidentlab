@@ -12,7 +12,7 @@ export function TicketCard({ view }: { view: ActiveView }) {
   return (
     <article className="ticket" aria-labelledby="ticket-title">
       <header className="ticket-head">
-        <p id="ticket-title" className="ticket-id">
+        <p id="ticket-title" className="ticket-id" tabIndex={-1}>
           Ticket #{view.n}
         </p>
         <dl className="ticket-meta">
@@ -88,7 +88,7 @@ export function ExplorePanel({ view, status }: { view: ActiveView; status: Statu
     );
   }
   const g = status?.links.grafana;
-  const range = exerciseRange(view.started_at);
+  const range = exerciseRange(view.started_at, view.baseline_from);
   const links: { label: string; note: string; href: string | null }[] = g
     ? [
         ...grafana.dashboards.map((d) => ({ label: d.title, note: "dashboard", href: dashboardUrl(g, d.uid, range) })),
@@ -105,9 +105,14 @@ export function ExplorePanel({ view, status }: { view: ActiveView; status: Statu
           Investigate
         </button>
       </h2>
+      {view.unsettled?.length ? (
+        <p className="small settle-warning">
+          The lab was not fully back to normal ({view.unsettled.join(", ")}), so the time before the ticket may hold part of the last exercise.
+        </p>
+      ) : null}
       {open ? (
         <>
-          <p className="small muted">From 15 minutes before the ticket to now, so the baseline is on the chart.</p>
+          <p className="small muted">From 15 minutes before the ticket, or from the end of the last exercise if that is later, to now.</p>
           <ul className="explore-links">
             {links
               .filter((l) => l.href)

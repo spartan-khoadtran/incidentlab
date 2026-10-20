@@ -30,23 +30,34 @@ class Exercises(
   private val terminal: Terminal,
   private val catalog: ScenarioCatalog = ScenarioCatalog,
   random: Random = Random.Default,
-  now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
+  private val now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
   private val zone: ZoneId = ZoneId.systemDefault(),
   /** The other exercise kinds; each owns the commands while its mode is active. */
   private val modes: List<ExerciseMode> = emptyList(),
-  capabilities: Capabilities = Capabilities.ALL
+  capabilities: Capabilities = Capabilities.ALL,
+  private val gate: SettleGate? = null,
+  private val sleep: (Long) -> Unit = Thread::sleep
 ) {
 
-  private val engine = ExerciseEngine(store, probe, annotator, catalog, random, now, zone, capabilities = capabilities)
+  private val engine = ExerciseEngine(store, probe, annotator, catalog, random, now, zone, capabilities = capabilities, gate = gate)
 
   private fun modeOf(state: LabState): ExerciseMode? = state.active?.let { active -> modes.firstOrNull { it.mode == active.mode } }
 
   fun newExercise(options: NewOptions): Int {
-    val view = when (val outcome = engine.start(options)) {
+    val open = store.load().active != null
+    var start = options
+    if (gate != null && options.settle && (options.force || !open)) {
+      engine.check(options)?.let { return refused(it) }
+      if (open) engine.clear()
+      SettleWait(gate, store, terminal, sleep).await()
+      start = options.copy(settle = false, force = false)
+    }
+    val view = when (val outcome = engine.start(start)) {
       is Done -> outcome.value.active
       is Refused -> return refused(outcome.refusal)
     }
     banner("EXERCISE #${view.n}  ·  level ${view.level}  ·  ticket opened at ${hhmm(view.startedAt)}")
+    if (view.unsettled.isNotEmpty()) terminal.out("Note: the lab was not fully back to normal (${view.unsettled.joinToString(", ")}), so the time before the ticket may hold part of the last exercise.")
     terminal.out(view.ticket)
     terminal.out()
     terminal.out("The fault is now being applied to the system. Wait 1-2 minutes for the numbers to show, then start investigating.")
@@ -125,12 +136,12 @@ class Exercises(
 
   fun clear(): Int {
     engine.clear()
-    terminal.out("No fault is running any more. The system recovers in about 10-60 seconds.")
+    terminal.out("No fault is running any more. The next `make new` waits until the lab is back to normal.")
     return 0
   }
 
   fun reset(): Int {
-    val kept = store.update { it.fresh() }.history.size
+    val kept = store.update { it.fresh(now()) }.history.size
     terminal.out("Fresh start: no exercise, load 1. History kept: $kept exercise(s).")
     return 0
   }
@@ -222,6 +233,7 @@ class Exercises(
     val (line, code) = when (refusal) {
       Refusal.ExerciseOpen -> "An exercise is still open. Use `make answer`, `make reveal` or `make clear`, or `make new FORCE=1` to drop it." to 1
       Refusal.NoExercise -> "No exercise is running. Use `make new` to start one." to 1
+      is Refusal.LabSettling -> "The lab is still coming back from the last exercise. Try again in a minute." to 1
       is Refusal.Stale -> stale(refusal.n) to 1
       is Refusal.WrongMode -> stale(refusal.n) to 1
       is Refusal.UnknownId -> "No exercise '${refusal.id}'. See `make list`." to 1
@@ -327,7 +339,7 @@ class Exercises(
     }
     if (reply == null || reply.trim().lowercase() !in setOf("n", "no")) {
       if (engine.clearIf(key)) {
-        terminal.out("Fault cleared. The system recovers in about 10-60 seconds. Use `make new` for the next exercise.")
+        terminal.out("Fault cleared. `make new` starts the next exercise once the lab is back to normal.")
       } else {
         terminal.out(NOT_CLEARED)
       }

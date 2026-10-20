@@ -1,5 +1,7 @@
 package com.c0x12c.incidentlab.labctl.exercise
 
+import com.c0x12c.incidentlab.labctl.FakePrometheus
+import com.c0x12c.incidentlab.labctl.SettleValues
 import assertk.assertThat
 import assertk.assertions.contains
 import assertk.assertions.containsExactly
@@ -21,6 +23,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Params
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
 import com.c0x12c.incidentlab.labctl.state.ActiveExercise
 import com.c0x12c.incidentlab.labctl.state.LabState
+import com.c0x12c.incidentlab.labctl.state.NormalWindow
 import com.c0x12c.incidentlab.labctl.state.PlannedAnnotation
 import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.c0x12c.incidentlab.labctl.state.StateStore
@@ -74,6 +77,72 @@ class ExercisesTest {
 
   private fun wrong(options: List<Option>, accepted: Set<String>): String = options.first { it.key !in accepted }.key
 
+  private fun settleProbe(lag: () -> Double): FakePrometheus {
+    val values = SettleValues(worst = { if (it == SettleGate.LAG) lag() else null }, past = { if (it == SettleGate.LAG) 60.0 else null })
+    return FakePrometheus { expr, _ -> if (expr == SettleGate.UPTIME) 600.0 else values.answer(expr) }
+  }
+
+  @Test
+  fun `make new waits for the lab to settle, prints what is left, then starts`(@TempDir dir: Path) {
+    var lag = 30.0
+    val sleeps = mutableListOf<Long>()
+    val store = StateStore(dir.resolve("state.json"))
+    store.save(LabState(lastEnded = NOW - 120))
+    val probe = settleProbe { lag }
+    val terminal = ScriptedTerminal(ArrayDeque())
+    val exercises = Exercises(store, probe, annotator, terminal, random = Random(1), now = { NOW }, gate = SettleGate(probe) { NOW }, sleep = {
+      sleeps += it
+      lag = 0.0
+    })
+
+    assertThat(exercises.newExercise(NewOptions(id = "pool_hold"))).isEqualTo(0)
+
+    assertThat(sleeps).containsExactly(SettleWait.POLL_MILLIS)
+    assertThat(terminal.lines).contains("  still settling: Kafka lag 30 s (want at most 5 s for 120 s)")
+    assertThat(terminal.lines).contains("The lab is back to normal.")
+    assertThat(store.load().active?.id).isEqualTo("pool_hold")
+    assertThat(store.load().normal).isEqualTo(NormalWindow(NOW - 120, NOW))
+  }
+
+  @Test
+  fun `a start that skips the gate while the lab is off keeps the old normal`(@TempDir dir: Path) {
+    val store = StateStore(dir.resolve("state.json"))
+    val before = NormalWindow(NOW - 1000, NOW - 700)
+    store.save(LabState(lastEnded = NOW - 400, normal = before))
+    val probe = settleProbe { 30.0 }
+    val exercises = Exercises(store, probe, annotator, ScriptedTerminal(ArrayDeque()), random = Random(1), now = { NOW }, gate = SettleGate(probe) { NOW })
+
+    assertThat(exercises.newExercise(NewOptions(id = "pool_hold", settle = false))).isEqualTo(0)
+
+    assertThat(store.load().active?.unsettled).isEqualTo(listOf("Kafka lag"))
+    assertThat(store.load().normal).isEqualTo(before)
+  }
+
+  @Test
+  fun `SETTLE=0 starts at once, and a forced new clears the open exercise before it waits`(@TempDir dir: Path) {
+    var now = NOW
+    val sleeps = mutableListOf<Long>()
+    val store = StateStore(dir.resolve("state.json"))
+    val probe = settleProbe { 0.0 }
+    val terminal = ScriptedTerminal(ArrayDeque())
+    val exercises = Exercises(store, probe, annotator, terminal, random = Random(1), now = { now }, gate = SettleGate(probe) { now }, sleep = {
+      sleeps += it
+      now += 61
+    })
+
+    assertThat(exercises.newExercise(NewOptions(id = "pool_hold", settle = false))).isEqualTo(0)
+    assertThat(sleeps).isEmpty()
+    assertThat(terminal.lines.none { it.startsWith("Waiting for the lab to settle") }).isTrue()
+
+    assertThat(exercises.newExercise(NewOptions(id = "oom", force = true))).isEqualTo(0)
+    assertThat(sleeps).containsExactly(SettleWait.POLL_MILLIS)
+    assertThat(terminal.lines).contains("  still settling: Time since the last exercise ended 0 s (want at least 60 s)")
+    val state = store.load()
+    assertThat(state.lastEnded).isEqualTo(NOW)
+    assertThat(state.active?.id).isEqualTo("oom")
+    assertThat(state.active?.baselineFrom).isEqualTo(NOW)
+  }
+
   @Test
   fun `a reset ends the exercise, sets the load back and drops old marks, but keeps the history`(@TempDir dir: Path) {
     val store = StateStore(dir.resolve("state.json"))
@@ -90,7 +159,7 @@ class ExercisesTest {
 
     assertThat(exercises(dir, terminal).reset()).isEqualTo(0)
 
-    assertThat(store.load()).isEqualTo(LabState(history = listOf(history)))
+    assertThat(store.load()).isEqualTo(LabState(history = listOf(history), lastEnded = NOW))
     assertThat(terminal.lines.single()).isEqualTo("Fresh start: no exercise, load 1. History kept: 1 exercise(s).")
   }
 

@@ -32,7 +32,12 @@ data class ActiveView(
   val rules: String?,
   /** What the four questions offer, for an incident or a toolbox exercise. Null for the ramp and the bench. */
   @get:JsonInclude(JsonInclude.Include.NON_NULL)
-  val options: AnswerOptions? = null
+  val options: AnswerOptions? = null,
+  /** Epoch seconds where the charts should start, so the baseline holds no part of the exercise before. */
+  val baselineFrom: Double? = null,
+  /** The settle checks still off when the exercise started. The baseline may hold part of the exercise before. */
+  @get:JsonInclude(JsonInclude.Include.NON_EMPTY)
+  val unsettled: List<String> = emptyList()
 )
 
 /** One choice of a question: a stable key and the text a learner reads. */

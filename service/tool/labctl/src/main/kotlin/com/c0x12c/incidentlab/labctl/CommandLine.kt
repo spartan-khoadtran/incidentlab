@@ -30,6 +30,7 @@ object CommandLine {
         "--id" -> options = options.copy(id = args.getOrNull(++index).orEmpty())
         "--force" -> options = options.copy(force = true)
         "--mode" -> options = options.copy(mode = mode(args.getOrNull(++index)))
+        "--no-settle" -> options = options.copy(settle = false)
         else -> throw UsageError("Unknown option '$flag'.")
       }
       index++
@@ -66,6 +67,7 @@ object CommandLine {
     while (index < args.size) {
       when (val flag = args[index]) {
         "--every" -> options = options.copy(every = stepSeconds(args.getOrNull(++index)))
+        "--no-settle" -> options = options.copy(settle = false)
         else -> throw UsageError("Unknown option '$flag'.")
       }
       index++
@@ -80,6 +82,7 @@ object CommandLine {
       when (val flag = args[index]) {
         "--clients" -> options = options.copy(clients = bounded(args.getOrNull(++index), "CLIENTS", BenchCatalog.MIN_CLIENTS, BenchCatalog.MAX_CLIENTS, "make bench CLIENTS=50"))
         "--seconds" -> options = options.copy(seconds = bounded(args.getOrNull(++index), "SECONDS", BenchCatalog.MIN_SECONDS, BenchCatalog.MAX_SECONDS, "make bench SECONDS=180"))
+        "--no-settle" -> options = options.copy(settle = false)
         else -> throw UsageError("Unknown option '$flag'.")
       }
       index++

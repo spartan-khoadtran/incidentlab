@@ -1155,3 +1155,50 @@
 .ramp-note {
   grid-column: 1 / -1;
 }
+
+.settle-card {
+  max-width: var(--measure);
+}
+
+.settle-card > .btn {
+  justify-self: start;
+}
+
+.settle-checks {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.settle-checks li {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 2px 10px;
+}
+
+.settle-checks li > .muted {
+  grid-column: 2;
+}
+
+.settle-mark {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.settle-checks .is-ok .settle-mark {
+  color: var(--ok);
+}
+
+.settle-checks .is-waiting .settle-mark {
+  color: var(--warn);
+}
+
+.settle-warning {
+  padding: 8px 10px;
+  border-left: 3px solid var(--warn);
+  background: var(--warn-soft);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}

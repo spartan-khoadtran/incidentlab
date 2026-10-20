@@ -16,9 +16,9 @@ export interface TimeRange {
 const LEAD_SECONDS = 15 * 60;
 
 /** From 15 minutes before the exercise started until now, so the baseline is on the same chart. */
-export function exerciseRange(startedAt: number | null | undefined): TimeRange {
+export function exerciseRange(startedAt: number | null | undefined, baselineFrom?: number | null): TimeRange {
   if (!startedAt) return { from: "now-30m", to: "now" };
-  return { from: String(Math.round((startedAt - LEAD_SECONDS) * 1000)), to: "now" };
+  return { from: String(Math.round((baselineFrom ?? startedAt - LEAD_SECONDS) * 1000)), to: "now" };
 }
 
 export function datasource(type: string): { uid: string; type: string } | undefined {

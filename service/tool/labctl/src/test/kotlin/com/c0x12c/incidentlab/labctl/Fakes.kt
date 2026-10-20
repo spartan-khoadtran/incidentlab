@@ -93,3 +93,31 @@ class FakeAnnotator : Annotator {
     return Deletion.Gone
   }
 }
+
+/**
+ * Answers the settle gate's queries. [worst], [normal], [now] and [past] give a value for an inner
+ * expression in each of the gate's four wrappers; a null leaves that query with no data.
+ */
+class SettleValues(
+  val worst: (String) -> Double? = { null },
+  val normal: (String) -> Double? = { null },
+  val now: (String) -> Double? = worst,
+  val past: (String) -> Double? = now,
+  val range: (String) -> List<Sample> = { emptyList() }
+) {
+  fun answer(expr: String): Double? {
+    val inner = expr.substringAfter("((", "").substringBeforeLast(")[", "")
+    return when {
+      expr.startsWith("max_over_time((") -> worst(inner)
+      expr.startsWith("avg_over_time((") && " @ " in expr -> normal(inner)
+      expr.startsWith("last_over_time((") -> past(inner)
+      else -> now(expr)
+    }
+  }
+}
+
+/** The same probe, with range queries answered by [values]. */
+fun LabProbe.withRange(values: SettleValues): LabProbe =
+  object : LabProbe by this {
+    override fun rangeQuery(expr: String, start: Double, end: Double, step: Double): List<Sample> = values.range(expr)
+  }

@@ -1,9 +1,21 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Confirm, ErrorNote } from "../../components/LabUi";
 import { api, ApiError, type ActiveView, type NewExercise, type Options } from "../../lib/api";
 import { lab } from "../../lib/data";
+import { focusIfLost, useSettledStart } from "../../lib/settle";
+import { SettleCard } from "../../components/SettleCard";
 
-export function StartForm({ options, openMode, onStarted }: { options: Options | null; openMode: string | null; onStarted: (view: ActiveView) => void }) {
+export function StartForm({
+  options,
+  openMode,
+  onStarted,
+  onWaiting,
+}: {
+  options: Options | null;
+  openMode: string | null;
+  onStarted: (view: ActiveView) => void;
+  onWaiting?: () => void;
+}) {
   const [mode, setMode] = useState<"incident" | "toolbox">("incident");
   const [level, setLevel] = useState("");
   const [topic, setTopic] = useState("");
@@ -16,6 +28,22 @@ export function StartForm({ options, openMode, onStarted }: { options: Options |
   const topics = (options?.topics ?? lab.topics).filter((t) => lab.scenarios.some((s) => s.topics.includes(t)));
   const ids = lab.scenarios.filter((s) => (mode === "toolbox" ? s.toolbox : true)).map((s) => s.id);
 
+  const failed = useCallback((e: unknown) => {
+    if (e instanceof ApiError && e.code === "exercise_open") setConfirm(true);
+    else setError(e);
+  }, []);
+  const { run, waiting, isWaiting, posting, cancel } = useSettledStart(onStarted, failed, onWaiting);
+  const submit = useRef<HTMLButtonElement>(null);
+  const wasWaiting = useRef(false);
+
+  useEffect(() => {
+    if (isWaiting) wasWaiting.current = true;
+    else if (wasWaiting.current && !busy) {
+      wasWaiting.current = false;
+      focusIfLost(submit.current);
+    }
+  }, [isWaiting, busy]);
+
   const start = async (force: boolean) => {
     setBusy(true);
     setError(null);
@@ -23,18 +51,16 @@ export function StartForm({ options, openMode, onStarted }: { options: Options |
     if (level) body.level = Number(level);
     if (topic) body.topic = topic;
     if (id.trim()) body.id = id.trim();
-    if (force) body.force = true;
     try {
-      onStarted(await api.start(body));
-    } catch (e) {
-      if (e instanceof ApiError && e.code === "exercise_open") setConfirm(true);
-      else setError(e);
+      await run((retry) => api.start(force && !retry ? { ...body, force: true } : body));
     } finally {
       setBusy(false);
     }
   };
 
   const command = ["make", mode === "toolbox" ? "toolbox" : "new", level && `LEVEL=${level}`, topic && `TOPIC=${topic}`, id.trim() && `ID=${id.trim()}`].filter(Boolean).join(" ");
+
+  if (isWaiting) return <SettleCard status={waiting} starting={posting} level={3} onCancel={cancel} />;
 
   return (
     <form
@@ -90,7 +116,7 @@ export function StartForm({ options, openMode, onStarted }: { options: Options |
         Same as <code>{command}</code>. With no id the lab picks one you did not play in the last {lab.recent_window} rounds and does not say which.
       </p>
       <div className="start-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy}>
+        <button ref={submit} type="submit" className="btn btn-primary" disabled={busy}>
           {busy ? "Starting..." : openMode ? "Start a new exercise" : "Start the exercise"}
         </button>
       </div>

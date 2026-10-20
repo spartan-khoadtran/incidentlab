@@ -1,5 +1,7 @@
 package com.c0x12c.incidentlab.labctl.ramp
 
+import com.c0x12c.incidentlab.labctl.exercise.SettleWait
+import com.c0x12c.incidentlab.labctl.exercise.SettleGate
 import com.c0x12c.incidentlab.labctl.Terminal
 import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.LabProbe
@@ -25,7 +27,8 @@ import kotlin.math.roundToInt
 import kotlin.random.Random
 
 data class RampOptions(
-  val every: Int = RampPlan.DEFAULT_STEP_SECONDS
+  val every: Int = RampPlan.DEFAULT_STEP_SECONDS,
+  val settle: Boolean = true
 )
 
 /**
@@ -34,21 +37,24 @@ data class RampOptions(
  * what Prometheus recorded for the same steps. Prompts and printing over [RampEngine].
  */
 class RampExercise(
-  store: StateStore,
+  private val store: StateStore,
   probe: LabProbe,
   annotator: Annotator,
   private val terminal: Terminal,
   random: Random = Random.Default,
   private val now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
-  private val zone: ZoneId = ZoneId.systemDefault()
+  private val zone: ZoneId = ZoneId.systemDefault(),
+  private val gate: SettleGate? = null,
+  private val sleep: (Long) -> Unit = Thread::sleep
 ) : ExerciseMode {
 
-  private val engine = RampEngine(store, probe, annotator, random, now, zone)
+  private val engine = RampEngine(store, probe, annotator, random, now, zone, gate)
 
   override val mode: String = MODE
 
   fun start(options: RampOptions): Int {
-    val view = when (val outcome = engine.start(options.every)) {
+    if (gate != null && options.settle && engine.check() == null) SettleWait(gate, store, terminal, sleep).await()
+    val view = when (val outcome = engine.start(options.every, settle = false)) {
       is Done -> outcome.value.active
       is Refused -> {
         val refusal = outcome.refusal
@@ -189,7 +195,7 @@ class RampExercise(
     }
     if (reply == null || reply.trim().lowercase() !in setOf("n", "no")) {
       if (engine.clearIf(key)) {
-        terminal.out("Ramp stopped. The lab recovers in about 10-60 seconds.")
+        terminal.out("Ramp stopped. The next exercise waits until the lab is back to normal.")
       } else {
         terminal.out(Exercises.NOT_CLEARED)
       }
