@@ -257,6 +257,8 @@ describe("Play", () => {
     const items = within(section).getAllByRole("listitem");
     expect(items.map((li) => li.querySelector(".ruleout-label")?.textContent)).toEqual(ANSWER_OPTIONS.causes.map((c) => c.label));
     for (const r of MOCK_REVEAL.rule_outs) expect(within(section).getByText(r.check)).toBeTruthy();
+    expect(within(within(section).getByRole("list", { name: "Mock layer one" })).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(within(section).getByRole("list", { name: "Mock layer two" })).getAllByRole("listitem")).toHaveLength(1);
 
     const [queue, retry, cpu] = items;
     expect(within(queue).getByText("The cause")).toBeTruthy();

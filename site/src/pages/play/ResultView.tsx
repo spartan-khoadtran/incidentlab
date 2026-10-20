@@ -36,7 +36,7 @@ function RuleOuts({ ruleOuts, picked }: { ruleOuts: RuleOut[]; picked: string | 
       {groups.map((g, gi) => (
         <div key={`${g.group}-${gi}`} className="ruleout-group">
           {g.group ? <p className="question-group-title">{g.group}</p> : null}
-          <ul className="ruleouts">
+          <ul className="ruleouts" aria-label={g.group ?? undefined}>
             {g.options.map((o) => {
               const r = byKey.get(o.key)!;
               const mine = picked === o.key;
