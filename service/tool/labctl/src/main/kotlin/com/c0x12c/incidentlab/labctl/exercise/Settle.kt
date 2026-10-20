@@ -36,7 +36,39 @@ data class SettleMark(
   val cleanFrom: Double?,
   val unsettled: List<String>,
   val normal: NormalWindow?
-)
+) {
+  /** Where the new exercise's clean baseline starts, with [lastEnded] the end before it. */
+  fun baselineFrom(started: Double, lastEnded: Double?): Double = ExerciseEngine.baselineFrom(started, cleanFrom ?: lastEnded)
+
+  companion object {
+    val NONE = SettleMark(cleanFrom = null, unsettled = emptyList(), normal = null)
+  }
+}
+
+/** How a start meets the settle gate. */
+sealed interface SettleEntry {
+  /** Refused while the lab settles. */
+  data object Wait : SettleEntry
+
+  /** Starts at once and records the checks still off, as `--no-settle` does. */
+  data object Skip : SettleEntry
+
+  /** The CLI already waited: the start keeps the [status] that let it through. */
+  data class Waited(val status: SettleStatus) : SettleEntry
+}
+
+/** A start the gate let through. Its mark judges the same status that let it through. */
+fun interface SettlePass {
+  fun mark(at: Double): SettleMark
+}
+
+/** The settle step every start takes. With no gate, as in `labctl api`, nothing waits and nothing is recorded. */
+fun SettleGate?.admit(state: LabState, entry: SettleEntry): Outcome<SettlePass> {
+  if (this == null) return Outcome.Done(SettlePass { SettleMark.NONE })
+  val status = (entry as? SettleEntry.Waited)?.status ?: status(state)
+  if (entry == SettleEntry.Wait && !status.settled && !status.gaveUp) return Outcome.Refused(Refusal.LabSettling(status))
+  return Outcome.Done(SettlePass { at -> mark(state, at, status) })
+}
 
 /**
  * Reads whether the lab is back to normal after the last exercise. A start waits for it, so the
@@ -57,6 +89,15 @@ class SettleGate(
     val stuck: Boolean = !ok && current != null && past != null && current >= past * STILL_FALLING
   }
 
+  /**
+   * One wait after the end at [lastEnded], from [since] to the last check at [checked]. A give-up
+   * holds while the wait goes on, so the poll that gave up and the start after it agree.
+   */
+  private class Wait(val lastEnded: Double?, val since: Double, val checked: Double, val gaveUp: Boolean)
+
+  @Volatile
+  private var wait: Wait? = null
+
   private val values = listOf(
     ValueCheck("Kafka lag", LAG, ::seconds, { LAG_SECONDS }, strict = true),
     ValueCheck("Errors users see", ERRORS, { "${Format.plain(round(it))}%" }, { normal -> max(ERROR_PERCENT, (normal ?: 0.0) * MARGIN) }),
@@ -70,7 +111,7 @@ class SettleGate(
     val waited = state.lastEnded?.let { at - it }
     val reference = state.normal
     val readings = parallel(values) { read(it, reference) }
-    val uptime = probe.instantQuery(UPTIME)
+    val (uptime, upLately) = parallel(listOf(UPTIME, UP_LATELY)) { probe.instantQuery(it) }
     val checks = listOfNotNull(
       waited?.let { SettleCheck("Time since the last exercise ended", it >= QUIET_SECONDS, seconds(it), "at least ${QUIET_SECONDS.toInt()} s") },
       SettleCheck("Every service up since its last start", uptime == null || uptime >= UPTIME_SECONDS, uptime?.let(::seconds), "at least ${UPTIME_SECONDS.toInt()} s")
@@ -80,28 +121,33 @@ class SettleGate(
         reading.check.name,
         reading.ok,
         reading.worst?.let { worst -> reading.check.show(worst) + (reading.normal?.let { " (normal ${reading.check.show(it)})" } ?: "") },
-        limit?.let { "at most ${reading.check.show(it)} for ${WINDOW_SECONDS.toInt()} s" } ?: "no normal value yet"
+        limit?.let { "at most ${reading.check.show(it)} for ${WINDOW_SECONDS.toInt()} s" } ?: "any value (no normal yet)"
       )
     }
     val settled = checks.all { it.ok }
-    val timeWillFix = (waited != null && waited < QUIET_SECONDS) || (uptime != null && uptime < UPTIME_SECONDS)
-    val stuck = !timeWillFix && readings.filterNot { it.ok }.let { failing -> failing.isNotEmpty() && failing.all { it.stuck } }
-    val gaveUp = !settled && ((waited ?: 0.0) > HARD_CAP_SECONDS || (stuck && (waited == null || waited > STUCK_AFTER_SECONDS)))
+    val downForGood = upLately == 0.0
+    val restarting = !downForGood && uptime != null && uptime < UPTIME_SECONDS
+    val timeWillFix = (waited != null && waited < QUIET_SECONDS) || restarting
+    val failing = readings.filterNot { it.ok }
+    val stuck = !timeWillFix && (downForGood || failing.isNotEmpty()) && failing.all { it.stuck }
+    val previous = wait?.takeIf { it.lastEnded == state.lastEnded && at - it.checked <= WAIT_GAP_SECONDS }
+    val since = previous?.since ?: at
+    val gaveUp = !settled &&
+      (previous?.gaveUp == true || at - since > HARD_CAP_SECONDS || (stuck && (waited == null || waited > STUCK_AFTER_SECONDS)))
+    wait = if (settled) null else Wait(state.lastEnded, since, at, gaveUp)
     return SettleStatus(settled, checks, max(0.0, waited ?: 0.0), gaveUp)
   }
 
-  /** The refusal a start gets while the lab settles, or null when it may start. */
-  fun refusal(state: LabState): Refusal? = status(state).takeUnless { it.settled || it.gaveUp }?.let { Refusal.LabSettling(it) }
-
   /**
-   * What a start at [at] keeps. Only a settled start moves normal: a baseline that still held the
-   * fault would raise the limits, and the next start would pass with the same fault.
+   * What a start at [at] keeps, judged on the [status] that let it through. Only a settled start
+   * moves normal: a baseline that still held the fault would raise the limits, and the next start
+   * would pass with the same fault. Normal never reaches back before the load last changed.
    */
-  fun mark(state: LabState, at: Double): SettleMark {
-    val unsettled = status(state).checks.filterNot { it.ok }.map { it.name }
+  fun mark(state: LabState, at: Double, status: SettleStatus): SettleMark {
+    val unsettled = status.checks.filterNot { it.ok }.map { it.name }
     val clean = cleanSince(state, at)
     val normal = clean?.takeIf { unsettled.isEmpty() }
-      ?.let { NormalWindow(max(it, at - NORMAL_SECONDS), at) }
+      ?.let { NormalWindow(maxOf(it, at - NORMAL_SECONDS, (state.loadSince ?: 0.0) + LOAD_STEADY_SECONDS), at) }
       ?.takeIf { it.to - it.from >= MIN_NORMAL_SECONDS }
     return SettleMark(clean, unsettled, normal)
   }
@@ -112,9 +158,10 @@ class SettleGate(
    */
   fun cleanSince(state: LabState, at: Double): Double? {
     val ended = state.lastEnded ?: return null
+    val from = max(ended, at - ExerciseEngine.BASELINE_SECONDS - STEP_SECONDS)
     val lastBad = parallel(values) { check ->
       val limit = check.limit(state.normal?.let { probe.instantQuery(normal(check.expr, it)) }) ?: return@parallel null
-      probe.rangeQuery(check.expr, ended, at, STEP_SECONDS)?.lastOrNull { if (check.strict) it.value >= limit else it.value > limit }?.at
+      probe.rangeQuery(check.expr, from, at, STEP_SECONDS)?.lastOrNull { if (check.strict) it.value >= limit else it.value > limit }?.at
     }.filterNotNull().maxOrNull()
     return max(ended, lastBad?.let { it + STEP_SECONDS } ?: ended).coerceAtMost(at)
   }
@@ -159,10 +206,13 @@ class SettleGate(
     const val STILL_FALLING = 0.95
     const val STUCK_AFTER_SECONDS = 180.0
     const val HARD_CAP_SECONDS = 1200.0
+    const val WAIT_GAP_SECONDS = 60.0
+    const val LOAD_STEADY_SECONDS = 75.0
     private const val TENTHS = 10.0
     private const val BYTES_PER_MB = 1_048_576.0
     private const val MILLIS_PER_SECOND = 1000.0
     const val UPTIME = "min((time() - process_start_time_seconds{job=~\"api|pricing|worker\"}) or (up{job=~\"api|pricing|worker\"} == 0))"
+    const val UP_LATELY = "min(max_over_time(up{job=~\"api|pricing|worker\"}[2m]))"
     const val LAG = "max(kafka_consumer_lag_seconds)"
     const val ERRORS = "100 * (sum(rate(client_requests_total{outcome!~\"ok|http_4xx\"}[1m])) or vector(0)) / sum(rate(client_requests_total[1m]))"
     const val P99 = "histogram_quantile(0.99, sum by (le) (rate(client_duration_seconds_bucket[1m])))"
@@ -179,9 +229,10 @@ class SettleWait(
   private val sleep: (Long) -> Unit = Thread::sleep
 ) {
 
-  fun await() {
+  /** The status the wait ended on: settled, or given up. */
+  fun await(): SettleStatus {
     var status = gate.status(store.load())
-    if (status.settled) return
+    if (status.settled) return status
     terminal.out("Waiting for the lab to settle after the last exercise, so the next baseline is clean...")
     var shown: List<String>? = null
     var polls = 0
@@ -196,11 +247,12 @@ class SettleWait(
       status = gate.status(store.load())
     }
     if (status.gaveUp) {
-      terminal.out("Gave up waiting after ${status.waitedSeconds.toInt()} s. Starting anyway. Still not normal: ${pending(status)}")
+      terminal.out("Gave up waiting, ${status.waitedSeconds.toInt()} s after the last exercise ended. Starting anyway. Still not normal: ${pending(status)}")
     } else {
       terminal.out("The lab is back to normal.")
     }
     terminal.out()
+    return status
   }
 
   private fun pending(status: SettleStatus): String = status.checks.filterNot { it.ok }.joinToString("; ") { "${it.name} ${it.value} (want ${it.target})" }

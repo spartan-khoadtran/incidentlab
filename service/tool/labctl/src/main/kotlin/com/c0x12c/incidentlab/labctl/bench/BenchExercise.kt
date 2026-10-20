@@ -1,5 +1,6 @@
 package com.c0x12c.incidentlab.labctl.bench
 
+import com.c0x12c.incidentlab.labctl.exercise.SettleEntry
 import com.c0x12c.incidentlab.labctl.exercise.SettleWait
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate
 import com.c0x12c.incidentlab.labctl.Terminal
@@ -56,8 +57,8 @@ class BenchExercise(
     if (active != null && active.mode == MODE) {
       return if (BenchCatalog.running(params(active))) report(state) else answer(state)
     }
-    if (gate != null && options.settle && active == null) SettleWait(gate, store, terminal, sleep).await()
-    val view = when (val outcome = engine.start(options.clients, options.seconds, settle = false)) {
+    val entry = if (gate != null && options.settle && active == null) SettleEntry.Waited(SettleWait(gate, store, terminal, sleep).await()) else SettleEntry.Skip
+    val view = when (val outcome = engine.start(options.clients, options.seconds, entry)) {
       is Done -> outcome.value.active
       is Refused -> {
         terminal.out("An exercise is still open. Use `make answer`, `make reveal` or `make clear` first.")
@@ -65,6 +66,7 @@ class BenchExercise(
       }
     }
     Format.banner(terminal, "CLOSED-LOOP BENCH #${view.n}  ·  started at ${Format.hhmm(view.startedAt, zone)}")
+    if (view.unsettled.isNotEmpty()) terminal.out(Exercises.unsettledNote(view.unsettled))
     BenchEngine.intro(options.clients, options.seconds).forEach(terminal::out)
     terminal.out()
     terminal.out("What to watch:")

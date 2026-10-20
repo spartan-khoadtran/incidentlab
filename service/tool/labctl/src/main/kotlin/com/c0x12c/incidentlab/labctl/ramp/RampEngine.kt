@@ -1,6 +1,8 @@
 package com.c0x12c.incidentlab.labctl.ramp
 
+import com.c0x12c.incidentlab.labctl.exercise.SettleEntry
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate
+import com.c0x12c.incidentlab.labctl.exercise.admit
 import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.LabProbe
 import com.c0x12c.incidentlab.labctl.control.ScheduledAnnotations
@@ -110,11 +112,14 @@ class RampEngine(
 
   override val mode: String = MODE
 
-  fun start(every: Int, settle: Boolean = true): Outcome<ExerciseView> {
+  fun start(every: Int, entry: SettleEntry = SettleEntry.Wait): Outcome<ExerciseView> {
     check()?.let { return Refused(it) }
-    if (gate != null && settle) gate.refusal(store.load())?.let { return Refused(it) }
+    val pass = when (val admitted = gate.admit(store.load(), entry)) {
+      is Done -> admitted.value
+      is Refused -> return admitted
+    }
     val startedAt = now()
-    val mark = gate?.mark(store.load(), startedAt)
+    val mark = pass.mark(startedAt)
     val opened = store.withLock<Outcome<ActiveExercise>> { state, write ->
       val multiplier = ExerciseEngine.loadMultiplier(state)
       when {
@@ -128,9 +133,10 @@ class RampEngine(
             started = startedAt,
             n = state.history.size + 1,
             key = ActiveExercise.newKey(),
-            baselineFrom = ExerciseEngine.baselineFrom(startedAt, mark?.cleanFrom ?: state.lastEnded)
+            baselineFrom = mark.baselineFrom(startedAt, state.lastEnded),
+            unsettled = mark.unsettled
           )
-          write(state.copy(active = active, normal = mark?.normal ?: state.normal))
+          write(state.copy(active = active, normal = mark.normal ?: state.normal))
           Done(active)
         }
       }
@@ -172,7 +178,8 @@ class RampEngine(
       hints = emptyList(),
       answered = active.answered,
       rules = null,
-      baselineFrom = active.baselineFrom ?: (active.started - ExerciseEngine.BASELINE_SECONDS)
+      baselineFrom = active.baselineFrom ?: (active.started - ExerciseEngine.BASELINE_SECONDS),
+      unsettled = active.unsettled
     )
     return ExerciseView(view, plan = PlanView(RampPlan.rates, every, RampPlan.totalSeconds(every)))
   }

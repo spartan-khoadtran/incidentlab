@@ -34,7 +34,7 @@ data class NewOptions(
   val id: String = "",
   val force: Boolean = false,
   val mode: String = ExerciseEngine.INCIDENT,
-  /** False skips the settle gate: the CLI waits for it before it starts, and `--no-settle` skips it. */
+  /** False is `--no-settle`: the CLI starts without waiting for the lab to settle. */
   val settle: Boolean = true
 )
 
@@ -84,24 +84,25 @@ class ExerciseEngine(
     return (pick(state, options) as? Refused)?.refusal
   }
 
-  fun start(options: NewOptions): Outcome<ExerciseView> {
+  fun start(options: NewOptions, entry: SettleEntry = SettleEntry.Wait): Outcome<ExerciseView> {
     var state = store.load()
     if (state.active != null && !options.force) return Refused(Refusal.ExerciseOpen)
     val scenario = when (val picked = pick(state, options)) {
       is Done -> picked.value
       is Refused -> return picked
     }
-    if (gate != null && options.settle) {
-      if (state.active != null) {
-        clear()
-        state = store.load()
-      }
-      gate.refusal(state)?.let { return Refused(it) }
+    if (gate != null && entry == SettleEntry.Wait && state.active != null) {
+      clear()
+      state = store.load()
+    }
+    val pass = when (val admitted = gate.admit(state, entry)) {
+      is Done -> admitted.value
+      is Refused -> return admitted
     }
     val context = ExerciseContext(cpuCount = probe.cpuCount(), productDetailSeconds = probe.productDetailSeconds(), tenants = probe.tenants())
     val params = scenario.params(random, context)
     val startedAt = now()
-    val mark = gate?.mark(state, startedAt)
+    val mark = pass.mark(startedAt)
     val active = store.withLock { current, write ->
       if (current.active != null && !options.force) return@withLock null
       val ended = if (current.active != null) startedAt else current.lastEnded
@@ -112,14 +113,14 @@ class ExerciseEngine(
         started = startedAt,
         n = current.history.size + 1,
         key = ActiveExercise.newKey(),
-        baselineFrom = baselineFrom(startedAt, if (current.active != null) ended else mark?.cleanFrom ?: ended),
-        unsettled = mark?.unsettled.orEmpty()
+        baselineFrom = if (current.active != null) baselineFrom(startedAt, ended) else mark.baselineFrom(startedAt, ended),
+        unsettled = mark.unsettled
       )
-      val normal = mark?.normal.takeIf { current.active == null } ?: current.normal
+      val normal = mark.normal.takeIf { current.active == null } ?: current.normal
       write(current.queueFutureMarks(current.active, startedAt).copy(active = opened, lastEnded = ended, normal = normal))
       opened
     } ?: return Refused(Refusal.ExerciseOpen)
-    val room = (startedAt - (active.baselineFrom ?: startedAt)).toInt()
+    val room = (startedAt - (active.baselineFrom ?: startedAt)).toInt().coerceAtLeast(0)
     if (random.nextDouble() < scenario.decoy) {
       val lead = minOf(DECOY_MAX_LEAD_SECONDS, room)
       annotator.annotate(Answers.DECOYS.random(random), listOf("change"), startedAt + random.nextInt(-lead, DECOY_MAX_LAG_SECONDS + 1))
@@ -266,13 +267,23 @@ class ExerciseEngine(
     return HistoryView(history, average(scored), scored.size, byTopic(scored), missed, average(ramps), ramps.size)
   }
 
-  /** Sets the background load. Refused while a ramp step runs, because the ramp holds the load at 1 until its last step ends. */
+  /**
+   * Sets the background load. Refused while a ramp step runs, because the ramp holds the load at 1
+   * until its last step ends. A new load drops normal, so the settle gate learns it again at that load.
+   */
   fun load(multiplier: Double): Outcome<LoadView> {
     val x = multiplier.coerceIn(MIN_LOAD, MAX_LOAD)
     return store.withLock { state, write ->
       rampSecondsLeft(state.active)?.let { return@withLock Refused(Refusal.RampRunning(it)) }
       val loadgen = state.base["loadgen"].orEmpty() + ("rate_multiplier" to x)
-      write(state.copy(base = state.base + ("loadgen" to loadgen)))
+      val changed = x != loadMultiplier(state)
+      write(
+        state.copy(
+          base = state.base + ("loadgen" to loadgen),
+          normal = state.normal.takeUnless { changed },
+          loadSince = if (changed) now() else state.loadSince
+        )
+      )
       Done(LoadView(x, Baseline.BASE_RPS * x))
     }
   }
@@ -500,7 +511,7 @@ class ExerciseEngine(
     /** How far back a clean baseline reaches at most. */
     const val BASELINE_SECONDS = 900.0
 
-    fun baselineFrom(started: Double, cleanFrom: Double?): Double = maxOf(started - BASELINE_SECONDS, cleanFrom ?: 0.0)
+    fun baselineFrom(started: Double, cleanFrom: Double?): Double = maxOf(started - BASELINE_SECONDS, cleanFrom ?: 0.0).coerceAtMost(started)
 
     /** What an exercise whose ticket shows [symptom] offers. It reads nothing else, so it cannot give the scenario away. */
     fun answerOptions(symptom: Symptom): AnswerOptions =

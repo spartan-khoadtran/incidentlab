@@ -15,6 +15,7 @@ import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.LAG
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.P99
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.RSS
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.UPTIME
+import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.UP_LATELY
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.WAITING
 import com.c0x12c.incidentlab.labctl.state.LabState
 import com.c0x12c.incidentlab.labctl.state.NormalWindow
@@ -25,10 +26,28 @@ class SettleGateTest {
   private val now = 10_000.0
   private val normal = mapOf(LAG to 0.4, ERRORS to 0.0, P99 to 0.1, WAITING to 0.0, RSS to 400e6)
 
-  private fun gate(worst: Map<String, Double> = normal, past: Map<String, Double>? = null, uptime: Double? = 600.0, range: List<Sample> = emptyList()): SettleGate {
+  private fun gate(
+    worst: Map<String, Double> = normal,
+    past: Map<String, Double>? = null,
+    uptime: Double? = 600.0,
+    upLately: Double? = 1.0,
+    range: List<Sample> = emptyList(),
+    clock: () -> Double = { now }
+  ): SettleGate {
     val values = SettleValues(worst = { worst[it] }, normal = { normal[it] }, now = { worst[it] }, past = { (past ?: worst)[it] }, range = { range })
-    return SettleGate(FakePrometheus { expr, _ -> if (expr == UPTIME) uptime else values.answer(expr) }.withRange(values)) { now }
+    val prometheus = FakePrometheus { expr, _ ->
+      when (expr) {
+        UPTIME -> uptime
+        UP_LATELY -> upLately
+        else -> values.answer(expr)
+      }
+    }
+    return SettleGate(prometheus.withRange(values), clock)
   }
+
+  private fun SettleGate.markNow(state: LabState): SettleMark = mark(state, now, status(state))
+
+  private fun SettleGate.starts(state: LabState): Boolean = admit(state, SettleEntry.Wait) is Outcome.Done
 
   private fun state(endedAgo: Double?, startedAgo: Double? = 600.0) =
     LabState(lastEnded = endedAgo?.let { now - it }, normal = startedAgo?.let { NormalWindow(now - it - SettleGate.NORMAL_SECONDS, now - it) })
@@ -64,14 +83,64 @@ class SettleGateTest {
   }
 
   @Test
-  fun `the gate waits while values still fall, and gives up when they are stuck or after 20 minutes`() {
+  fun `the gate waits while values still fall, and gives up when they are stuck`() {
     val slow = normal + (LAG to 30.0)
     assertThat(gate(slow, past = normal + (LAG to 60.0)).status(state(400.0)).gaveUp).isFalse()
     assertThat(gate(slow).status(state(400.0)).gaveUp).isTrue()
     assertThat(gate(slow).status(state(100.0)).gaveUp).isFalse()
-    assertThat(gate(slow, past = normal + (LAG to 60.0)).status(state(SettleGate.HARD_CAP_SECONDS + 1)).gaveUp).isTrue()
-    assertThat(gate(slow).refusal(state(100.0)) is Refusal.LabSettling).isTrue()
-    assertThat(gate(slow).refusal(state(400.0))).isNull()
+    assertThat(gate(slow).starts(state(100.0))).isFalse()
+    assertThat(gate(slow).starts(state(400.0))).isTrue()
+  }
+
+  @Test
+  fun `the 20 minute cap counts from the first check, not from the end`() {
+    for (endedAgo in listOf(3600.0, null)) {
+      var clock = now
+      val gate = gate(normal + (LAG to 30.0), past = normal + (LAG to 60.0), clock = { clock })
+      val state = state(endedAgo)
+
+      assertThat(gate.status(state).gaveUp).isFalse()
+      while (clock <= now + SettleGate.HARD_CAP_SECONDS) {
+        clock += 30
+        gate.status(state)
+      }
+      assertThat(gate.status(state).gaveUp).isTrue()
+    }
+  }
+
+  @Test
+  fun `a give-up holds while the wait goes on, so the start after it is not refused`() {
+    var clock = now
+    var past = normal + (LAG to 30.0)
+    val values = SettleValues(worst = { (normal + (LAG to 30.0))[it] }, normal = { normal[it] }, past = { past[it] })
+    val gate = SettleGate(FakePrometheus { expr, _ -> if (expr == UPTIME) 600.0 else values.answer(expr) }) { clock }
+
+    assertThat(gate.status(state(400.0)).gaveUp).isTrue()
+    past = normal + (LAG to 60.0)
+    assertThat(gate.starts(state(400.0))).isTrue()
+    assertThat(gate.status(state(30.0)).gaveUp).isFalse()
+
+    assertThat(gate.status(state(400.0)).gaveUp).isFalse()
+    past = normal + (LAG to 30.0)
+    assertThat(gate.status(state(400.0)).gaveUp).isTrue()
+    clock += SettleGate.WAIT_GAP_SECONDS + 1
+    past = normal + (LAG to 60.0)
+    assertThat(gate.status(state(400.0)).gaveUp).isFalse()
+  }
+
+  @Test
+  fun `a restart long after the last end waits for the uptime, it does not give up at once`() {
+    val status = gate(uptime = 60.0).status(state(3600.0))
+
+    assertThat(status.settled).isFalse()
+    assertThat(status.gaveUp).isFalse()
+  }
+
+  @Test
+  fun `a service down for 2 minutes is stuck, and a service that is restarting is not`() {
+    assertThat(gate(uptime = 0.0, upLately = 0.0).status(state(400.0)).gaveUp).isTrue()
+    assertThat(gate(uptime = 0.0, upLately = 0.0).status(state(100.0)).gaveUp).isFalse()
+    assertThat(gate(uptime = 0.0, upLately = 1.0).status(state(400.0)).gaveUp).isFalse()
   }
 
   @Test
@@ -104,16 +173,24 @@ class SettleGateTest {
     val values = SettleValues(worst = { normal[it] }, normal = { normal[it] }, range = { if (it == P99) bad else emptyList() })
     val gate = SettleGate(FakePrometheus { expr, _ -> if (expr == UPTIME) 600.0 else values.answer(expr) }.withRange(values)) { now }
 
-    assertThat(gate.mark(state(150.0), now)).isEqualTo(SettleMark(now - 125, emptyList(), NormalWindow(now - 125, now)))
-    assertThat(gate().mark(state(900.0), now).normal).isEqualTo(NormalWindow(now - SettleGate.NORMAL_SECONDS, now))
+    assertThat(gate.markNow(state(150.0))).isEqualTo(SettleMark(now - 125, emptyList(), NormalWindow(now - 125, now)))
+    assertThat(gate().markNow(state(900.0)).normal).isEqualTo(NormalWindow(now - SettleGate.NORMAL_SECONDS, now))
+  }
+
+  @Test
+  fun `normal never reaches back before the load last changed`() {
+    val steady = now - 200 + SettleGate.LOAD_STEADY_SECONDS
+
+    assertThat(gate().markNow(state(900.0).copy(loadSince = now - 200)).normal).isEqualTo(NormalWindow(steady, now))
+    assertThat(gate().markNow(state(900.0).copy(loadSince = now - 100)).normal).isNull()
   }
 
   @Test
   fun `a start that did not settle keeps the normal before, so a fault never becomes normal`() {
-    val unsettled = gate(normal + (P99 to 2.5)).mark(state(400.0), now)
+    val unsettled = gate(normal + (P99 to 2.5)).markNow(state(400.0))
 
     assertThat(unsettled.unsettled).isEqualTo(listOf("User p99"))
     assertThat(unsettled.normal).isNull()
-    assertThat(gate().mark(state(null), now).normal).isNull()
+    assertThat(gate().markNow(state(null)).normal).isNull()
   }
 }

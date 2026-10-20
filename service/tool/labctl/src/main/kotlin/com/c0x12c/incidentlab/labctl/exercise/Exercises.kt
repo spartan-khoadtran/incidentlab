@@ -46,18 +46,19 @@ class Exercises(
   fun newExercise(options: NewOptions): Int {
     val open = store.load().active != null
     var start = options
+    var entry: SettleEntry = SettleEntry.Skip
     if (gate != null && options.settle && (options.force || !open)) {
       engine.check(options)?.let { return refused(it) }
       if (open) engine.clear()
-      SettleWait(gate, store, terminal, sleep).await()
-      start = options.copy(settle = false, force = false)
+      entry = SettleEntry.Waited(SettleWait(gate, store, terminal, sleep).await())
+      start = options.copy(force = false)
     }
-    val view = when (val outcome = engine.start(start)) {
+    val view = when (val outcome = engine.start(start, entry)) {
       is Done -> outcome.value.active
       is Refused -> return refused(outcome.refusal)
     }
     banner("EXERCISE #${view.n}  ·  level ${view.level}  ·  ticket opened at ${hhmm(view.startedAt)}")
-    if (view.unsettled.isNotEmpty()) terminal.out("Note: the lab was not fully back to normal (${view.unsettled.joinToString(", ")}), so the time before the ticket may hold part of the last exercise.")
+    if (view.unsettled.isNotEmpty()) terminal.out(unsettledNote(view.unsettled))
     terminal.out(view.ticket)
     terminal.out()
     terminal.out("The fault is now being applied to the system. Wait 1-2 minutes for the numbers to show, then start investigating.")
@@ -392,5 +393,8 @@ class Exercises(
       "  Profiles    in Grafana: Explore > Pyroscope (service = api, pricing, worker), or http://localhost:4040\n" +
       "  Prometheus  http://localhost:9090\n" +
       "  Handbook    http://localhost:4000"
+
+    fun unsettledNote(unsettled: List<String>): String =
+      "Note: the lab was not fully back to normal (${unsettled.joinToString(", ")}), so the time before the start may hold part of the last exercise."
   }
 }
