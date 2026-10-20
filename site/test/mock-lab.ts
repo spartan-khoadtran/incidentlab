@@ -76,6 +76,8 @@ interface MockActive {
 
 export class MockLab {
   online = true;
+  /** False acts like an older daemon that sends no answer options. */
+  sendOptions = true;
   active: MockActive | null = null;
   n = 0;
   history: { n: number; id: string; title: string; level: number; mode: string; score: number | null; hints: number; minutes: number; at: number; missed: string[]; note: string }[] = [];
@@ -105,7 +107,7 @@ export class MockLab {
       hints: MOCK_HINTS.slice(0, a.hints_used),
       answered: a.answered,
       rules: a.mode === "toolbox" ? "Mock rules: no Grafana, prove it from make shell." : null,
-      ...(a.mode === "incident" || a.mode === "toolbox" ? { options: ANSWER_OPTIONS } : {}),
+      ...((a.mode === "incident" || a.mode === "toolbox") && this.sendOptions ? { options: ANSWER_OPTIONS } : {}),
       ...((a.answered || a.revealed) && (a.mode === "incident" || a.mode === "toolbox") ? { reveal: MOCK_REVEAL } : {}),
       ...(a.answered && a.result ? { result: a.result } : {}),
       ...(a.mode === "ramp" ? { plan: this.plan } : {}),

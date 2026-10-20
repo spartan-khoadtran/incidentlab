@@ -57,6 +57,7 @@ describe("Play", () => {
     await user.click(screen.getByRole("button", { name: /Take hint 1/ }));
     expect(await screen.findByText("Mock hint one, broad.")).toBeTruthy();
     expect(screen.getByText("Penalty so far: −0.5")).toBeTruthy();
+    for (const text of SCENARIO_TEXT) expect(document.body.textContent).not.toContain(text);
 
     const submit = screen.getByRole("button", { name: "Submit the answer" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
@@ -195,6 +196,31 @@ describe("Play", () => {
     await vi.advanceTimersByTimeAsync(5_000);
     await waitFor(() => expect(screen.queryByText("The lab stopped answering")).toBeNull());
     expect(picked()).toBe(true);
+  });
+
+  it("keeps the answer picks after a hint", async () => {
+    const user = userEvent.setup();
+    state.lab.handle("POST", "/api/exercises", JSON_POST, {});
+    renderPlay();
+    await user.click(await screen.findByLabelText("Mock nature: the system itself"));
+    await user.click(screen.getByLabelText("Mock cause: retries"));
+
+    await user.click(screen.getByRole("button", { name: /Take hint 1/ }));
+    expect(await screen.findByText("Mock hint one, broad.")).toBeTruthy();
+
+    expect((screen.getByLabelText("Mock nature: the system itself") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("Mock cause: retries") as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText("Still to pick: location, signal.")).toBeTruthy();
+  });
+
+  it("says to update the lab when it sends no answer options", async () => {
+    state.lab.sendOptions = false;
+    state.lab.handle("POST", "/api/exercises", JSON_POST, {});
+    renderPlay();
+    expect(await screen.findByText(/The lab sent no answer options for this exercise/)).toBeTruthy();
+    expect(screen.queryByRole("form", { name: "Your answer" })).toBeNull();
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Show the answer without a score" })).toBeTruthy();
   });
 
   it("shows hint errors next to the hints", async () => {
