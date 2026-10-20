@@ -111,11 +111,10 @@ class RampEngine(
   override val mode: String = MODE
 
   fun start(every: Int, settle: Boolean = true): Outcome<ExerciseView> {
-    if (gate != null && settle) {
-      val state = store.load()
-      if (state.active == null) gate.refusal(state)?.let { return Refused(it) }
-    }
+    check()?.let { return Refused(it) }
+    if (gate != null && settle) gate.refusal(store.load())?.let { return Refused(it) }
     val startedAt = now()
+    val clean = gate?.cleanSince(store.load(), startedAt)
     val opened = store.withLock<Outcome<ActiveExercise>> { state, write ->
       val multiplier = ExerciseEngine.loadMultiplier(state)
       when {
@@ -129,9 +128,9 @@ class RampEngine(
             started = startedAt,
             n = state.history.size + 1,
             key = ActiveExercise.newKey(),
-            baselineFrom = ExerciseEngine.baselineFrom(startedAt, state.lastEnded)
+            baselineFrom = ExerciseEngine.baselineFrom(startedAt, clean ?: state.lastEnded)
           )
-          write(state.copy(active = active))
+          write(state.copy(active = active, lastStarted = startedAt))
           Done(active)
         }
       }
@@ -144,6 +143,17 @@ class RampEngine(
       ("ramp over: back to $BASE_RPS rps" to startedAt + RampPlan.totalSeconds(every))
     ScheduledAnnotations.write(store, annotator, active.key, listOf(TAG), marks, now)
     return Done(view(active))
+  }
+
+  /** What a start would be refused for before any wait: an open exercise, or a load that is not 1. */
+  fun check(): Refusal? {
+    val state = store.load()
+    val multiplier = ExerciseEngine.loadMultiplier(state)
+    return when {
+      state.active != null -> Refusal.ExerciseOpen
+      multiplier != 1.0 -> Refusal.LoadNotOne(multiplier)
+      else -> null
+    }
   }
 
   override fun view(active: ActiveExercise): ExerciseView {

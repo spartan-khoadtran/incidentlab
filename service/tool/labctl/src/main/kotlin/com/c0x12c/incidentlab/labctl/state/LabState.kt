@@ -77,7 +77,9 @@ data class LabState(
   /** Marks of exercises that ended early, still to delete from Grafana. The control daemon deletes them. */
   val pendingAnnotationDeletes: List<PlannedAnnotation> = emptyList(),
   /** Epoch seconds when the last exercise of any mode ended. The settle gate and the next baseline start from it. */
-  val lastEnded: Double? = null
+  val lastEnded: Double? = null,
+  /** Epoch seconds when the last exercise of any mode started. The minutes before it are what normal looks like. */
+  val lastStarted: Double? = null
 )
 
 /**

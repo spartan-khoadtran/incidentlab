@@ -4,6 +4,7 @@ import com.c0x12c.incidentlab.labctl.Terminal
 import com.c0x12c.incidentlab.labctl.control.LabProbe
 import com.c0x12c.incidentlab.labctl.state.LabState
 import com.c0x12c.incidentlab.labctl.state.StateStore
+import java.util.concurrent.Executors
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -28,72 +29,120 @@ data class SettleStatus(
 
 /**
  * Reads whether the lab is back to normal after the last exercise. A start waits for it, so the
- * next exercise's baseline holds no part of the fault before.
+ * next exercise's baseline holds no part of the fault before. "Normal" means what the lab looked
+ * like in the 5 minutes before the last exercise started, and it must hold for a whole window.
  */
 class SettleGate(
   private val probe: LabProbe,
   private val now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND }
 ) {
 
+  /** A value that must stay under its limit for the whole window. [limit] gets the lab's normal value, or null when there is none. */
+  private class ValueCheck(val name: String, val expr: String, val show: (Double) -> String, val limit: (Double?) -> Double?, val strict: Boolean = false)
+
+  private class Reading(val check: ValueCheck, val worst: Double?, val normal: Double?, val current: Double?, val past: Double?) {
+    val limit: Double? = check.limit(normal)
+    val ok: Boolean = worst == null || limit == null || (if (check.strict) worst < limit else worst <= limit)
+    val stuck: Boolean = !ok && current != null && past != null && current >= past * STILL_FALLING
+  }
+
+  private val values = listOf(
+    ValueCheck("Kafka lag", LAG, ::seconds, { LAG_SECONDS }, strict = true),
+    ValueCheck("Errors users see", ERRORS, { "${Format.plain(round(it))}%" }, { normal -> max(ERROR_PERCENT, (normal ?: 0.0) * MARGIN) }),
+    ValueCheck("User p99", P99, ::seconds, { normal -> max(FAST_SECONDS, (normal ?: 0.0) * MARGIN) }),
+    ValueCheck("Requests waiting inside api", WAITING, { Format.plain(round(it)) }, { normal -> max(WAITING_MAX, (normal ?: 0.0) * MARGIN) }),
+    ValueCheck("api memory (RSS)", RSS, ::megabytes, { normal -> normal?.let { it + RSS_SLACK_BYTES } })
+  )
+
   fun status(state: LabState): SettleStatus {
     val at = now()
     val waited = state.lastEnded?.let { at - it }
+    val reference = state.lastStarted
+    val readings = parallel(values) { read(it, reference) }
+    val uptime = probe.instantQuery(UPTIME)
     val checks = listOfNotNull(
-      waited?.let { check("Time since the last exercise ended", it, "at least ${QUIET_SECONDS.toInt()} s", ::seconds) { seconds -> seconds >= QUIET_SECONDS } },
-      query("Every service up since its last start", UPTIME, "at least ${UPTIME_SECONDS.toInt()} s", ::seconds) { it >= UPTIME_SECONDS },
-      query("Kafka lag", LAG, "under ${LAG_SECONDS.toInt()} s", ::seconds) { it < LAG_SECONDS },
-      query("Errors users see", ERRORS, "under ${ERROR_PERCENT.toInt()}%", { "${Format.plain(round(it))}%" }) { it < ERROR_PERCENT },
-      steadyLatency(),
-      query("Requests waiting inside api", WAITING, "under $WAITING_MAX", { Format.plain(round(it)) }) { it < WAITING_MAX },
-      query("Memory the last fault kept in api", FAULT_BYTES, "0 MB", { "${Format.plain(round(it / BYTES_PER_MB))} MB" }) { it <= 0.0 }
-    )
+      waited?.let { SettleCheck("Time since the last exercise ended", it >= QUIET_SECONDS, seconds(it), "at least ${QUIET_SECONDS.toInt()} s") },
+      SettleCheck("Every service up since its last start", uptime == null || uptime >= UPTIME_SECONDS, uptime?.let(::seconds), "at least ${UPTIME_SECONDS.toInt()} s")
+    ) + readings.map { reading ->
+      val limit = reading.limit
+      SettleCheck(
+        reading.check.name,
+        reading.ok,
+        reading.worst?.let { worst -> reading.check.show(worst) + (reading.normal?.let { " (normal ${reading.check.show(it)})" } ?: "") },
+        limit?.let { "at most ${reading.check.show(it)} for ${WINDOW_SECONDS.toInt()} s" } ?: "no normal value yet"
+      )
+    }
     val settled = checks.all { it.ok }
-    return SettleStatus(settled, checks, max(0.0, waited ?: 0.0), !settled && (waited == null || waited > CAP_SECONDS))
+    val timeWillFix = (waited != null && waited < QUIET_SECONDS) || (uptime != null && uptime < UPTIME_SECONDS)
+    val stuck = !timeWillFix && readings.filterNot { it.ok }.let { failing -> failing.isNotEmpty() && failing.all { it.stuck } }
+    val gaveUp = !settled && ((waited ?: 0.0) > HARD_CAP_SECONDS || (stuck && (waited == null || waited > STUCK_AFTER_SECONDS)))
+    return SettleStatus(settled, checks, max(0.0, waited ?: 0.0), gaveUp)
   }
 
   /** The refusal a start gets while the lab settles, or null when it may start. */
   fun refusal(state: LabState): Refusal? = status(state).takeUnless { it.settled || it.gaveUp }?.let { Refusal.LabSettling(it) }
 
-  private fun steadyLatency(): SettleCheck {
-    val name = "User p99 is steady"
-    val target = "within ${((STEADY_RATIO - 1) * PERCENT).toInt()}% of the minute before"
-    val current = probe.instantQuery(P99)
-    val before = probe.instantQuery(P99_BEFORE)
-    if (current == null || before == null) return SettleCheck(name, true, null, target)
-    val ok = max(current, before) < FAST_SECONDS || (current <= before * STEADY_RATIO && before <= current * STEADY_RATIO)
-    return SettleCheck(name, ok, "${seconds(current)} (was ${seconds(before)})", target)
+  /**
+   * Where a clean baseline starts for an exercise starting at [at]: just after the last moment a value
+   * was off its normal, and never before the last exercise ended.
+   */
+  fun cleanSince(state: LabState, at: Double): Double? {
+    val ended = state.lastEnded ?: return null
+    val lastBad = parallel(values) { check ->
+      val limit = check.limit(state.lastStarted?.let { probe.instantQuery(normal(check.expr, it)) }) ?: return@parallel null
+      probe.rangeQuery(check.expr, ended, at, STEP_SECONDS)?.lastOrNull { if (check.strict) it.value >= limit else it.value > limit }?.at
+    }.filterNotNull().maxOrNull()
+    return max(ended, lastBad?.let { it + STEP_SECONDS } ?: ended).coerceAtMost(at)
   }
 
-  private fun query(name: String, expr: String, target: String, show: (Double) -> String, ok: (Double) -> Boolean): SettleCheck =
-    probe.instantQuery(expr)?.takeIf { it.isFinite() }?.let { check(name, it, target, show, ok) } ?: SettleCheck(name, true, null, target)
+  private fun read(check: ValueCheck, reference: Double?): Reading {
+    val (worst, normal, current, past) = parallel(
+      listOf(
+        "max_over_time((${check.expr})[${WINDOW_SECONDS.toInt()}s:${STEP_SECONDS.toInt()}s])",
+        reference?.let { normal(check.expr, it) },
+        check.expr,
+        "last_over_time((${check.expr})[1m:${STEP_SECONDS.toInt()}s] offset ${PROGRESS_SECONDS.toInt()}s)"
+      )
+    ) { expr -> expr?.let { probe.instantQuery(it)?.takeIf { value -> value.isFinite() } } }
+    return Reading(check, worst, normal, current, past)
+  }
 
-  private fun check(name: String, value: Double, target: String, show: (Double) -> String, ok: (Double) -> Boolean): SettleCheck =
-    SettleCheck(name, ok(value), show(value), target)
+  private fun normal(expr: String, startedAt: Double): String = "avg_over_time(($expr)[${NORMAL_SECONDS.toInt()}s:${STEP_SECONDS.toInt()}s] @ ${startedAt.toLong()})"
+
+  private fun <T, R> parallel(items: List<T>, work: (T) -> R): List<R> =
+    Executors.newVirtualThreadPerTaskExecutor().use { pool -> items.map { item -> pool.submit<R> { work(item) } }.map { it.get() } }
 
   private fun seconds(value: Double): String = "${Format.plain(round(value))} s"
+
+  private fun megabytes(value: Double): String = "${Format.plain(round(value / BYTES_PER_MB))} MB"
 
   private fun round(value: Double): Double = (value * TENTHS).roundToInt() / TENTHS
 
   companion object {
     const val QUIET_SECONDS = 60.0
     const val UPTIME_SECONDS = 120.0
+    const val WINDOW_SECONDS = 120.0
+    const val NORMAL_SECONDS = 300.0
+    const val STEP_SECONDS = 15.0
+    const val PROGRESS_SECONDS = 120.0
     const val LAG_SECONDS = 5.0
     const val ERROR_PERCENT = 1.0
     const val WAITING_MAX = 0.5
-    const val STEADY_RATIO = 1.3
     const val FAST_SECONDS = 0.2
-    const val CAP_SECONDS = 300.0
-    private const val PERCENT = 100
+    const val MARGIN = 1.3
+    const val RSS_SLACK_BYTES = 64.0 * 1_048_576
+    const val STILL_FALLING = 0.95
+    const val STUCK_AFTER_SECONDS = 180.0
+    const val HARD_CAP_SECONDS = 1200.0
     private const val TENTHS = 10.0
     private const val BYTES_PER_MB = 1_048_576.0
     private const val MILLIS_PER_SECOND = 1000.0
-    const val UPTIME = "min(time() - process_start_time_seconds{job=~\"api|pricing|worker\"})"
+    const val UPTIME = "min((time() - process_start_time_seconds{job=~\"api|pricing|worker\"}) or (up{job=~\"api|pricing|worker\"} == 0))"
     const val LAG = "max(kafka_consumer_lag_seconds)"
     const val ERRORS = "100 * (sum(rate(client_requests_total{outcome!~\"ok|http_4xx\"}[1m])) or vector(0)) / sum(rate(client_requests_total[1m]))"
     const val P99 = "histogram_quantile(0.99, sum by (le) (rate(client_duration_seconds_bucket[1m])))"
-    const val P99_BEFORE = "histogram_quantile(0.99, sum by (le) (rate(client_duration_seconds_bucket[1m] offset 1m)))"
     const val WAITING = "sum(avg_over_time(db_pool_waiting{job=\"api\"}[1m])) + sum(avg_over_time(app_admission_waiting{job=\"api\"}[1m]))"
-    const val FAULT_BYTES = "sum({__name__=~\"app_leaked_bytes|app_retained_bytes\",job=\"api\"})"
+    const val RSS = "max(process_resident_memory_bytes{job=\"api\"})"
   }
 }
 

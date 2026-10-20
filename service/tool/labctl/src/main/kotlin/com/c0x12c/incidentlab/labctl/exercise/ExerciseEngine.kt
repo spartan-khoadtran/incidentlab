@@ -77,9 +77,20 @@ class ExerciseEngine(
 
   private data class Found(val active: ActiveExercise, val scenario: Scenario)
 
+  /** What a start with [options] would be refused for before any wait: an open exercise, or a bad id, level, topic or load. */
+  fun check(options: NewOptions): Refusal? {
+    val state = store.load()
+    if (state.active != null && !options.force) return Refusal.ExerciseOpen
+    return (pick(state, options) as? Refused)?.refusal
+  }
+
   fun start(options: NewOptions): Outcome<ExerciseView> {
     var state = store.load()
     if (state.active != null && !options.force) return Refused(Refusal.ExerciseOpen)
+    val scenario = when (val picked = pick(state, options)) {
+      is Done -> picked.value
+      is Refused -> return picked
+    }
     if (gate != null && options.settle) {
       if (state.active != null) {
         clear()
@@ -87,13 +98,10 @@ class ExerciseEngine(
       }
       gate.refusal(state)?.let { return Refused(it) }
     }
-    val scenario = when (val picked = pick(state, options)) {
-      is Done -> picked.value
-      is Refused -> return picked
-    }
     val context = ExerciseContext(cpuCount = probe.cpuCount(), productDetailSeconds = probe.productDetailSeconds(), tenants = probe.tenants())
     val params = scenario.params(random, context)
     val startedAt = now()
+    val clean = gate?.cleanSince(state, startedAt)
     val active = store.withLock { current, write ->
       if (current.active != null && !options.force) return@withLock null
       val ended = if (current.active != null) startedAt else current.lastEnded
@@ -104,15 +112,17 @@ class ExerciseEngine(
         started = startedAt,
         n = current.history.size + 1,
         key = ActiveExercise.newKey(),
-        baselineFrom = baselineFrom(startedAt, ended)
+        baselineFrom = baselineFrom(startedAt, if (current.active != null) ended else clean ?: ended)
       )
-      write(current.queueFutureMarks(current.active, startedAt).copy(active = opened, lastEnded = ended))
+      write(current.queueFutureMarks(current.active, startedAt).copy(active = opened, lastEnded = ended, lastStarted = startedAt))
       opened
     } ?: return Refused(Refusal.ExerciseOpen)
+    val room = (startedAt - (active.baselineFrom ?: startedAt)).toInt()
     if (random.nextDouble() < scenario.decoy) {
-      annotator.annotate(Answers.DECOYS.random(random), listOf("change"), startedAt + random.nextInt(-DECOY_MAX_LEAD_SECONDS, DECOY_MAX_LAG_SECONDS + 1))
+      val lead = minOf(DECOY_MAX_LEAD_SECONDS, room)
+      annotator.annotate(Answers.DECOYS.random(random), listOf("change"), startedAt + random.nextInt(-lead, DECOY_MAX_LAG_SECONDS + 1))
     }
-    scenario.marker?.let { annotator.annotate(it(rendered(active)), listOf("change"), startedAt - random.nextInt(0, MARKER_MAX_LEAD_SECONDS + 1)) }
+    scenario.marker?.let { annotator.annotate(it(rendered(active)), listOf("change"), startedAt - random.nextInt(0, minOf(MARKER_MAX_LEAD_SECONDS, room) + 1)) }
     return Done(ExerciseView(view(active, scenario)))
   }
 

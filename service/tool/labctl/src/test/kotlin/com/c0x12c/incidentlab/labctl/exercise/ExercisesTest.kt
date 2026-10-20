@@ -1,6 +1,7 @@
 package com.c0x12c.incidentlab.labctl.exercise
 
 import com.c0x12c.incidentlab.labctl.FakePrometheus
+import com.c0x12c.incidentlab.labctl.SettleValues
 import assertk.assertThat
 import assertk.assertions.contains
 import assertk.assertions.containsExactly
@@ -75,12 +76,9 @@ class ExercisesTest {
 
   private fun wrong(options: List<Option>, accepted: Set<String>): String = options.first { it.key !in accepted }.key
 
-  private fun settleProbe(lag: () -> Double) = FakePrometheus { expr, _ ->
-    when (expr) {
-      SettleGate.LAG -> lag()
-      SettleGate.UPTIME -> 600.0
-      else -> null
-    }
+  private fun settleProbe(lag: () -> Double): FakePrometheus {
+    val values = SettleValues(worst = { if (it == SettleGate.LAG) lag() else null }, past = { if (it == SettleGate.LAG) 60.0 else null })
+    return FakePrometheus { expr, _ -> if (expr == SettleGate.UPTIME) 600.0 else values.answer(expr) }
   }
 
   @Test
@@ -99,7 +97,7 @@ class ExercisesTest {
     assertThat(exercises.newExercise(NewOptions(id = "pool_hold"))).isEqualTo(0)
 
     assertThat(sleeps).containsExactly(SettleWait.POLL_MILLIS)
-    assertThat(terminal.lines).contains("  still settling: Kafka lag 30 s (want under 5 s)")
+    assertThat(terminal.lines).contains("  still settling: Kafka lag 30 s (want at most 5 s for 120 s)")
     assertThat(terminal.lines).contains("The lab is back to normal.")
     assertThat(store.load().active?.id).isEqualTo("pool_hold")
   }

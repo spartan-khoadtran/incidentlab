@@ -10,6 +10,7 @@ import assertk.assertions.isNull
 import assertk.assertions.isTrue
 import com.c0x12c.incidentlab.labctl.FakeAnnotator
 import com.c0x12c.incidentlab.labctl.FakePrometheus
+import com.c0x12c.incidentlab.labctl.SettleValues
 import com.c0x12c.incidentlab.labctl.LabJson
 import com.c0x12c.incidentlab.labctl.ScriptedTerminal
 import com.c0x12c.incidentlab.labctl.bench.BenchEngine
@@ -199,15 +200,9 @@ class LabApiTest {
   @Test
   fun `a start waits for the lab to settle, and the next baseline begins where the last exercise ended`() {
     var lag = 30.0
-    val probe = FakePrometheus { expr, _ ->
-      when {
-        expr == SettleGate.LAG -> lag
-        expr == SettleGate.UPTIME -> 600.0
-        expr.startsWith("histogram_quantile(0.99, sum by (le) (rate(client_duration_seconds_bucket[1m])))") -> 0.1
-        expr in setOf(SettleGate.ERRORS, SettleGate.WAITING, SettleGate.FAULT_BYTES) -> 0.0
-        else -> null
-      }
-    }
+    val healthy = mapOf(SettleGate.P99 to 0.1, SettleGate.ERRORS to 0.0, SettleGate.WAITING to 0.0)
+    val values = SettleValues(worst = { if (it == SettleGate.LAG) lag else healthy[it] }, normal = { healthy[it] })
+    val probe = FakePrometheus { expr, _ -> if (expr == SettleGate.UPTIME) 600.0 else values.answer(expr) }
     val base = server(probe = probe, gate = SettleGate(probe) { clock })
 
     assertThat(post(base, "/api/exercises", mapOf("id" to "pool_hold")).status).isEqualTo(201)

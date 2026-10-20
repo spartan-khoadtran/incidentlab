@@ -53,7 +53,7 @@ class RampExercise(
   override val mode: String = MODE
 
   fun start(options: RampOptions): Int {
-    if (gate != null && options.settle && store.load().active == null) SettleWait(gate, store, terminal, sleep).await()
+    if (gate != null && options.settle && engine.check() == null) SettleWait(gate, store, terminal, sleep).await()
     val view = when (val outcome = engine.start(options.every, settle = false)) {
       is Done -> outcome.value.active
       is Refused -> {

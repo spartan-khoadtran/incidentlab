@@ -45,11 +45,14 @@ class Exercises(
 
   fun newExercise(options: NewOptions): Int {
     val open = store.load().active != null
+    var start = options
     if (gate != null && options.settle && (options.force || !open)) {
+      engine.check(options)?.let { return refused(it) }
       if (open) engine.clear()
       SettleWait(gate, store, terminal, sleep).await()
+      start = options.copy(settle = false, force = false)
     }
-    val view = when (val outcome = engine.start(options.copy(settle = false))) {
+    val view = when (val outcome = engine.start(start)) {
       is Done -> outcome.value.active
       is Refused -> return refused(outcome.refusal)
     }

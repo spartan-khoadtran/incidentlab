@@ -51,12 +51,14 @@ class HeapPressure(
     }
   }
 
+  /** Drops the store and runs one full collection, so the old generation is back to normal when the next exercise starts. */
   fun clear() {
     lock.withLock {
       slots = arrayOfNulls(0)
       filled = 0
       retained.set(0)
     }
+    System.gc()
   }
 
   private companion object {
