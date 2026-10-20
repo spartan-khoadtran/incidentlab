@@ -81,19 +81,23 @@ class SettleGate(
 ) {
 
   /** A value that must stay under its limit for the whole window. [limit] gets the lab's normal value, or null when there is none. */
-  private class ValueCheck(val name: String, val expr: String, val show: (Double) -> String, val limit: (Double?) -> Double?, val strict: Boolean = false)
+  private class ValueCheck(val name: String, val expr: String, val show: (Double) -> String, val limit: (Double?) -> Double?, val strict: Boolean = false) {
+    fun off(value: Double, limit: Double): Boolean = if (strict) value >= limit else value > limit
+  }
 
+  /** [stuck] means already off 2 minutes ago and not falling since. A value that just went off is waited out. */
   private class Reading(val check: ValueCheck, val worst: Double?, val normal: Double?, val current: Double?, val past: Double?) {
     val limit: Double? = check.limit(normal)
-    val ok: Boolean = worst == null || limit == null || (if (check.strict) worst < limit else worst <= limit)
-    val stuck: Boolean = !ok && current != null && past != null && current >= past * STILL_FALLING
+    val ok: Boolean = worst == null || limit == null || !check.off(worst, limit)
+    val stuck: Boolean = !ok && limit != null && current != null && past != null && check.off(past, limit) && current >= past * STILL_FALLING
   }
 
   /**
    * One wait after the end at [lastEnded], from [since] to the last check at [checked]. A give-up
    * holds while the wait goes on, so the poll that gave up and the start after it agree.
+   * [downSince] is the first check that found a service with no answer for 2 minutes.
    */
-  private class Wait(val lastEnded: Double?, val since: Double, val checked: Double, val gaveUp: Boolean)
+  private class Wait(val lastEnded: Double?, val since: Double, val checked: Double, val downSince: Double?, val gaveUp: Boolean)
 
   @Volatile
   private var wait: Wait? = null
@@ -125,16 +129,17 @@ class SettleGate(
       )
     }
     val settled = checks.all { it.ok }
-    val downForGood = upLately == 0.0
+    val previous = wait?.takeIf { it.lastEnded == state.lastEnded && at - it.checked <= WAIT_GAP_SECONDS }
+    val downSince = if (upLately == 0.0) previous?.downSince ?: at else null
+    val downForGood = downSince != null && at - downSince >= DOWN_GRACE_SECONDS
     val restarting = !downForGood && uptime != null && uptime < UPTIME_SECONDS
     val timeWillFix = (waited != null && waited < QUIET_SECONDS) || restarting
     val failing = readings.filterNot { it.ok }
     val stuck = !timeWillFix && (downForGood || failing.isNotEmpty()) && failing.all { it.stuck }
-    val previous = wait?.takeIf { it.lastEnded == state.lastEnded && at - it.checked <= WAIT_GAP_SECONDS }
     val since = previous?.since ?: at
     val gaveUp = !settled &&
       (previous?.gaveUp == true || at - since > HARD_CAP_SECONDS || (stuck && (waited == null || waited > STUCK_AFTER_SECONDS)))
-    wait = if (settled) null else Wait(state.lastEnded, since, at, gaveUp)
+    wait = if (settled) null else Wait(state.lastEnded, since, at, downSince, gaveUp)
     return SettleStatus(settled, checks, max(0.0, waited ?: 0.0), gaveUp)
   }
 
@@ -161,7 +166,7 @@ class SettleGate(
     val from = max(ended, at - ExerciseEngine.BASELINE_SECONDS - STEP_SECONDS)
     val lastBad = parallel(values) { check ->
       val limit = check.limit(state.normal?.let { probe.instantQuery(normal(check.expr, it)) }) ?: return@parallel null
-      probe.rangeQuery(check.expr, from, at, STEP_SECONDS)?.lastOrNull { if (check.strict) it.value >= limit else it.value > limit }?.at
+      probe.rangeQuery(check.expr, from, at, STEP_SECONDS)?.lastOrNull { check.off(it.value, limit) }?.at
     }.filterNotNull().maxOrNull()
     return max(ended, lastBad?.let { it + STEP_SECONDS } ?: ended).coerceAtMost(at)
   }
@@ -207,6 +212,7 @@ class SettleGate(
     const val STUCK_AFTER_SECONDS = 180.0
     const val HARD_CAP_SECONDS = 1200.0
     const val WAIT_GAP_SECONDS = 60.0
+    const val DOWN_GRACE_SECONDS = 60.0
     const val LOAD_STEADY_SECONDS = 75.0
     private const val TENTHS = 10.0
     private const val BYTES_PER_MB = 1_048_576.0
