@@ -150,7 +150,7 @@ export function ResultView({
         </ol>
       </section>
 
-      {reveal.rule_outs.length ? <RuleOuts ruleOuts={reveal.rule_outs} partial={reveal.answer.partial} picked={choices?.cause ?? null} /> : null}
+      {reveal.rule_outs?.length ? <RuleOuts ruleOuts={reveal.rule_outs} partial={reveal.answer.partial} picked={choices?.cause ?? null} /> : null}
 
       {reveal.evidence.length ? (
         <section className="result-block">
