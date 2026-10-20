@@ -19,7 +19,9 @@ data class ActiveExercise(
   /** Names this exercise for a command that reads it first and writes later. The API shows it, so an older file's default never holds the scenario id. */
   val key: String = "legacy-$n-$started",
   /** Annotations written ahead of time, so an early end can delete the ones still in the future. */
-  val annotations: List<PlannedAnnotation> = emptyList()
+  val annotations: List<PlannedAnnotation> = emptyList(),
+  /** Epoch seconds where a clean baseline starts: 15 minutes before the start, or the end of the exercise before, whichever is later. */
+  val baselineFrom: Double? = null
 ) {
   companion object {
     fun newKey(): String = UUID.randomUUID().toString()
@@ -73,7 +75,9 @@ data class LabState(
   val history: List<HistoryEntry> = emptyList(),
   val base: Map<String, Map<String, Any?>> = emptyMap(),
   /** Marks of exercises that ended early, still to delete from Grafana. The control daemon deletes them. */
-  val pendingAnnotationDeletes: List<PlannedAnnotation> = emptyList()
+  val pendingAnnotationDeletes: List<PlannedAnnotation> = emptyList(),
+  /** Epoch seconds when the last exercise of any mode ended. The settle gate and the next baseline start from it. */
+  val lastEnded: Double? = null
 )
 
 /**
