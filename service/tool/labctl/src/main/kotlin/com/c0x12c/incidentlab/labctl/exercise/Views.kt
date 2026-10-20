@@ -7,8 +7,9 @@ import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonUnwrapped
 
 /**
- * The only view of an open exercise. It has no field for the scenario id, its title or its answer,
- * so nothing that reads it can leak them before the learner answers.
+ * The only view of an open exercise. It has no field for the scenario's id, title, answer, explanation,
+ * steps, evidence, cli, guide pointer or rule-outs. Its [options] hold the right keys only among others
+ * drawn from the ticket's symptom.
  */
 data class ActiveView(
   val n: Int,

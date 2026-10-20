@@ -35,7 +35,7 @@ Every POST must send `Content-Type: application/json` and `X-Lab-Client: web`. W
 
 ## No-spoiler rule
 
-Before an exercise is answered or revealed, no response holds its scenario id, title, answer keys or labels (outside `options`), explanation, steps, evidence, cli, guide pointer or rule-outs. `ActiveView` is the only view of an open exercise, and its type has no field for any of them. A quiz answer comes back only after the learner posted an answer to that question.
+Before an exercise is answered or revealed, no response holds its scenario id, title, answer keys or labels (outside `options`), explanation, steps, evidence, cli, guide pointer or rule-outs. `ActiveView` is the only view of an open exercise. It has no field for the scenario's id, title, answer, explanation, steps, evidence, cli, guide pointer or rule-outs. Its `options` hold the right keys only among others drawn from the ticket's symptom. A quiz answer comes back only after the learner posted an answer to that question.
 
 The one place the answer keys show early is `options`, where the right ones sit among the others. The lists come from the ticket's symptom only, so two exercises whose tickets show the same symptom offer the same lists. They tell the learner nothing the ticket did not.
 
@@ -57,7 +57,7 @@ AnswerOptions = {
   signals: [Option], causes: [Option]       // only the ones that fit the ticket's symptom; causes carry group
 }
 Option = { key: string, label: string, group?: string }      // group only on causes
-RuleOut = { cause: Option, check: string, correct: bool }      // check: what you would see if this cause were the one
+RuleOut = { cause: Option, check: string, correct: bool, partial: bool }   // check: what you would see if this cause were the one; partial: worth 1 point
 GuidePointer = { pointer: string, file: string|null }         // file is a name under docs/, like "capacity.md"
 Reveal = {
   id, title, level: int, topics: [string],
@@ -69,7 +69,8 @@ Reveal = {
 Result = {
   n: int, score: number, raw: number, max: number, hints_used: int,
   verdicts: { nature: "correct"|"wrong", location: ..., signal: ..., cause: "correct"|"partial"|"wrong" },
-  missed: [string], reveal: Reveal
+  missed: [string], reveal: Reveal,
+  choices: { nature: string, location: string, signal: string, cause: string }   // the four keys the learner picked
 }
 HistoryEntry = { n, id, mode, title, level: int (0 for a ramp or a bench), score: number|null, hints, minutes, at, missed: [string], note }
 ```
@@ -86,8 +87,8 @@ An example, with the lists cut short:
   "causes": [{ "key": "pool_exhausted", "label": "Connection pool exhausted: ...", "group": "DB client and Postgres" }, ...]
 }
 "rule_outs": [
-  { "cause": { "key": "app_lock", "label": "A lock inside the app ...", "group": "Inside the app" }, "check": "...", "correct": false },
-  { "cause": { "key": "pool_exhausted", "label": "Connection pool exhausted: ...", "group": "DB client and Postgres" }, "check": "...", "correct": true }
+  { "cause": { "key": "app_lock", "label": "A lock inside the app ...", "group": "Inside the app" }, "check": "...", "correct": false, "partial": false },
+  { "cause": { "key": "pool_exhausted", "label": "Connection pool exhausted: ...", "group": "DB client and Postgres" }, "check": "...", "correct": true, "partial": false }
 ]
 ```
 
@@ -107,11 +108,18 @@ An example, with the lists cut short:
 - `GET /api/exercise` -> the open exercise in any mode, so a page reload can rebuild itself: `ActiveView`, plus
   - `plan: { steps: [rps], every, total_seconds }` for a ramp, and `ends_at` (epoch seconds) for a bench, from the start;
   - `reveal: Reveal` once an incident is answered or revealed;
-  - `result` once it is answered. For an incident it is the same `Result` that `POST /api/exercise/answer` returned. For a ramp it is the same `RampResult` that `POST /api/ramp/answer` returned. A reveal is not an answer, so a revealed exercise has no `result`. A ramp's `result` is read again from Prometheus and is left out when Prometheus does not answer.
+  - `result` once it is answered. For an incident it is the same `Result` that `POST /api/exercise/answer` returned, `choices` included, so a reloaded page can show the picks again. For a ramp it is the same `RampResult` that `POST /api/ramp/answer` returned. A reveal is not an answer, so a revealed exercise has no `result`. A ramp's `result` is read again from Prometheus and is left out when Prometheus does not answer.
 
   404 `no_exercise`. 409 `stale_exercise`.
 - `POST /api/exercise/hint` body `{ key?: string }` -> `ActiveView` with the new hint at the end of `hints`. 409 `no_hints_left` (also for a ramp or a bench), `already_answered`, `exercise_changed` or `stale_exercise`.
-- `POST /api/exercise/answer` body `{ nature, location, signal, cause, note?: string, key?: string }` -> `Result`. Each key must come from the matching list in the exercise's `options`. A key that exists but is not in that list is a 400 `unknown_key`, like a key that does not exist. 400 `missing_field`. 409 `already_answered`, or `exercise_changed`. Keeps the history entry like `make answer`, note included (one line, at most 500 characters). Does not clear the fault.
+- `POST /api/exercise/answer` body `{ nature, location, signal, cause, note?: string, key?: string }` -> `Result`. Each key must come from the matching list in the exercise's `options`. Keeps the history entry like `make answer`, note included (one line, at most 500 characters). Does not clear the fault. The errors, in the order the API checks them:
+  1. 400 `missing_field` when one of the four keys is missing. This check runs before the exercise is read.
+  2. 409 `exercise_changed` when `key` names another exercise than the open one, or no exercise is open.
+  3. 404 `no_exercise` when no exercise is open and the body has no `key`.
+  4. 409 `wrong_mode` when the open exercise is a ramp or a bench.
+  5. 409 `stale_exercise` when an older catalog started the open exercise.
+  6. 409 `already_answered`.
+  7. 400 `unknown_key` when a key is not in the matching list of `options`. A key that exists but is not in that list counts too. The API checks nature, location, signal and cause in that order, and names the first bad one.
 - `POST /api/exercise/reveal` body `{ key?: string }` -> `Reveal`, with the same `rule_outs` as an answer. Not scored. 409 `exercise_changed`. The first reveal adds a history entry with `score: null`, like `make reveal`. Does not clear the fault.
 - `POST /api/exercise/clear` body `{ key?: string }` -> `{ cleared: true }` when it ended an exercise, `{ cleared: false }` when none was open. Ends the open exercise of any mode, with the annotation "lab: fault cleared". A ramp or a bench that ends before its time also loses its annotations that are still in the future: the call queues them and the control daemon deletes them within a few seconds, so a slow Grafana does not slow the call. 409 `exercise_changed` when `key` names another exercise than the open one. With no exercise open, it answers `{ cleared: false }` and adds no annotation.
 

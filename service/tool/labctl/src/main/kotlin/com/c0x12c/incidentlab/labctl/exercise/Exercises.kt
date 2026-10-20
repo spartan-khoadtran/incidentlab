@@ -118,7 +118,7 @@ class Exercises(
       is Refused -> return refused(outcome.refusal)
     }
     banner("EXERCISE #${revealed.n}: ${revealed.reveal.title} (${if (revealed.wasAnswered) "already scored" else "not scored"})")
-    explain(revealed.reveal)
+    explain(revealed.reveal, pick = state.active?.choices?.cause)
     key?.let(::offerClear)
     return 0
   }
@@ -231,6 +231,7 @@ class Exercises(
       is Refusal.LoadNotOne -> "Background load is ${plain(refusal.multiplier)} x. This exercise is tuned for the default load, so run `make load X=1` first." to 1
       Refusal.AlreadyAnswered -> alreadyAnswered to 0
       Refusal.ExerciseChanged -> CHANGED to 1
+      is Refusal.UnknownKey -> "'${refusal.key}' is not a ${refusal.question} this exercise offers. Nothing was saved. Run `make answer` again." to 1
       is Refusal.RampRunning ->
         "A ramp is running. It holds the load at 1 until its last step ends, in ${refusal.secondsLeft} s. Set the load after that, or `make clear` to stop the ramp." to 1
       Refusal.NoHintsLeft -> "No hints left. Use `make answer` to submit or `make reveal` to see the answer." to 0
@@ -310,7 +311,7 @@ class Exercises(
         group = it
         terminal.out("  -- $it")
       }
-      val tags = listOfNotNull(ROOT_CAUSE.takeIf { ruleOut.correct }, YOUR_PICK.takeIf { ruleOut.cause.key == pick })
+      val tags = listOfNotNull(ROOT_CAUSE.takeIf { ruleOut.correct }, ONE_POINT.takeIf { ruleOut.partial }, YOUR_PICK.takeIf { ruleOut.cause.key == pick })
       val mark = if (ruleOut.correct) "=>" else "  "
       terminal.out("  $mark ${ruleOut.cause.label}" + if (tags.isEmpty()) "" else "  [${tags.joinToString(", ")}]")
       terminal.out("       ${ruleOut.check}")
@@ -370,6 +371,7 @@ class Exercises(
     private val DAY_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM HH:mm")
     private const val TOOLBOX_TAG = "[toolbox]"
     private const val ROOT_CAUSE = "root cause"
+    private const val ONE_POINT = "1 point"
     private const val YOUR_PICK = "your pick"
     const val CHANGED = "The exercise changed while you answered: it was cleared, or another one started. Nothing was saved. `make status` shows what is open now."
     const val NOT_CLEARED = "That exercise was already closed, so nothing was cleared. `make status` shows what is open now."

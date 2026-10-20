@@ -342,7 +342,7 @@ class ExerciseEngine(
     }
     val verdicts = Verdicts(verdict("nature" !in missed), verdict("location" !in missed), verdict("signal" !in missed), cause)
     val score = (points - HINT_PENALTY * active.hints).coerceAtLeast(0.0)
-    return Result(active.n, score, points, MAX_POINTS, active.hints, verdicts, missed, reveal(active, scenario))
+    return Result(active.n, score, points, MAX_POINTS, active.hints, verdicts, missed, reveal(active, scenario), choices)
   }
 
   private fun verdict(correct: Boolean): String = if (correct) CORRECT else WRONG
@@ -386,7 +386,7 @@ class ExerciseEngine(
       evidence = scenario.evidence,
       cli = scenario.cli,
       guide = GuideIndex.pointers(scenario.doc),
-      ruleOuts = options(active, scenario).causes.map { RuleOut(it, Answers.RULE_OUTS.getValue(it.key), it.key == answer.cause) }
+      ruleOuts = options(active, scenario).causes.map { RuleOut(it, Answers.RULE_OUTS.getValue(it.key), correct = it.key == answer.cause, partial = it.key in answer.partial) }
     )
   }
 
