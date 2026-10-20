@@ -1,5 +1,6 @@
 package com.c0x12c.incidentlab.labctl.bench
 
+import com.c0x12c.incidentlab.labctl.exercise.SettleGate
 import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.LabProbe
 import com.c0x12c.incidentlab.labctl.control.ScheduledAnnotations
@@ -47,12 +48,17 @@ class BenchEngine(
   private val probe: LabProbe,
   private val annotator: Annotator,
   private val now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
-  private val zone: ZoneId = ZoneId.systemDefault()
+  private val zone: ZoneId = ZoneId.systemDefault(),
+  private val gate: SettleGate? = null
 ) : ModeEngine {
 
   override val mode: String = MODE
 
-  fun start(clients: Int, seconds: Int): Outcome<ExerciseView> {
+  fun start(clients: Int, seconds: Int, settle: Boolean = true): Outcome<ExerciseView> {
+    if (gate != null && settle) {
+      val state = store.load()
+      if (state.active == null) gate.refusal(state)?.let { return Refused(it) }
+    }
     val startedAt = now()
     val active = store.withLock { state, write ->
       if (state.active != null) return@withLock null
@@ -62,7 +68,8 @@ class BenchEngine(
         params = BenchCatalog.params(clients, seconds),
         started = startedAt,
         n = state.history.size + 1,
-        key = ActiveExercise.newKey()
+        key = ActiveExercise.newKey(),
+        baselineFrom = ExerciseEngine.baselineFrom(startedAt, state.lastEnded)
       ).also { write(state.copy(active = it)) }
     } ?: return Refused(Refusal.ExerciseOpen)
     val marks = listOf("bench: $clients closed-loop clients" to startedAt, "bench over: open load again" to startedAt + seconds)
@@ -86,7 +93,8 @@ class BenchEngine(
       hintPenalty = ExerciseEngine.HINT_PENALTY,
       hints = emptyList(),
       answered = active.answered,
-      rules = null
+      rules = null,
+      baselineFrom = active.baselineFrom ?: (active.started - ExerciseEngine.BASELINE_SECONDS)
     )
     return ExerciseView(view, endsAt = active.started + seconds)
   }
@@ -110,7 +118,7 @@ class BenchEngine(
     if (record) {
       val at = now()
       val closed = store.withLock { state, write ->
-        (state.active?.key == active.key).also { if (it) write(state.queueFutureMarks(state.active, at).copy(active = null, history = state.history + entry(active, params))) }
+        (state.active?.key == active.key).also { if (it) write(state.queueFutureMarks(state.active, at).copy(active = null, history = state.history + entry(active, params), lastEnded = at)) }
       }
       if (!closed) return Refused(Refusal.ExerciseChanged)
     }

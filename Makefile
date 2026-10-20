@@ -2,6 +2,7 @@
 COMPOSE ?= docker compose
 LABCTL   = /run/app/labctl/bin/labctl
 CLI_JAVA = -Xms8m -Xmx64m -XX:TieredStopAtLevel=1 -XX:MaxMetaspaceSize=64m -XX:ReservedCodeCacheSize=16m -XX:+UseSerialGC -Xss512k
+NO_SETTLE = $(if $(filter 0 no false,$(SETTLE)),--no-settle)
 CTL      = $(COMPOSE) exec -e JAVA_OPTS="$(CLI_JAVA)" control $(LABCTL)
 GRADLE   = cd service && ./gradlew
 
@@ -60,8 +61,8 @@ nuke: ## Like `down`, and also remove the built image
 	$(COMPOSE) --profile datadog down -v --remove-orphans --rmi local
 
 # ----------------------------------------------------------------------------- exercises
-new: ## New incident exercise on the live lab. Options: LEVEL=1|2|3 TOPIC=async ID=pool_hold FORCE=1
-	@$(CTL) new $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(ID),--id $(ID)) $(if $(filter 1 yes true,$(FORCE)),--force)
+new: ## New incident exercise on the live lab. Waits for the lab to settle first. Options: LEVEL=1|2|3 TOPIC=async ID=pool_hold FORCE=1 SETTLE=0
+	@$(CTL) new $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(ID),--id $(ID)) $(if $(filter 1 yes true,$(FORCE)),--force) $(NO_SETTLE)
 
 hint: ## Next hint (costs 0.5 point each)
 	@$(CTL) hint
@@ -91,18 +92,18 @@ quiz: ## Theory drills from the guide (N=50, KIND=numbers|concepts|all). Does no
 load: ## Change the background load: X=1.5 (times the default 50 rps)
 	@$(CTL) load $(or $(X),1)
 
-toolbox: ## New CLI-only exercise: prove the cause from `make shell`, no Grafana. Options: LEVEL TOPIC ID FORCE
-	@$(CTL) new --mode toolbox $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(ID),--id $(ID)) $(if $(filter 1 yes true,$(FORCE)),--force)
+toolbox: ## New CLI-only exercise: prove the cause from `make shell`, no Grafana. Options: LEVEL TOPIC ID FORCE SETTLE=0
+	@$(CTL) new --mode toolbox $(if $(LEVEL),--level $(LEVEL)) $(if $(TOPIC),--topic $(TOPIC)) $(if $(ID),--id $(ID)) $(if $(filter 1 yes true,$(FORCE)),--force) $(NO_SETTLE)
 
 shell: ## Root shell on the Docker VM with the Linux tools (vmstat, pidstat, psql, bpftrace...)
 	@$(COMPOSE) up -d --no-deps toolbox
 	@$(COMPOSE) exec toolbox bash -l
 
-ramp: ## Capacity ramp on the live lab: the load rises in steps, find the knee. Option: STEP=60 (seconds per step)
-	@$(CTL) ramp $(if $(STEP),--every $(STEP))
+ramp: ## Capacity ramp on the live lab: the load rises in steps, find the knee. Options: STEP=60 (seconds per step) SETTLE=0
+	@$(CTL) ramp $(if $(STEP),--every $(STEP)) $(NO_SETTLE)
 
-bench: ## Closed-loop bench on the live lab, not scored, then a before/after report. Options: CLIENTS=20 SECONDS=120
-	@$(CTL) bench $(if $(CLIENTS),--clients $(CLIENTS)) $(if $(SECONDS),--seconds $(SECONDS))
+bench: ## Closed-loop bench on the live lab, not scored, then a before/after report. Options: CLIENTS=20 SECONDS=120 SETTLE=0
+	@$(CTL) bench $(if $(CLIENTS),--clients $(CLIENTS)) $(if $(SECONDS),--seconds $(SECONDS)) $(NO_SETTLE)
 
 # ----------------------------------------------------------------------------- tools
 open: ## Open Grafana in the browser (macOS)

@@ -18,6 +18,7 @@ import com.c0x12c.incidentlab.labctl.control.LabProbe
 import com.c0x12c.incidentlab.labctl.control.ServiceFaultApplier
 import com.c0x12c.incidentlab.labctl.exercise.ExerciseEngine
 import com.c0x12c.incidentlab.labctl.exercise.Exercises
+import com.c0x12c.incidentlab.labctl.exercise.SettleGate
 import com.c0x12c.incidentlab.labctl.export.LabExport
 import com.c0x12c.incidentlab.labctl.quiz.Quiz
 import com.c0x12c.incidentlab.labctl.quiz.QuizSessions
@@ -53,16 +54,17 @@ object Main : Logging {
     val terminal = ConsoleTerminal
     val probe = HttpLabProbe(http)
     val annotator = GrafanaAnnotator(http) { terminal.out(it) }
-    val ramp = RampExercise(store, probe, annotator, terminal)
-    val bench = BenchExercise(store, probe, annotator, terminal)
-    val exercises = Exercises(store, probe, annotator, terminal, modes = listOf(ramp, bench), capabilities = capabilities)
+    val gate = SettleGate(probe)
+    val ramp = RampExercise(store, probe, annotator, terminal, gate = gate)
+    val bench = BenchExercise(store, probe, annotator, terminal, gate = gate)
+    val exercises = Exercises(store, probe, annotator, terminal, modes = listOf(ramp, bench), capabilities = capabilities, gate = gate)
     return try {
       when (command) {
         "daemon" -> {
           val grafana = GrafanaAnnotator(http) { warn { it } }
           val daemon = ControlDaemon(store, listOf(ServiceFaultApplier(http)), capabilities, cleanup = AnnotationCleanup(store, grafana) { warn { it } })
           daemon.publishCapabilities()
-          serveApi(store, probe, grafana, capabilities, loopbackOnly = false)
+          serveApi(store, probe, grafana, capabilities, loopbackOnly = false, gate = gate)
           Thread.ofVirtual().name("docker-discovery").start {
             DockerControl.discover(
               open = { DockerControl.ifAvailable(Path.of(System.getenv("DOCKER_SOCK") ?: "/var/run/docker.sock"), System.getenv("COMPOSE_PROJECT")) },
@@ -111,16 +113,16 @@ object Main : Logging {
     }
   }
 
-  private fun serveApi(store: StateStore, probe: LabProbe, annotator: Annotator, capabilities: Capabilities, loopbackOnly: Boolean) {
+  private fun serveApi(store: StateStore, probe: LabProbe, annotator: Annotator, capabilities: Capabilities, loopbackOnly: Boolean, gate: SettleGate? = null) {
     val port = System.getenv("LAB_API_PORT")?.toIntOrNull() ?: ApiServer.DEFAULT_PORT
-    labApi(store, probe, annotator, capabilities).start(port, loopbackOnly)
+    labApi(store, probe, annotator, capabilities, gate).start(port, loopbackOnly)
     info { "lab API listening on port $port" }
   }
 
-  fun labApi(store: StateStore, probe: LabProbe, annotator: Annotator, capabilities: Capabilities = Capabilities.ALL): LabApi {
-    val ramp = RampEngine(store, probe, annotator)
-    val bench = BenchEngine(store, probe, annotator)
-    return LabApi(ExerciseEngine(store, probe, annotator, modes = listOf(ramp, bench), capabilities = capabilities), ramp, bench, QuizSessions())
+  fun labApi(store: StateStore, probe: LabProbe, annotator: Annotator, capabilities: Capabilities = Capabilities.ALL, gate: SettleGate? = null): LabApi {
+    val ramp = RampEngine(store, probe, annotator, gate = gate)
+    val bench = BenchEngine(store, probe, annotator, gate = gate)
+    return LabApi(ExerciseEngine(store, probe, annotator, modes = listOf(ramp, bench), capabilities = capabilities, gate = gate), ramp, bench, QuizSessions())
   }
 
   private fun hostPath(variable: String, default: String): Path = Path.of(System.getenv(variable) ?: default)

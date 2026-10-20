@@ -1,5 +1,7 @@
 package com.c0x12c.incidentlab.labctl.bench
 
+import com.c0x12c.incidentlab.labctl.exercise.SettleWait
+import com.c0x12c.incidentlab.labctl.exercise.SettleGate
 import com.c0x12c.incidentlab.labctl.Terminal
 import com.c0x12c.incidentlab.labctl.control.Annotator
 import com.c0x12c.incidentlab.labctl.control.LabProbe
@@ -23,7 +25,8 @@ import kotlin.math.ceil
 
 data class BenchOptions(
   val clients: Int = BenchCatalog.DEFAULT_CLIENTS,
-  val seconds: Int = BenchCatalog.DEFAULT_SECONDS
+  val seconds: Int = BenchCatalog.DEFAULT_SECONDS,
+  val settle: Boolean = true
 )
 
 /**
@@ -37,10 +40,12 @@ class BenchExercise(
   annotator: Annotator,
   private val terminal: Terminal,
   private val now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
-  private val zone: ZoneId = ZoneId.systemDefault()
+  private val zone: ZoneId = ZoneId.systemDefault(),
+  private val gate: SettleGate? = null,
+  private val sleep: (Long) -> Unit = Thread::sleep
 ) : ExerciseMode {
 
-  private val engine = BenchEngine(store, probe, annotator, now, zone)
+  private val engine = BenchEngine(store, probe, annotator, now, zone, gate)
 
   override val mode: String = MODE
 
@@ -51,7 +56,8 @@ class BenchExercise(
     if (active != null && active.mode == MODE) {
       return if (BenchCatalog.running(params(active))) report(state) else answer(state)
     }
-    val view = when (val outcome = engine.start(options.clients, options.seconds)) {
+    if (gate != null && options.settle && active == null) SettleWait(gate, store, terminal, sleep).await()
+    val view = when (val outcome = engine.start(options.clients, options.seconds, settle = false)) {
       is Done -> outcome.value.active
       is Refused -> {
         terminal.out("An exercise is still open. Use `make answer`, `make reveal` or `make clear` first.")

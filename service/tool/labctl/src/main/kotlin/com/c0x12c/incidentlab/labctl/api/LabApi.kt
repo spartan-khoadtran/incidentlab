@@ -75,6 +75,7 @@ class LabApi(
     get("/api/health") { ok(mapOf("ok" to true)) },
     get("/api/status") { ok(exercises.status()) },
     get("/api/options") { ok(exercises.options()) },
+    get("/api/settle") { ok(exercises.settleStatus()) },
     post("/api/exercises") { created(exercises.start(newOptions(it.body(NewRequest::class))).orFail()) },
     get("/api/exercise") { ok(exercises.active().orFail()) },
     post("/api/exercise/hint") { call ->
@@ -167,6 +168,11 @@ class LabApi(
     when (refusal) {
       Refusal.ExerciseOpen -> conflict("exercise_open", "An exercise is still open. Answer, reveal or clear it first, or start the new one with force.")
       Refusal.NoExercise -> ApiError(NOT_FOUND, "no_exercise", "No exercise is running. Start one first.")
+      is Refusal.LabSettling -> conflict(
+        "lab_settling",
+        "The lab is still coming back from the last exercise. The start can go ahead once it is back to normal.",
+        mapOf("settle" to refusal.status)
+      )
       is Refusal.Stale -> conflict("stale_exercise", "Exercise #${refusal.n} was started by an older version of the lab. Clear it, then start a new one.")
       is Refusal.WrongMode -> conflict("wrong_mode", "The open exercise is a ${refusal.mode}. Use the ${refusal.mode} page, or clear it.")
       Refusal.AlreadyAnswered -> conflict("already_answered", "This exercise was already submitted. Clear it to start the next one.")

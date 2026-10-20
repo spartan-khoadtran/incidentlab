@@ -30,19 +30,26 @@ class Exercises(
   private val terminal: Terminal,
   private val catalog: ScenarioCatalog = ScenarioCatalog,
   random: Random = Random.Default,
-  now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
+  private val now: () -> Double = { System.currentTimeMillis() / MILLIS_PER_SECOND },
   private val zone: ZoneId = ZoneId.systemDefault(),
   /** The other exercise kinds; each owns the commands while its mode is active. */
   private val modes: List<ExerciseMode> = emptyList(),
-  capabilities: Capabilities = Capabilities.ALL
+  capabilities: Capabilities = Capabilities.ALL,
+  private val gate: SettleGate? = null,
+  private val sleep: (Long) -> Unit = Thread::sleep
 ) {
 
-  private val engine = ExerciseEngine(store, probe, annotator, catalog, random, now, zone, capabilities = capabilities)
+  private val engine = ExerciseEngine(store, probe, annotator, catalog, random, now, zone, capabilities = capabilities, gate = gate)
 
   private fun modeOf(state: LabState): ExerciseMode? = state.active?.let { active -> modes.firstOrNull { it.mode == active.mode } }
 
   fun newExercise(options: NewOptions): Int {
-    val view = when (val outcome = engine.start(options)) {
+    val open = store.load().active != null
+    if (gate != null && options.settle && (options.force || !open)) {
+      if (open) engine.clear()
+      SettleWait(gate, store, terminal, sleep).await()
+    }
+    val view = when (val outcome = engine.start(options.copy(settle = false))) {
       is Done -> outcome.value.active
       is Refused -> return refused(outcome.refusal)
     }
@@ -130,7 +137,7 @@ class Exercises(
   }
 
   fun reset(): Int {
-    val kept = store.update { it.fresh() }.history.size
+    val kept = store.update { it.fresh(now()) }.history.size
     terminal.out("Fresh start: no exercise, load 1. History kept: $kept exercise(s).")
     return 0
   }
@@ -222,6 +229,7 @@ class Exercises(
     val (line, code) = when (refusal) {
       Refusal.ExerciseOpen -> "An exercise is still open. Use `make answer`, `make reveal` or `make clear`, or `make new FORCE=1` to drop it." to 1
       Refusal.NoExercise -> "No exercise is running. Use `make new` to start one." to 1
+      is Refusal.LabSettling -> "The lab is still coming back from the last exercise. Try again in a minute." to 1
       is Refusal.Stale -> stale(refusal.n) to 1
       is Refusal.WrongMode -> stale(refusal.n) to 1
       is Refusal.UnknownId -> "No exercise '${refusal.id}'. See `make list`." to 1

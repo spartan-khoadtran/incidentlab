@@ -33,7 +33,9 @@ data class NewOptions(
   val topic: String = "",
   val id: String = "",
   val force: Boolean = false,
-  val mode: String = ExerciseEngine.INCIDENT
+  val mode: String = ExerciseEngine.INCIDENT,
+  /** False skips the settle gate: the CLI waits for it before it starts, and `--no-settle` skips it. */
+  val settle: Boolean = true
 )
 
 /** A mode with its own engine. The incident engine asks it for the view of an exercise in that mode. */
@@ -67,7 +69,8 @@ class ExerciseEngine(
   private val zone: ZoneId = ZoneId.systemDefault(),
   private val modes: List<ModeEngine> = emptyList(),
   private val capabilities: Capabilities = Capabilities.ALL,
-  private val offer: (Symptom) -> AnswerOptions = { answerOptions(it) }
+  private val offer: (Symptom) -> AnswerOptions = { answerOptions(it) },
+  private val gate: SettleGate? = null
 ) {
 
   private val dockerNeeds = ConcurrentHashMap<String, Set<String>>()
@@ -75,8 +78,15 @@ class ExerciseEngine(
   private data class Found(val active: ActiveExercise, val scenario: Scenario)
 
   fun start(options: NewOptions): Outcome<ExerciseView> {
-    val state = store.load()
+    var state = store.load()
     if (state.active != null && !options.force) return Refused(Refusal.ExerciseOpen)
+    if (gate != null && options.settle) {
+      if (state.active != null) {
+        clear()
+        state = store.load()
+      }
+      gate.refusal(state)?.let { return Refused(it) }
+    }
     val scenario = when (val picked = pick(state, options)) {
       is Done -> picked.value
       is Refused -> return picked
@@ -86,8 +96,17 @@ class ExerciseEngine(
     val startedAt = now()
     val active = store.withLock { current, write ->
       if (current.active != null && !options.force) return@withLock null
-      val opened = ActiveExercise(id = scenario.id, mode = options.mode, params = params, started = startedAt, n = current.history.size + 1, key = ActiveExercise.newKey())
-      write(current.queueFutureMarks(current.active, startedAt).copy(active = opened))
+      val ended = if (current.active != null) startedAt else current.lastEnded
+      val opened = ActiveExercise(
+        id = scenario.id,
+        mode = options.mode,
+        params = params,
+        started = startedAt,
+        n = current.history.size + 1,
+        key = ActiveExercise.newKey(),
+        baselineFrom = baselineFrom(startedAt, ended)
+      )
+      write(current.queueFutureMarks(current.active, startedAt).copy(active = opened, lastEnded = ended))
       opened
     } ?: return Refused(Refusal.ExerciseOpen)
     if (random.nextDouble() < scenario.decoy) {
@@ -202,7 +221,7 @@ class ExerciseEngine(
     val at = now()
     val ended = store.withLock<Outcome<ActiveExercise?>> { state, write ->
       if (state.active != null && !state.active.matches(key)) return@withLock Refused(Refusal.ExerciseChanged)
-      write(state.queueFutureMarks(state.active, at).copy(active = null))
+      write(state.queueFutureMarks(state.active, at).copy(active = null, lastEnded = if (state.active != null) at else state.lastEnded))
       Done(state.active)
     }
     return when (ended) {
@@ -216,6 +235,9 @@ class ExerciseEngine(
 
   /** Ends the exercise named [key] only, so a late reply cannot end a newer one. True when it was open. */
   fun clearIf(key: String): Boolean = (clear(key) as? Done)?.value == true
+
+  /** Whether a new exercise may start now. Always settled when the gate is off, as in `labctl api`. */
+  fun settleStatus(): SettleStatus = gate?.status(store.load()) ?: SettleStatus(settled = true, checks = emptyList(), waitedSeconds = 0.0, gaveUp = false)
 
   fun status(): LabStatus {
     val active = (current(withResult = false) as? Done)?.value?.active
@@ -362,7 +384,8 @@ class ExerciseEngine(
       hints = scenario.hints.take(active.hints),
       answered = active.answered,
       rules = if (active.mode == TOOLBOX) TOOLBOX_RULES else null,
-      options = options(active, scenario)
+      options = options(active, scenario),
+      baselineFrom = active.baselineFrom ?: (active.started - BASELINE_SECONDS)
     )
 
   private fun options(active: ActiveExercise, scenario: Scenario): AnswerOptions = offer(scenario.symptom(rendered(active)))
@@ -462,6 +485,11 @@ class ExerciseEngine(
       }.getOrDefault(emptySet())
 
     /** What an exercise whose ticket shows [symptom] offers. It reads nothing else, so it cannot give the scenario away. */
+    /** How far back a clean baseline reaches: at most this far, and never before the exercise before ended. */
+    const val BASELINE_SECONDS = 900.0
+
+    fun baselineFrom(started: Double, lastEnded: Double?): Double = maxOf(started - BASELINE_SECONDS, lastEnded ?: 0.0)
+
     fun answerOptions(symptom: Symptom): AnswerOptions =
       AnswerOptions(
         natures = Answers.NATURES.map { (key, label) -> Option(key, label) },
