@@ -133,6 +133,11 @@ class ExercisesTest {
     val state = StateStore(dir.resolve("state.json")).load()
     assertThat(state.active).isNotNull()
     assertThat(state.history.single().missed).containsExactly("nature", "location", "signal", "cause (partial)")
+    val tagged = ruleOutBlock(terminal.lines).filter { it.endsWith("]") }
+    val partials = options.causes.filter { it.key in expected.partial }
+    assertThat(tagged.filter { it.contains("[1 point") }).isEqualTo(
+      partials.map { "     ${it.label}  [1 point${if (it.key == expected.partial.first()) ", your pick" else ""}]" }
+    )
   }
 
   @Test
@@ -192,7 +197,7 @@ class ExercisesTest {
     exercises.newExercise(NewOptions(id = scenario.id))
     val options = offered(dir)
     val symptom = scenario.symptom(Params(StateStore(dir.resolve("state.json")).load().active!!.params, Format.hhmm(NOW, ZoneId.systemDefault())))
-    val pick = wrong(options.causes, setOf(scenario.answer.cause))
+    val pick = wrong(options.causes, setOf(scenario.answer.cause) + scenario.answer.partial)
     answers += picks(dir, "arch", "api_db", "pool", pick) + listOf("", "n")
 
     exercises.answer()

@@ -317,6 +317,8 @@ class LabApiTest {
     val ruleOuts = result["reveal"]["rule_outs"]
     assertThat(ruleOuts.map { it["cause"]["key"].asText() }).isEqualTo(opened["options"]["causes"].map { it["key"].asText() })
     assertThat(ruleOuts.filter { it["correct"].asBoolean() }.map { it["cause"]["key"].asText() }).containsExactly(expected.cause)
+    assertThat(ruleOuts.filter { it["partial"].asBoolean() }.map { it["cause"]["key"].asText() })
+      .isEqualTo(opened["options"]["causes"].map { it["key"].asText() }.filter { it in expected.partial })
     assertThat(ruleOuts.all { it["check"].asText() == Answers.RULE_OUTS.getValue(it["cause"]["key"].asText()) }).isTrue()
     assertThat(ruleOuts.all { it["cause"]["group"].asText() == Answers.CAUSE_GROUPS.getValue(it["cause"]["key"].asText()) }).isTrue()
   }

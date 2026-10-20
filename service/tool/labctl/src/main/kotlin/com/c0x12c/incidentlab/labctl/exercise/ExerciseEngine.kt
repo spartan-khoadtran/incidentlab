@@ -386,7 +386,7 @@ class ExerciseEngine(
       evidence = scenario.evidence,
       cli = scenario.cli,
       guide = GuideIndex.pointers(scenario.doc),
-      ruleOuts = options(active, scenario).causes.map { RuleOut(it, Answers.RULE_OUTS.getValue(it.key), it.key == answer.cause) }
+      ruleOuts = options(active, scenario).causes.map { RuleOut(it, Answers.RULE_OUTS.getValue(it.key), correct = it.key == answer.cause, partial = it.key in answer.partial) }
     )
   }
 
