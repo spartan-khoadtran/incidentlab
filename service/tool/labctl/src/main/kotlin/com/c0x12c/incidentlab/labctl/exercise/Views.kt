@@ -1,6 +1,7 @@
 package com.c0x12c.incidentlab.labctl.exercise
 
 import com.c0x12c.incidentlab.labctl.guide.GuidePointer
+import com.c0x12c.incidentlab.labctl.state.Choices
 import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonUnwrapped
@@ -64,7 +65,9 @@ data class AnswerOptions(
 data class RuleOut(
   val cause: Option,
   val check: String,
-  val correct: Boolean
+  val correct: Boolean,
+  /** A partial cause: one step before the root cause, worth 1 point. */
+  val partial: Boolean = false
 )
 
 /** Everything about the scenario. Only built once the exercise is answered or revealed. */
@@ -103,7 +106,9 @@ data class Result(
   val hintsUsed: Int,
   val verdicts: Verdicts,
   val missed: List<String>,
-  val reveal: Reveal
+  val reveal: Reveal,
+  /** The four keys the learner picked, so a reloaded page can show them again. */
+  val choices: Choices? = null
 ) : ScoredResult
 
 data class Revealed(
