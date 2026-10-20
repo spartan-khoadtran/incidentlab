@@ -183,11 +183,11 @@ export class MockLab {
         const lists = { nature: ANSWER_OPTIONS.natures, location: ANSWER_OPTIONS.locations, signal: ANSWER_OPTIONS.signals, cause: ANSWER_OPTIONS.causes };
         const missing = keys.find((k) => typeof body[k] !== "string");
         if (missing) return err(400, "missing_field", `The field '${missing}' is needed.`);
-        const unknown = keys.find((k) => !lists[k].some((o) => o.key === body[k]));
         const refused = incident();
         if (refused) return refused;
-        if (unknown) return err(400, "unknown_key", `'${String(body[unknown])}' is not a ${unknown} this exercise offers.`);
         if (this.active!.answered) return err(409, "already_answered", "This exercise was already submitted.");
+        const unknown = keys.find((k) => !lists[k].some((o) => o.key === body[k]));
+        if (unknown) return err(400, "unknown_key", `'${String(body[unknown])}' is not a ${unknown} this exercise offers.`);
         const verdicts = {
           nature: body.nature === "mock_arch" ? "correct" : "wrong",
           location: body.location === "mock_lb" ? "correct" : "wrong",

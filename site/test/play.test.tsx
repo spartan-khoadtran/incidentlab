@@ -240,6 +240,10 @@ describe("Play", () => {
     const refused = state.lab.handle("POST", "/api/exercise/answer", JSON_POST, { ...ANSWER, cause: NOT_OFFERED.cause.key });
     expect(refused.status).toBe(400);
     expect((refused.body as { error: string }).error).toBe("unknown_key");
+
+    state.lab.handle("POST", "/api/exercise/answer", JSON_POST, ANSWER);
+    const again = state.lab.handle("POST", "/api/exercise/answer", JSON_POST, { ...ANSWER, cause: NOT_OFFERED.cause.key });
+    expect((again.body as { error: string }).error).toBe("already_answered");
   });
 
   it("lists every offered cause with its check after the answer, and marks a wrong pick", async () => {
