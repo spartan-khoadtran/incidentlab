@@ -576,8 +576,12 @@
   }
 }
 
-.question-group + .question-group {
-  margin-top: 10px;
+.question-group {
+  display: flow-root;
+}
+
+.question-group:not(:last-child) {
+  padding-bottom: 10px;
 }
 
 .question-group-title {
