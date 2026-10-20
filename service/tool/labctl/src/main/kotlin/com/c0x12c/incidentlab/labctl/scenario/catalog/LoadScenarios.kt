@@ -225,6 +225,7 @@ internal object LoadScenarios {
         "and someone proposes scaling api out."
     },
     symptom = { Symptom.ERRORS },
+    lures = setOf("global_load"),
     hints = listOf(
       "Compare the requests users really send (logical requests at the client) with the rate at the LB. Are they still equal?",
       "The 'Attempts vs user requests' panel in the Client row: how many attempts does one user request become?",
@@ -267,8 +268,8 @@ internal object LoadScenarios {
       )
     },
     decoy = 0.5,
-    ticket = { p -> "At ${p.startedAt}, the app reports 'timeout' errors when placing orders. The api team says no request failed: everything returned 200." },
-    symptom = { Symptom.ERRORS },
+    ticket = { p -> "At ${p.startedAt}, the app shows errors when placing orders. The api team says no request failed: everything returned 200." },
+    symptom = { Symptom.ERRORS_UNSEEN },
     hints = listOf(
       "Compare errors at the client with errors at the LB and at api. At the client, which kind of error is it?",
       "Compare the server-side /checkout p99 with the timeout the client uses.",
@@ -283,7 +284,7 @@ internal object LoadScenarios {
         "Fix: set the client timeout from the server's real p99 plus a margin, and make the server stop work the client has abandoned."
     },
     steps = listOf(
-      "Problem statement: the app reports timeouts on orders, and api says every request returned 200.",
+      "Problem statement: the app shows errors on orders, and api says every request returned 200.",
       "Compare errors at the client with the LB and api: only the client sees them, and at the client they are timeouts.",
       "Compare the server-side /checkout p99 with the client's timeout: the p99 is longer.",
       "The client gives up and records a timeout. The server finishes and records a 200. The LB only sees the client leave.",
@@ -315,7 +316,7 @@ internal object LoadScenarios {
     decoy = 0.5,
     ticket = { p ->
       "At ${p.startedAt}, /checkout traffic at api is up by a third or more, but there are no more shoppers than usual. " +
-        "The app shows some timeout errors, and support reports a few orders placed twice."
+        "Support reports a few orders placed twice."
     },
     symptom = { Symptom.RATE_CHANGED },
     hints = listOf(
@@ -331,7 +332,7 @@ internal object LoadScenarios {
       partial = setOf("client_timeout", "downstream_slow")
     ),
     steps = listOf(
-      "Problem statement: /checkout traffic is up by a third or more with no more shoppers, the app shows timeouts, and some orders are placed twice.",
+      "Problem statement: /checkout traffic is up by a third or more with no more shoppers, and some orders are placed twice.",
       "Rate up but shoppers flat: is this real demand? Compare user requests with attempts at the client: attempts are higher.",
       "The failed attempts at the client are timeouts, not 5xx. The server records 200s for them.",
       "Compare the server-side /checkout p99 with the client's timeout: part of the checkouts take longer than the timeout.",

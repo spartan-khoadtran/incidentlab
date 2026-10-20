@@ -16,12 +16,12 @@ class AnswerOptionsTest {
   private val answerCauses = ScenarioCatalog.all.map { it.answer.cause }.toSet()
 
   @Test
-  fun `every scenario offers its cause, its partial causes and every accepted signal`() {
+  fun `every scenario offers its cause, its partial causes, its lures and every accepted signal`() {
     val problems = symptoms.flatMap { (scenario, seen) ->
       seen.flatMap { symptom ->
         val causes = Answers.causesFor(symptom).map { it.first }.toSet()
         val signals = Answers.signalsFor(symptom).map { it.first }.toSet()
-        ((setOf(scenario.answer.cause) + scenario.answer.partial) - causes).map { "${scenario.id} ($symptom): cause '$it' is not offered" } +
+        ((setOf(scenario.answer.cause) + scenario.answer.partial + scenario.lures) - causes).map { "${scenario.id} ($symptom): cause '$it' is not offered" } +
           (scenario.answer.signal - signals).map { "${scenario.id} ($symptom): signal '$it' is not offered" }
       }
     }
@@ -44,6 +44,16 @@ class AnswerOptionsTest {
   }
 
   @Test
+  fun `the symptom tables name only real causes and signals`() {
+    val causes = Answers.CAUSES.map { it.first }.toSet()
+    val signals = Answers.SIGNALS.map { it.first }.toSet()
+    val problems = Answers.CAUSES_BY_SYMPTOM.flatMap { (symptom, keys) -> (keys - causes).map { "$symptom: unknown cause $it" } } +
+      Answers.SIGNALS_BY_SYMPTOM.flatMap { (symptom, keys) -> (keys - signals).map { "$symptom: unknown signal $it" } } +
+      ScenarioCatalog.all.flatMap { scenario -> (scenario.lures - causes).map { "${scenario.id}: unknown lure $it" } }
+    assertThat(problems).isEmpty()
+  }
+
+  @Test
   fun `every cause, signal and symptom is used, and every cause has its own rule-out`() {
     val used = symptoms.values.flatten().toSet()
     val problems = Answers.CAUSES.filter { Answers.CAUSE_SYMPTOMS.getValue(it.first).isEmpty() }.map { "cause ${it.first} has no symptom" } +
@@ -58,7 +68,7 @@ class AnswerOptionsTest {
     const val SEED = 7
     const val DRAWS = 40
     const val MIN_REAL_CAUSES = 3
-    val CAUSES_PER_SYMPTOM = 6..10
-    val SIGNALS_PER_SYMPTOM = 4..8
+    val CAUSES_PER_SYMPTOM = 7..11
+    val SIGNALS_PER_SYMPTOM = 5..9
   }
 }

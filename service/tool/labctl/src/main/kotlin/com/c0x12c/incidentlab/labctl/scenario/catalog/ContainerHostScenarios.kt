@@ -34,6 +34,7 @@ internal object ContainerHostScenarios {
         "A teammate looked at the host's CPU and said 'plenty of CPU left, it is not CPU'."
     },
     symptom = { Symptom.SLOW_EVERY_ROUTE },
+    lures = setOf("noisy_neighbor"),
     hints = listOf(
       "Rate flat, duration up on every route: suspect architecture. Do the LB and api rise together?",
       "Do USE per layer for api: host, container, runtime. Which layer's limit should utilization be measured against?",
@@ -174,7 +175,7 @@ internal object ContainerHostScenarios {
     params = { _, context -> mapOf("burners" to maxOf(MIN_BURNERS, 2 * (context.cpuCount ?: DEFAULT_CPU_COUNT))) },
     faults = { p -> FaultSpec(services = mapOf("noisy" to mapOf("burners" to p.int("burners")))) },
     decoy = 0.5,
-    ticket = { p -> "At ${p.startedAt}, every service is slower, including pricing and the worker. The rate is normal and nobody deployed anything." },
+    ticket = { p -> "At ${p.startedAt}, p99 rose on every api route. The rate is normal and nobody deployed anything." },
     symptom = { Symptom.SLOW_EVERY_ROUTE },
     hints = listOf(
       "When everything slows down at once, think of the shared resources.",
@@ -188,7 +189,7 @@ internal object ContainerHostScenarios {
         "None of your services is throttled or failing: the cause sits in the shared layer."
     },
     steps = listOf(
-      "Problem statement: every service is slower, including pricing and the worker. The rate is normal and nobody deployed.",
+      "Problem statement: p99 rose on every api route. The rate is normal and nobody deployed.",
       "When everything slows down at once, think of the shared resources.",
       "USE at the host layer: CPU by mode, load against the CPU count, CPU PSI. All of them are high.",
       "Compare cgroup CPU usage by job: the noisy batch job takes most of the host's CPU.",
@@ -219,8 +220,8 @@ internal object ContainerHostScenarios {
     faults = { p -> if (p.elapsedSeconds < p.int("credit_seconds")) FaultSpec() else FaultSpec(docker = mapOf("api" to mapOf("cpus" to p.double("cpus")))) },
     decoy = 0.3,
     ticket = { p ->
-      "At ${p.startedAt}, api moved to a smaller burstable VM to save cost. Right now every panel looks normal. The on-call lead asks you to keep " +
-        "watching for a few minutes, because this kind of VM does not always stay fast. When something changes, tell us what changed and why."
+      "At ${p.startedAt}, api moved to a cheaper VM type to save cost. Right now every panel looks normal. The on-call lead asks you to watch it " +
+        "for a few minutes after the move. When something changes, tell us what changed and why."
     },
     symptom = { Symptom.CHANGE_TO_JUDGE },
     hints = listOf(
@@ -239,7 +240,7 @@ internal object ContainerHostScenarios {
         "Fix: a non-burstable instance for a service with steady load, or unlimited mode, which keeps bursting and bills the extra CPU."
     },
     steps = listOf(
-      "Problem statement: api moved to a burstable VM, nothing is wrong yet, and the lead expects that to change. Write down the baseline before it does.",
+      "Problem statement: api moved to a cheaper VM type, nothing is wrong yet, and the lead wants it watched. Write down the baseline before anything changes.",
       "Watch RED: after a few minutes p99 rises on every route, the rate is flat, and there is no deploy marker. Suspect architecture.",
       "USE for api at the container layer: CPU usage against the limit and the throttled share both jump, while the host still has idle CPU.",
       "Compare the limit itself before and after: cgroup_cpu_limit_cores fell. The work is the same, the ceiling moved.",

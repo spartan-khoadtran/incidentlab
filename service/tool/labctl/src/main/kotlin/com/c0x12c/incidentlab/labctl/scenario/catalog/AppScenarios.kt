@@ -86,6 +86,7 @@ internal object AppScenarios {
         "Someone proposes raising api's CPU limit from 2 to 4 cores."
     },
     symptom = { Symptom.SLOW_EVERY_ROUTE },
+    lures = setOf("cpu_throttle"),
     hints = listOf(
       "How much CPU does the api container use against its 2-core limit? Is it throttled?",
       "api runs on one event loop thread: how many cores can it really use? Look at process CPU and event loop lag.",
@@ -129,7 +130,7 @@ internal object AppScenarios {
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("cache_ttl_ms" to p.int("ttl")))) },
     marker = { "Deploy checkout-api v2.34: configuration moved to the new config service" },
     decoy = 0.5,
-    ticket = { p -> "At ${p.startedAt}, Postgres CPU is up and the DBA asks who is firing queries at the products table. API traffic is unchanged." },
+    ticket = { p -> "At ${p.startedAt}, the DBA sees many more queries on the products table and asks who is sending them. API traffic is unchanged." },
     symptom = { Symptom.RATE_CHANGED },
     hints = listOf(
       "Which query grew in Postgres? Did the API rate grow with it?",
@@ -145,7 +146,7 @@ internal object AppScenarios {
         "the cache is what kept it cheap, and the cache is what changed."
     },
     steps = listOf(
-      "Problem statement: Postgres CPU is up, the DBA asks who hits the products table, and API traffic is unchanged.",
+      "Problem statement: the DBA sees many more queries on the products table, and API traffic is unchanged.",
       "Which query grew in Postgres? product_detail. Did the API rate grow with it? No.",
       "Ask what a /products request passes through before the DB: the cache.",
       "The cache hit ratio fell, so almost every /products misses and runs product_detail, a scan over reviews.",
@@ -238,6 +239,7 @@ internal object AppScenarios {
         "top shows nothing unusual."
     },
     symptom = { Symptom.SLOW_ONE_ROUTE },
+    lures = setOf("noisy_neighbor"),
     hints = listOf(
       "Two things are true at once: the host forks a lot, and api is slower. Does the first explain the second? Check host saturation: load, PSI, api's throttled share.",
       "/products is the slow route, and it never touches the host's process table. Why would p50 jump while p99 stays? What does a /products request pass through before the DB?",

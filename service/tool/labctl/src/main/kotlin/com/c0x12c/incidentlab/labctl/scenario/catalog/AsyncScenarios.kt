@@ -30,7 +30,7 @@ internal object AsyncScenarios {
     params = { random, _ -> mapOf("extra" to random.nextInt(170, 241)) },
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("extra_events_rps" to p.int("extra")))) },
     decoy = 0.5,
-    ticket = { p -> "At ${p.startedAt}, the reporting team says new orders take minutes to show up (normally seconds). The worker shows no errors." },
+    ticket = { p -> "At ${p.startedAt}, the reporting team says new orders take minutes to show up (normally seconds). Order volume is normal and the worker shows no errors." },
     symptom = { Symptom.WORK_LATE },
     hints = listOf(
       "The worker's RED: consume rate, errors, processing time. Did the processing time change?",
@@ -45,7 +45,7 @@ internal object AsyncScenarios {
         "Lag is the consumer group's saturation; end-to-end latency is what users see."
     },
     steps = listOf(
-      "Problem statement: new orders take minutes to show up, and the worker shows no errors.",
+      "Problem statement: new orders take minutes to show up, order volume is normal, and the worker shows no errors.",
       "The worker's RED: consume rate, errors, processing time. Processing time is flat and errors are zero.",
       "Compare the produce rate with the consume rate: produce is above the consumer's capacity, so lag grows over time.",
       "Split the produce rate by source: a backfill job adds extra events.",
@@ -116,7 +116,7 @@ internal object AsyncScenarios {
     params = { random, _ -> mapOf("nonce" to String.format("%06x", random.nextInt(NONCE_SPACE))) },
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("poison_nonce" to p.string("nonce")), "worker" to mapOf("fail_nonce" to p.string("nonce")))) },
     decoy = 0.5,
-    ticket = { p -> "At ${p.startedAt}, some orders are never processed while others are fine. The worker's total throughput is almost unchanged." },
+    ticket = { p -> "At ${p.startedAt}, some orders still have not shown up after many minutes, while others show up on time. The worker's total throughput is almost unchanged." },
     symptom = { Symptom.WORK_LATE },
     hints = listOf(
       "Look at lag per partition instead of the total.",
@@ -130,7 +130,7 @@ internal object AsyncScenarios {
         "while the others keep moving, so the total throughput barely changes. Fix: cap the retries, then send the message to a DLQ."
     },
     steps = listOf(
-      "Problem statement: some orders are never processed, others are fine, and total throughput is almost unchanged.",
+      "Problem statement: some orders are many minutes late, others are on time, and total throughput is almost unchanged.",
       "Look at lag per partition, not the total: exactly one partition's lag grows in a straight line.",
       "The worker's retries are up on that one partition only.",
       "Read the worker log: one event fails and is retried every second, never skipped.",

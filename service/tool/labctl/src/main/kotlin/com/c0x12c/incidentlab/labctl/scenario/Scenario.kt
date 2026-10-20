@@ -63,6 +63,8 @@ class Scenario(
   val ticket: (Params) -> String,
   /** What [ticket] shows. It picks the signals and causes the exercise offers, so it must follow the ticket text. */
   val symptom: (Params) -> Symptom,
+  /** Causes the ticket invites the learner to suspect. They must stay among the offered causes, or the list rules the trap out. */
+  val lures: Set<String> = emptySet(),
   val hints: List<String>,
   val answer: Answer,
   val steps: List<String>,

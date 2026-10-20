@@ -28,6 +28,7 @@ internal object EdgeScenarios {
     decoy = 0.5,
     ticket = { p -> "At ${p.startedAt}, users complain the app is slow. The api team looks at APM and says their p99 is still normal, so it must be the network." },
     symptom = { Symptom.SLOW_BUT_API_FINE },
+    lures = setOf("packet_loss"),
     hints = listOf(
       "Put the LB (Envoy) p99 and the api p99 on the same chart.",
       "The gap between the two lines is time the request spends where? See dashboard 02, row 1 (Software resources inside api).",
@@ -63,7 +64,7 @@ internal object EdgeScenarios {
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("health_fail_prob" to p.double("prob")))) },
     decoy = 0.5,
     ticket = { p -> "At ${p.startedAt}, users get scattered 503s. The api team insists their APM shows no errors at all." },
-    symptom = { Symptom.ERRORS },
+    symptom = { Symptom.ERRORS_UNSEEN },
     hints = listOf(
       "Which layer shows the errors first? Compare 5xx at the client, at the LB and at api.",
       "Compare the 5xx the LB returns to clients with the 5xx api records itself. Who produces the difference?",
@@ -108,7 +109,7 @@ internal object EdgeScenarios {
       "At ${p.startedAt}, monitoring shows a small share of 503s that come and go every few seconds. " +
         "The api team sees no errors in APM and asks whether it is worth a look."
     },
-    symptom = { Symptom.ERRORS },
+    symptom = { Symptom.ERRORS_UNSEEN },
     hints = listOf(
       "Compare the 5xx the LB returns with the 5xx api records itself.",
       "Look at Envoy's healthy backends over time. Does the count drop?",

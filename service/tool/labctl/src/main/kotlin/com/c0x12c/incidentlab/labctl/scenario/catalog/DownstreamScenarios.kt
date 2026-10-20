@@ -135,7 +135,7 @@ internal object DownstreamScenarios {
       "At ${p.startedAt}, about half of the checkouts fail with a 502. The pricing team says every one of their requests returns 200, " +
         "just a little slower than before."
     },
-    symptom = { Symptom.ERRORS },
+    symptom = { Symptom.ERRORS_UNSEEN },
     hints = listOf(
       "Errors at the client, at the LB and at api are the same. Which downstream call fails inside api?",
       "http_client_requests_total by outcome: is it a 5xx from pricing, or a timeout on api's side?",
@@ -267,6 +267,7 @@ internal object DownstreamScenarios {
         "Someone already found the host CPU at about half and wants to stop the batch job."
     },
     symptom = { Symptom.SLOW_ONE_ROUTE },
+    lures = setOf("noisy_neighbor"),
     hints = listOf(
       "Host CPU is busy, but is anyone waiting for a CPU? Look at load against the CPU count, PSI and throttling.",
       "Only /checkout is slow. Which downstream does only /checkout call?",
