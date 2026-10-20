@@ -1187,3 +1187,10 @@
 .settle-checks .is-waiting .settle-mark {
   color: var(--warn);
 }
+
+.settle-warning {
+  padding: 8px 10px;
+  border-left: 3px solid var(--warn);
+  background: var(--warn-soft);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}

@@ -32,6 +32,8 @@ export interface ActiveView {
   options?: AnswerOptions;
   /** Epoch seconds where the charts should start: 15 minutes before the start, or the end of the exercise before, whichever is later. */
   baseline_from?: number;
+  /** The settle checks still off when it started. Absent when every check was ok. */
+  unsettled?: string[];
   /** From the start of a ramp. */
   plan?: RampPlan;
   /** From the start of a bench. */
