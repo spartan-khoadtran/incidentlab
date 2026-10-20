@@ -132,7 +132,7 @@ class Exercises(
 
   fun clear(): Int {
     engine.clear()
-    terminal.out("No fault is running any more. The system recovers in about 10-60 seconds.")
+    terminal.out("No fault is running any more. The next `make new` waits until the lab is back to normal.")
     return 0
   }
 
@@ -335,7 +335,7 @@ class Exercises(
     }
     if (reply == null || reply.trim().lowercase() !in setOf("n", "no")) {
       if (engine.clearIf(key)) {
-        terminal.out("Fault cleared. The system recovers in about 10-60 seconds. Use `make new` for the next exercise.")
+        terminal.out("Fault cleared. `make new` starts the next exercise once the lab is back to normal.")
       } else {
         terminal.out(NOT_CLEARED)
       }

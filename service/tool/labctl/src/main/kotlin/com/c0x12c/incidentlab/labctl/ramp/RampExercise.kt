@@ -195,7 +195,7 @@ class RampExercise(
     }
     if (reply == null || reply.trim().lowercase() !in setOf("n", "no")) {
       if (engine.clearIf(key)) {
-        terminal.out("Ramp stopped. The lab recovers in about 10-60 seconds.")
+        terminal.out("Ramp stopped. The next exercise waits until the lab is back to normal.")
       } else {
         terminal.out(Exercises.NOT_CLEARED)
       }

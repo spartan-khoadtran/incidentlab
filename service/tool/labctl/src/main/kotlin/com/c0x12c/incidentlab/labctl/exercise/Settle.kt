@@ -37,9 +37,9 @@ class SettleGate(
 
   fun status(state: LabState): SettleStatus {
     val at = now()
-    val waited = at - (state.lastEnded ?: 0.0)
+    val waited = state.lastEnded?.let { at - it }
     val checks = listOfNotNull(
-      state.lastEnded?.let { check("Time since the last exercise ended", waited, "at least ${QUIET_SECONDS.toInt()} s", ::seconds) { it >= QUIET_SECONDS } },
+      waited?.let { check("Time since the last exercise ended", it, "at least ${QUIET_SECONDS.toInt()} s", ::seconds) { seconds -> seconds >= QUIET_SECONDS } },
       query("Every service up since its last start", UPTIME, "at least ${UPTIME_SECONDS.toInt()} s", ::seconds) { it >= UPTIME_SECONDS },
       query("Kafka lag", LAG, "under ${LAG_SECONDS.toInt()} s", ::seconds) { it < LAG_SECONDS },
       query("Errors users see", ERRORS, "under ${ERROR_PERCENT.toInt()}%", { "${Format.plain(round(it))}%" }) { it < ERROR_PERCENT },
@@ -48,7 +48,7 @@ class SettleGate(
       query("Memory the last fault kept in api", FAULT_BYTES, "0 MB", { "${Format.plain(round(it / BYTES_PER_MB))} MB" }) { it <= 0.0 }
     )
     val settled = checks.all { it.ok }
-    return SettleStatus(settled, checks, max(0.0, waited), !settled && waited > CAP_SECONDS)
+    return SettleStatus(settled, checks, max(0.0, waited ?: 0.0), !settled && (waited == null || waited > CAP_SECONDS))
   }
 
   /** The refusal a start gets while the lab settles, or null when it may start. */
@@ -58,7 +58,7 @@ class SettleGate(
     val name = "User p99 is steady"
     val target = "within ${((STEADY_RATIO - 1) * PERCENT).toInt()}% of the minute before"
     val current = probe.instantQuery(P99)
-    val before = probe.instantQuery("$P99 offset 1m")
+    val before = probe.instantQuery(P99_BEFORE)
     if (current == null || before == null) return SettleCheck(name, true, null, target)
     val ok = max(current, before) < FAST_SECONDS || (current <= before * STEADY_RATIO && before <= current * STEADY_RATIO)
     return SettleCheck(name, ok, "${seconds(current)} (was ${seconds(before)})", target)
@@ -91,7 +91,8 @@ class SettleGate(
     const val LAG = "max(kafka_consumer_lag_seconds)"
     const val ERRORS = "100 * (sum(rate(client_requests_total{outcome!~\"ok|http_4xx\"}[1m])) or vector(0)) / sum(rate(client_requests_total[1m]))"
     const val P99 = "histogram_quantile(0.99, sum by (le) (rate(client_duration_seconds_bucket[1m])))"
-    const val WAITING = "max(avg_over_time({__name__=~\"db_pool_waiting|app_admission_waiting\",job=\"api\"}[1m]))"
+    const val P99_BEFORE = "histogram_quantile(0.99, sum by (le) (rate(client_duration_seconds_bucket[1m] offset 1m)))"
+    const val WAITING = "sum(avg_over_time(db_pool_waiting{job=\"api\"}[1m])) + sum(avg_over_time(app_admission_waiting{job=\"api\"}[1m]))"
     const val FAULT_BYTES = "sum({__name__=~\"app_leaked_bytes|app_retained_bytes\",job=\"api\"})"
   }
 }
@@ -108,9 +109,16 @@ class SettleWait(
     var status = gate.status(store.load())
     if (status.settled) return
     terminal.out("Waiting for the lab to settle after the last exercise, so the next baseline is clean...")
+    var shown: List<String>? = null
+    var polls = 0
     while (!status.settled && !status.gaveUp) {
-      terminal.out("  still settling: " + pending(status))
+      val names = status.checks.filterNot { it.ok }.map { it.name }
+      if (names != shown || polls % REPRINT_POLLS == 0) {
+        terminal.out("  still settling: " + pending(status))
+        shown = names
+      }
       sleep(POLL_MILLIS)
+      polls++
       status = gate.status(store.load())
     }
     if (status.gaveUp) {
@@ -125,5 +133,8 @@ class SettleWait(
 
   companion object {
     const val POLL_MILLIS = 5_000L
+
+    /** Same checks still waiting: say so again every 30 s, not on every poll. */
+    const val REPRINT_POLLS = 6
   }
 }

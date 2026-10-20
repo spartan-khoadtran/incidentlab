@@ -10,6 +10,7 @@ import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.ERRORS
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.FAULT_BYTES
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.LAG
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.P99
+import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.P99_BEFORE
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.UPTIME
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.WAITING
 import com.c0x12c.incidentlab.labctl.state.LabState
@@ -18,7 +19,7 @@ import org.junit.jupiter.api.Test
 class SettleGateTest {
 
   private val now = 10_000.0
-  private val healthy = mapOf(UPTIME to 600.0, LAG to 0.4, ERRORS to 0.0, P99 to 0.3, "$P99 offset 1m" to 0.3, WAITING to 0.0, FAULT_BYTES to 0.0)
+  private val healthy = mapOf(UPTIME to 600.0, LAG to 0.4, ERRORS to 0.0, P99 to 0.3, P99_BEFORE to 0.3, WAITING to 0.0, FAULT_BYTES to 0.0)
 
   private fun gate(values: Map<String, Double> = healthy, up: Boolean = true) = SettleGate(FakePrometheus(up) { expr, _ -> values[expr] }) { now }
 
@@ -54,7 +55,7 @@ class SettleGateTest {
 
   @Test
   fun `user p99 must be steady, so a falling or a rising tail waits and a fast one passes`() {
-    fun steady(current: Double, before: Double) = gate(healthy + mapOf(P99 to current, "$P99 offset 1m" to before)).status(endedAgo(120.0)).settled
+    fun steady(current: Double, before: Double) = gate(healthy + mapOf(P99 to current, P99_BEFORE to before)).status(endedAgo(120.0)).settled
 
     assertThat(steady(0.5, 1.2)).isFalse()
     assertThat(steady(0.9, 0.5)).isFalse()
@@ -79,6 +80,8 @@ class SettleGateTest {
     assertThat(late.settled).isFalse()
     assertThat(late.gaveUp).isTrue()
     assertThat(gate(busy).refusal(endedAgo(SettleGate.CAP_SECONDS + 1))).isNull()
-    assertThat(gate(busy).status(endedAgo(null)).gaveUp).isTrue()
+    val unknown = gate(busy).status(endedAgo(null))
+    assertThat(unknown.gaveUp).isTrue()
+    assertThat(unknown.waitedSeconds).isEqualTo(0.0)
   }
 }
