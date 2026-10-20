@@ -262,7 +262,7 @@ class LabApiTest {
   }
 
   @Test
-  fun `an answer is scored, kept in history with its note, and leaves the fault running`() {
+  fun `an answer is scored, kept in history with its note and picks, and leaves the fault running`() {
     val base = server()
     post(base, "/api/exercises", mapOf("id" to "pool_hold"))
     post(base, "/api/exercise/hint")
@@ -281,6 +281,7 @@ class LabApiTest {
     assertThat(after["answered"].asBoolean()).isTrue()
     assertThat(after["reveal"]["title"].asText()).isEqualTo(ScenarioCatalog.byId.getValue("pool_hold").title)
     assertThat(after["result"]).isEqualTo(result)
+    assertThat(after["result"]["choices"]).isEqualTo(LabJson.mapper.valueToTree<JsonNode>(choices("arch", "api_db", "pool", "pool_exhausted")))
     assertThat(store().load().active!!.answered).isTrue()
     assertThat(store().load().history.single().note).isEqualTo("session time vs exec time")
     assertThat(annotations.none { it == "lab: fault cleared" }).isTrue()
