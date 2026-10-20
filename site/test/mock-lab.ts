@@ -57,7 +57,7 @@ export const MOCK_REVEAL = {
   evidence: ['sum(rate(http_server_requests_total{job="api"}[1m]))'],
   cli: ["curl -s http://api:8000/metrics | grep inflight   # mock: what to read"],
   guide: [{ pointer: "RED method in detail > Rate (mock note)", file: "investigation-guide.md" }],
-  rule_outs: ANSWER_OPTIONS.causes.map((cause) => ({ cause, check: CHECKS[cause.key], correct: cause.key === "mock_queue" })),
+  rule_outs: ANSWER_OPTIONS.causes.map((cause) => ({ cause, check: CHECKS[cause.key], correct: cause.key === "mock_queue", partial: cause.key === "mock_retry" })),
 };
 
 const MOCK_HINTS = ["Mock hint one, broad.", "Mock hint two.", "Mock hint three, specific."];

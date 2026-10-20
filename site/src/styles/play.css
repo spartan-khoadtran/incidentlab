@@ -779,6 +779,10 @@
   border-left-color: var(--crit);
 }
 
+.ruleout.is-partial-pick {
+  border-left-color: var(--warn);
+}
+
 .ruleout-head {
   display: flex;
   flex-wrap: wrap;

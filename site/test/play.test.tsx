@@ -267,6 +267,26 @@ describe("Play", () => {
     expect(within(section).getAllByText("The cause")).toHaveLength(1);
   });
 
+  it("marks a partial cause pick as partial, not as wrong", async () => {
+    const user = userEvent.setup();
+    state.lab.handle("POST", "/api/exercises", JSON_POST, {});
+    renderPlay();
+    await user.click(await screen.findByLabelText("Mock nature: the system itself"));
+    await user.click(screen.getByLabelText("Mock location: before the app"));
+    await user.click(screen.getByLabelText("Mock signal: the gap between two layers"));
+    await user.click(screen.getByLabelText("Mock cause: retries"));
+    await user.click(screen.getByRole("button", { name: "Submit the answer" }));
+
+    const section = await screen.findByRole("region", { name: "Rule out the look-alikes" });
+    const retry = within(section).getAllByRole("listitem")[1];
+    const pick = within(retry).getByText("Your pick");
+    expect(pick.classList.contains("verdict-partial")).toBe(true);
+    expect(pick.classList.contains("verdict-wrong")).toBe(false);
+    expect(retry.classList.contains("is-wrong-pick")).toBe(false);
+    expect(retry.classList.contains("is-partial-pick")).toBe(true);
+    expect(section.querySelector(".is-wrong-pick")).toBeNull();
+  });
+
   it("shows the rule-outs after a reveal, with no pick to mark", async () => {
     const user = userEvent.setup();
     state.lab.handle("POST", "/api/exercises", JSON_POST, {});
