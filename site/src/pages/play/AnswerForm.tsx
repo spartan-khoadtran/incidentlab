@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { ErrorNote } from "../../components/LabUi";
-import type { Answer, AnswerOptions, Option } from "../../lib/api";
+import type { AnswerOptions, Choices, Option } from "../../lib/api";
 
-export type Choices = Omit<Answer, "note">;
+export type { Choices };
 
 const QUESTIONS: { key: keyof Choices; title: string; ask: string; list: (o: AnswerOptions) => Option[] }[] = [
   { key: "nature", title: "Nature", ask: "What kind of problem is it?", list: (o) => o.natures },

@@ -64,14 +64,16 @@ export interface Reveal {
   evidence: string[];
   cli: string[];
   guide: GuideRef[];
-  /** Every offered cause, in the offered order, with the check that rules it in or out. */
-  rule_outs: RuleOut[];
+  /** Every offered cause, in the offered order, with the check that rules it in or out. An older daemon sends none. */
+  rule_outs?: RuleOut[];
 }
 
 export interface RuleOut {
   cause: Option;
   check: string;
   correct: boolean;
+  /** One step before the root cause, worth 1 point. */
+  partial: boolean;
 }
 
 export interface Result {
@@ -83,6 +85,15 @@ export interface Result {
   verdicts: { nature: Verdict; location: Verdict; signal: Verdict; cause: Verdict };
   missed: string[];
   reveal: Reveal;
+  /** The keys the learner picked, also sent when an answered exercise is read again. */
+  choices?: Choices;
+}
+
+export interface Choices {
+  nature: string;
+  location: string;
+  signal: string;
+  cause: string;
 }
 
 export interface Status {
@@ -124,11 +135,7 @@ export interface History {
   ramp_count: number;
 }
 
-export interface Answer {
-  nature: string;
-  location: string;
-  signal: string;
-  cause: string;
+export interface Answer extends Choices {
   note?: string;
 }
 

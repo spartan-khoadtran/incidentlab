@@ -57,7 +57,7 @@ export const MOCK_REVEAL = {
   evidence: ['sum(rate(http_server_requests_total{job="api"}[1m]))'],
   cli: ["curl -s http://api:8000/metrics | grep inflight   # mock: what to read"],
   guide: [{ pointer: "RED method in detail > Rate (mock note)", file: "investigation-guide.md" }],
-  rule_outs: ANSWER_OPTIONS.causes.map((cause) => ({ cause, check: CHECKS[cause.key], correct: cause.key === "mock_queue" })),
+  rule_outs: ANSWER_OPTIONS.causes.map((cause) => ({ cause, check: CHECKS[cause.key], correct: cause.key === "mock_queue", partial: cause.key === "mock_retry" })),
 };
 
 const MOCK_HINTS = ["Mock hint one, broad.", "Mock hint two.", "Mock hint three, specific."];
@@ -76,6 +76,8 @@ interface MockActive {
 
 export class MockLab {
   online = true;
+  /** False acts like an older daemon that sends no answer options. */
+  sendOptions = true;
   active: MockActive | null = null;
   n = 0;
   history: { n: number; id: string; title: string; level: number; mode: string; score: number | null; hints: number; minutes: number; at: number; missed: string[]; note: string }[] = [];
@@ -105,7 +107,7 @@ export class MockLab {
       hints: MOCK_HINTS.slice(0, a.hints_used),
       answered: a.answered,
       rules: a.mode === "toolbox" ? "Mock rules: no Grafana, prove it from make shell." : null,
-      ...(a.mode === "incident" || a.mode === "toolbox" ? { options: ANSWER_OPTIONS } : {}),
+      ...((a.mode === "incident" || a.mode === "toolbox") && this.sendOptions ? { options: ANSWER_OPTIONS } : {}),
       ...((a.answered || a.revealed) && (a.mode === "incident" || a.mode === "toolbox") ? { reveal: MOCK_REVEAL } : {}),
       ...(a.answered && a.result ? { result: a.result } : {}),
       ...(a.mode === "ramp" ? { plan: this.plan } : {}),
@@ -183,11 +185,11 @@ export class MockLab {
         const lists = { nature: ANSWER_OPTIONS.natures, location: ANSWER_OPTIONS.locations, signal: ANSWER_OPTIONS.signals, cause: ANSWER_OPTIONS.causes };
         const missing = keys.find((k) => typeof body[k] !== "string");
         if (missing) return err(400, "missing_field", `The field '${missing}' is needed.`);
-        const unknown = keys.find((k) => !lists[k].some((o) => o.key === body[k]));
         const refused = incident();
         if (refused) return refused;
-        if (unknown) return err(400, "unknown_key", `'${String(body[unknown])}' is not a ${unknown} this exercise offers.`);
         if (this.active!.answered) return err(409, "already_answered", "This exercise was already submitted.");
+        const unknown = keys.find((k) => !lists[k].some((o) => o.key === body[k]));
+        if (unknown) return err(400, "unknown_key", `'${String(body[unknown])}' is not a ${unknown} this exercise offers.`);
         const verdicts = {
           nature: body.nature === "mock_arch" ? "correct" : "wrong",
           location: body.location === "mock_lb" ? "correct" : "wrong",
@@ -200,7 +202,8 @@ export class MockLab {
         const missed = keys.filter((k) => verdicts[k] !== "correct");
         this.history.push({ n: active.n, id: MOCK_REVEAL.id, title: MOCK_REVEAL.title, level: 2, mode: active.mode, score, hints: active.hints_used, minutes: 4.2, at: Date.now() / 1000, missed, note: String(body.note ?? "") });
         active.answered = true;
-        active.result = { n: active.n, score, raw, max: 5, hints_used: active.hints_used, verdicts, missed, reveal: MOCK_REVEAL };
+        const choices = { nature: String(body.nature), location: String(body.location), signal: String(body.signal), cause: String(body.cause) };
+        active.result = { n: active.n, score, raw, max: 5, hints_used: active.hints_used, verdicts, missed, reveal: MOCK_REVEAL, choices };
         return { status: 200, body: active.result };
       }
       case route === "POST /exercise/reveal": {

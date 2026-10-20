@@ -576,8 +576,12 @@
   }
 }
 
-.question-group + .question-group {
-  margin-top: 10px;
+.question-group {
+  display: flow-root;
+}
+
+.question-group:not(:last-child) {
+  padding-bottom: 10px;
 }
 
 .question-group-title {
@@ -777,6 +781,10 @@
 
 .ruleout.is-wrong-pick {
   border-left-color: var(--crit);
+}
+
+.ruleout.is-partial-pick {
+  border-left-color: var(--warn);
 }
 
 .ruleout-head {
