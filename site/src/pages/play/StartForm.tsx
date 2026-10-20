@@ -31,9 +31,8 @@ export function StartForm({ options, openMode, onStarted }: { options: Options |
     if (level) body.level = Number(level);
     if (topic) body.topic = topic;
     if (id.trim()) body.id = id.trim();
-    if (force) body.force = true;
     try {
-      await run(() => api.start(body));
+      await run((retry) => api.start(force && !retry ? { ...body, force: true } : body));
     } finally {
       setBusy(false);
     }

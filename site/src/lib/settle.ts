@@ -5,11 +5,12 @@ export const SETTLE_POLL_MS = 3000;
 
 /**
  * Runs a start. While the lab answers 409 lab_settling, it holds the status, polls the gate and runs
- * the same start again once the lab is back to normal or the gate gave up.
+ * the start again once the lab is back to normal or the gate gave up. `start` gets `retry` true on
+ * those later posts, so a caller can drop `force` and never clear an exercise opened meanwhile.
  */
 export function useSettledStart<T>(onStarted: (value: T) => void, onError: (e: unknown) => void) {
   const [waiting, setWaiting] = useState<SettleStatus | null>(null);
-  const pending = useRef<(() => Promise<T>) | null>(null);
+  const pending = useRef<object | null>(null);
   const timer = useRef<number | null>(null);
   const wake = useRef<(() => void) | null>(null);
 
@@ -25,17 +26,18 @@ export function useSettledStart<T>(onStarted: (value: T) => void, onError: (e: u
   useEffect(() => stop, [stop]);
 
   const run = useCallback(
-    async (start: () => Promise<T>) => {
-      pending.current = start;
-      const live = () => pending.current === start;
+    async (start: (retry: boolean) => Promise<T>) => {
+      const token = {};
+      pending.current = token;
+      const live = () => pending.current === token;
       const pause = () =>
         new Promise<void>((resolve) => {
           wake.current = resolve;
           timer.current = window.setTimeout(resolve, SETTLE_POLL_MS);
         });
-      for (;;) {
+      for (let retry = false; ; retry = true) {
         try {
-          const value = await start();
+          const value = await start(retry);
           if (!live()) return;
           stop();
           onStarted(value);
