@@ -118,7 +118,7 @@ class Exercises(
       is Refused -> return refused(outcome.refusal)
     }
     banner("EXERCISE #${revealed.n}: ${revealed.reveal.title} (${if (revealed.wasAnswered) "already scored" else "not scored"})")
-    explain(revealed.reveal)
+    explain(revealed.reveal, pick = state.active?.choices?.cause)
     key?.let(::offerClear)
     return 0
   }

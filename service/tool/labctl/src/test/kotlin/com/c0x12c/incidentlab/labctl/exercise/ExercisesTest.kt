@@ -189,7 +189,7 @@ class ExercisesTest {
   }
 
   @Test
-  fun `the prompts offer the ticket's lists, and the rule-out block marks the root cause and the pick`(@TempDir dir: Path) {
+  fun `the prompts offer the ticket's lists, and the rule-out block marks the root cause and the pick, on reveal too`(@TempDir dir: Path) {
     val answers = ArrayDeque<String?>()
     val terminal = ScriptedTerminal(answers)
     val exercises = exercises(dir, terminal)
@@ -216,7 +216,7 @@ class ExercisesTest {
     exercises.reveal()
     val revealed = ruleOutBlock(terminal.lines)
     assertThat(revealed.filter { it.startsWith("  => ") }).containsExactly("  => ${Answers.label(Answers.CAUSES, scenario.answer.cause)}  [root cause]")
-    assertThat(revealed.none { it.contains("[your pick]") }).isTrue()
+    assertThat(revealed.filter { it.endsWith("[your pick]") }).containsExactly("     ${Answers.label(Answers.CAUSES, pick)}  [your pick]")
   }
 
   @Test
