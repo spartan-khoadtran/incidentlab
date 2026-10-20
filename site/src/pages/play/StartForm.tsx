@@ -32,7 +32,7 @@ export function StartForm({
     if (e instanceof ApiError && e.code === "exercise_open") setConfirm(true);
     else setError(e);
   }, []);
-  const { run, waiting, cancel } = useSettledStart(onStarted, failed, onWaiting);
+  const { run, waiting, posting, cancel } = useSettledStart(onStarted, failed, onWaiting);
 
   const start = async (force: boolean) => {
     setBusy(true);
@@ -50,7 +50,7 @@ export function StartForm({
 
   const command = ["make", mode === "toolbox" ? "toolbox" : "new", level && `LEVEL=${level}`, topic && `TOPIC=${topic}`, id.trim() && `ID=${id.trim()}`].filter(Boolean).join(" ");
 
-  if (waiting) return <SettleCard status={waiting} onCancel={cancel} />;
+  if (waiting) return <SettleCard status={waiting} starting={posting} onCancel={cancel} />;
 
   return (
     <form

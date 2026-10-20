@@ -13,11 +13,15 @@ function passing(e: unknown): boolean {
  * Runs a start. While the lab answers 409 lab_settling, it holds the status, polls the gate and runs
  * the start again once the lab is back to normal or the gate gave up. `start` gets `retry` true on
  * those later posts, so a caller can drop `force` and never clear an exercise opened meanwhile.
+ * `onWaiting` runs on the first lab_settling of a start: a forced start has cleared the open exercise by then.
+ * A start the lab accepted always reaches `onStarted` while the page is mounted, even after a cancel.
  */
-/** `onWaiting` runs on the first 409 lab_settling of a start: a forced start has already cleared the open exercise by then. */
 export function useSettledStart<T>(onStarted: (value: T) => void, onError: (e: unknown) => void, onWaiting?: () => void) {
   const [waiting, setWaiting] = useState<SettleStatus | null>(null);
+  const [isWaiting, setIsWaiting] = useState(false);
+  const [posting, setPosting] = useState(false);
   const pending = useRef<object | null>(null);
+  const mounted = useRef(false);
   const timer = useRef<number | null>(null);
   const wake = useRef<(() => void) | null>(null);
 
@@ -28,9 +32,16 @@ export function useSettledStart<T>(onStarted: (value: T) => void, onError: (e: u
     wake.current?.();
     wake.current = null;
     setWaiting(null);
+    setIsWaiting(false);
   }, []);
 
-  useEffect(() => stop, [stop]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      stop();
+    };
+  }, [stop]);
 
   const run = useCallback(
     async (start: (retry: boolean) => Promise<T>) => {
@@ -43,22 +54,30 @@ export function useSettledStart<T>(onStarted: (value: T) => void, onError: (e: u
           timer.current = window.setTimeout(resolve, SETTLE_POLL_MS);
         });
       for (let retry = false; ; retry = true) {
+        setPosting(true);
+        let outcome: { value: T } | { error: unknown };
         try {
-          const value = await start(retry);
-          if (!live()) return;
-          stop();
-          onStarted(value);
-          return;
-        } catch (e) {
-          if (!live()) return;
-          if (!(e instanceof ApiError && e.code === "lab_settling")) {
-            stop();
-            onError(e);
-            return;
-          }
-          if (!retry) onWaiting?.();
-          setWaiting((e.body.settle as SettleStatus | undefined) ?? null);
+          outcome = { value: await start(retry) };
+        } catch (error) {
+          outcome = { error };
         }
+        if (!mounted.current) return;
+        setPosting(false);
+        if ("value" in outcome) {
+          if (live()) stop();
+          onStarted(outcome.value);
+          return;
+        }
+        const e = outcome.error;
+        if (!live()) return;
+        if (!(e instanceof ApiError && e.code === "lab_settling")) {
+          stop();
+          onError(e);
+          return;
+        }
+        if (!retry) onWaiting?.();
+        setIsWaiting(true);
+        setWaiting((e.body.settle as SettleStatus | undefined) ?? null);
         for (let failures = 0; ; ) {
           await pause();
           if (!live()) return;
@@ -83,5 +102,5 @@ export function useSettledStart<T>(onStarted: (value: T) => void, onError: (e: u
     [onStarted, onError, onWaiting, stop],
   );
 
-  return { run, waiting, cancel: stop };
+  return { run, waiting, isWaiting, posting, cancel: stop };
 }

@@ -1,6 +1,6 @@
 import type { SettleStatus } from "../lib/api";
 
-export function SettleCard({ status, onCancel }: { status: SettleStatus | null; onCancel: () => void }) {
+export function SettleCard({ status, starting, onCancel }: { status: SettleStatus | null; starting: boolean; onCancel: () => void }) {
   return (
     <section className="panel settle-card" role="status" aria-labelledby="settle-title">
       <h2 id="settle-title" className="panel-title">
@@ -25,7 +25,8 @@ export function SettleCard({ status, onCancel }: { status: SettleStatus | null; 
           <p className="muted small">Waited {Math.round(status.waited_seconds)} s since the last exercise ended.</p>
         </>
       ) : null}
-      <button type="button" className="btn" onClick={onCancel}>
+      {starting ? <p className="small">Starting...</p> : null}
+      <button type="button" className="btn" onClick={onCancel} disabled={starting}>
         Cancel
       </button>
     </section>

@@ -460,7 +460,7 @@ function StartCapacity({ onStarted }: { onStarted: (v: ActiveView) => void }) {
     }
   };
   const rates = lab.defaults.ramp_rates;
-  if (settled.waiting) return <SettleCard status={settled.waiting} onCancel={settled.cancel} />;
+  if (settled.waiting) return <SettleCard status={settled.waiting} starting={settled.posting} onCancel={settled.cancel} />;
   return (
     <div className="capacity-start">
       <section className="panel" aria-labelledby="ramp-title">
