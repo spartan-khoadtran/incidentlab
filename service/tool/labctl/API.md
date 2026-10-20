@@ -51,8 +51,9 @@ ActiveView = {
   answered: bool,
   rules: string|null,              // the toolbox rules in toolbox mode
   options?: AnswerOptions,         // incident and toolbox only, left out for a ramp or a bench
-  baseline_from: number            // epoch seconds where the charts should start: 15 minutes before
-                                   // the start, or the end of the exercise before, whichever is later
+  baseline_from: number,           // epoch seconds where the charts should start: 15 minutes before
+                                   // the start, or the first moment the lab was back to normal, whichever is later
+  unsettled?: [string]             // settle checks still off when it started (the gate gave up), left out when empty
 }
 AnswerOptions = {
   natures: [Option], locations: [Option],   // always every key
@@ -100,7 +101,7 @@ An example, with the lists cut short:
 
 - `GET /api/health` -> `{ ok: true }`
 - `GET /api/status` -> `{ services: { api: null|"<error>", pricing, worker, loadgen, noisy, pgobserver }, active: ActiveView|null, load_multiplier: number, base_rps: number, links: { grafana, prometheus, pyroscope } }`. A service is `null` when it answers. `active` is null for a stale exercise too.
-- `GET /api/settle` -> `{ settled: bool, checks: [{ name, ok: bool, value: string|null, target }], waited_seconds: number, gave_up: bool }`: whether a new exercise may start. The settle gate waits until the lab is back to normal after the last exercise: at least 60 s since it ended, every JVM service up for 120 s, Kafka lag under 5 s, user errors under 1%, a steady user p99 (within 30% of the minute before, or under 0.2 s), almost no requests waiting inside api, and no memory a fault kept. A check Prometheus cannot answer counts as ok. `gave_up` turns true after 5 minutes of waiting, and a start then goes ahead. `labctl api` (no daemon) is always settled.
+- `GET /api/settle` -> `{ settled: bool, checks: [{ name, ok: bool, value: string|null, target }], waited_seconds: number, gave_up: bool }`: whether a new exercise may start. The settle gate waits until the lab is back to its own normal after the last exercise. Normal is what the lab looked like in the 5 minutes before the last exercise started, so the limits follow the load. The checks: at least 60 s since the last exercise ended; api, pricing and worker up for 120 s (a service that is down fails it); then Kafka lag, user errors, user p99, requests waiting inside api and api memory, each within its normal for a whole 2-minute window. A check Prometheus cannot answer counts as ok. `waited_seconds` is the time since the last exercise ended. `gave_up` turns true when the failing values stopped falling for 2 minutes (after at least 3 minutes), or 20 minutes after the end, and a start then goes ahead. `labctl api` (no daemon) is always settled.
 - `GET /api/options` -> `{ levels: [int], topics: [string], modes: ["incident", "toolbox"] }`: what `POST /api/exercises` takes. The answer options are not here: each open exercise has its own in `options`.
 - `POST /api/load` body `{ multiplier: number }` (0.1 to 6) -> `{ multiplier, rps }`. 400 `bad_multiplier` outside the range. 409 `ramp_running` (with `seconds_left`) while a ramp step runs, because the ramp holds the load at 1 until its last step ends.
 - `GET /api/history` -> `{ entries: [HistoryEntry], average: number|null, scored_count: int, by_topic: [{ topic, average, count }], most_missed_cause: { key, label, group, count }|null, ramp_average: number|null, ramp_count: int }`. `average`, `scored_count`, `by_topic` and `most_missed_cause` count scored incident and toolbox entries only. A ramp is scored on other questions, so `ramp_average` and `ramp_count` count scored ramps on their own. `by_topic` lists the weakest topic first.

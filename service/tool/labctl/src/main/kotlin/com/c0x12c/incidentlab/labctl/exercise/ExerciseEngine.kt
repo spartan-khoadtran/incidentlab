@@ -497,12 +497,12 @@ class ExerciseEngine(
         scenario.faults(params).docker.values.flatMap { it.keys }.toSet()
       }.getOrDefault(emptySet())
 
-    /** What an exercise whose ticket shows [symptom] offers. It reads nothing else, so it cannot give the scenario away. */
-    /** How far back a clean baseline reaches: at most this far, and never before the exercise before ended. */
+    /** How far back a clean baseline reaches at most. */
     const val BASELINE_SECONDS = 900.0
 
-    fun baselineFrom(started: Double, lastEnded: Double?): Double = maxOf(started - BASELINE_SECONDS, lastEnded ?: 0.0)
+    fun baselineFrom(started: Double, cleanFrom: Double?): Double = maxOf(started - BASELINE_SECONDS, cleanFrom ?: 0.0)
 
+    /** What an exercise whose ticket shows [symptom] offers. It reads nothing else, so it cannot give the scenario away. */
     fun answerOptions(symptom: Symptom): AnswerOptions =
       AnswerOptions(
         natures = Answers.NATURES.map { (key, label) -> Option(key, label) },
