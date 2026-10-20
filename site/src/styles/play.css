@@ -1156,10 +1156,18 @@
   grid-column: 1 / -1;
 }
 
+.settle-card {
+  max-width: var(--measure);
+}
+
+.settle-card > .btn {
+  justify-self: start;
+}
+
 .settle-checks {
   list-style: none;
   padding: 0;
-  margin: 12px 0;
+  margin: 0;
   display: grid;
   gap: 8px;
 }
