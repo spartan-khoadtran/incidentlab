@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSettledStart } from "../../lib/settle";
+import { SettleCard } from "../../components/SettleCard";
 import { Link } from "react-router";
 import { Confirm, Countdown, ErrorNote, GuideLinks, useSecondsSince } from "../../components/LabUi";
 import { api, ApiError, parseNumber, type ActiveView, type BenchReport, type BenchRow, type Option, type RampResult } from "../../lib/api";
@@ -447,18 +449,18 @@ function StartCapacity({ onStarted }: { onStarted: (v: ActiveView) => void }) {
   const [seconds, setSeconds] = useState(lab.defaults.bench_seconds);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const settled = useSettledStart(onStarted, setError);
   const run = async (fn: () => Promise<ActiveView>) => {
     setBusy(true);
     setError(null);
     try {
-      onStarted(await fn());
-    } catch (e) {
-      setError(e);
+      await settled.run(fn);
     } finally {
       setBusy(false);
     }
   };
   const rates = lab.defaults.ramp_rates;
+  if (settled.waiting) return <SettleCard status={settled.waiting} onCancel={settled.cancel} />;
   return (
     <div className="capacity-start">
       <section className="panel" aria-labelledby="ramp-title">

@@ -1155,3 +1155,35 @@
 .ramp-note {
   grid-column: 1 / -1;
 }
+
+.settle-checks {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  display: grid;
+  gap: 8px;
+}
+
+.settle-checks li {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 2px 10px;
+}
+
+.settle-checks li > .muted {
+  grid-column: 2;
+}
+
+.settle-mark {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.settle-checks .is-ok .settle-mark {
+  color: var(--ok);
+}
+
+.settle-checks .is-waiting .settle-mark {
+  color: var(--warn);
+}

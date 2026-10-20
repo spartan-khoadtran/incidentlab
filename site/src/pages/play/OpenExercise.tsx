@@ -88,7 +88,7 @@ export function ExplorePanel({ view, status }: { view: ActiveView; status: Statu
     );
   }
   const g = status?.links.grafana;
-  const range = exerciseRange(view.started_at);
+  const range = exerciseRange(view.started_at, view.baseline_from);
   const links: { label: string; note: string; href: string | null }[] = g
     ? [
         ...grafana.dashboards.map((d) => ({ label: d.title, note: "dashboard", href: dashboardUrl(g, d.uid, range) })),
@@ -107,7 +107,7 @@ export function ExplorePanel({ view, status }: { view: ActiveView; status: Statu
       </h2>
       {open ? (
         <>
-          <p className="small muted">From 15 minutes before the ticket to now, so the baseline is on the chart.</p>
+          <p className="small muted">From the end of the last exercise, or 15 minutes before the ticket, to now. So the baseline is on the chart, with no part of the exercise before.</p>
           <ul className="explore-links">
             {links
               .filter((l) => l.href)

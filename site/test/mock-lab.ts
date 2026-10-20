@@ -78,6 +78,10 @@ export class MockLab {
   online = true;
   /** False acts like an older daemon that sends no answer options. */
   sendOptions = true;
+  /** How many more settle polls answer "not settled". While above 0, every start answers 409 lab_settling. */
+  settlePolls = 0;
+  /** Epoch seconds the last exercise ended, for baseline_from. */
+  lastEnded: number | null = null;
   active: MockActive | null = null;
   n = 0;
   history: { n: number; id: string; title: string; level: number; mode: string; score: number | null; hints: number; minutes: number; at: number; missed: string[]; note: string }[] = [];
@@ -112,6 +116,20 @@ export class MockLab {
       ...(a.answered && a.result ? { result: a.result } : {}),
       ...(a.mode === "ramp" ? { plan: this.plan } : {}),
       ...(a.mode === "bench" ? { ends_at: this.endsAt } : {}),
+      baseline_from: Math.max(a.started_at - 900, this.lastEnded ?? 0),
+    };
+  }
+
+  settleStatus() {
+    const settled = this.settlePolls <= 0;
+    return {
+      settled,
+      checks: [
+        { name: "Mock quiet time", ok: true, value: "75 s", target: "at least 60 s" },
+        { name: "Mock queue lag", ok: settled, value: settled ? "1 s" : "40 s", target: "under 5 s" },
+      ],
+      waited_seconds: 75,
+      gave_up: false,
     };
   }
 
@@ -162,8 +180,20 @@ export class MockLab {
         };
       case route === "GET /options":
         return { status: 200, body: OPTIONS };
+      case route === "GET /settle": {
+        const status = this.settleStatus();
+        this.settlePolls -= 1;
+        return { status: 200, body: status };
+      }
       case route === "POST /exercises": {
         if (this.active && !body.force) return err(409, "exercise_open", "An exercise is open. Answer, reveal or clear it first.");
+        if (this.settlePolls > 0) {
+          if (this.active) {
+            this.active = null;
+            this.lastEnded = Date.now() / 1000;
+          }
+          return err(409, "lab_settling", "Mock: the lab is still settling.", { settle: this.settleStatus() });
+        }
         this.n += 1;
         this.active = fresh(String(body.mode ?? "incident"), Date.now() / 1000 - 125, (body.level as number) ?? 2);
         return { status: 201, body: this.view() };
@@ -219,6 +249,7 @@ export class MockLab {
         if (this.active && changed()) return changed()!;
         const cleared = this.active !== null;
         this.active = null;
+        if (cleared) this.lastEnded = Date.now() / 1000;
         return { status: 200, body: { cleared } };
       }
       case route === "GET /history": {
@@ -249,6 +280,7 @@ export class MockLab {
       case route === "POST /ramp": {
         if (this.active) return err(409, "exercise_open", "An exercise is open.");
         if (this.load !== 1) return err(409, "load_not_one", "Set the load back to 1 first.");
+        if (this.settlePolls > 0) return err(409, "lab_settling", "Mock: the lab is still settling.", { settle: this.settleStatus() });
         this.n += 1;
         const every = Number(body.every ?? 60);
         this.active = fresh("ramp", Date.now() / 1000 - (this.rampStartedAgo ?? every + 5));
@@ -302,6 +334,7 @@ export class MockLab {
       }
       case route === "POST /bench": {
         if (this.active) return err(409, "exercise_open", "An exercise is open.");
+        if (this.settlePolls > 0) return err(409, "lab_settling", "Mock: the lab is still settling.", { settle: this.settleStatus() });
         this.n += 1;
         this.active = fresh("bench", Date.now() / 1000);
         this.endsAt = Date.now() / 1000 - 1;

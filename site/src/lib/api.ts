@@ -30,6 +30,8 @@ export interface ActiveView {
   rules: string | null;
   /** For an incident or a toolbox exercise: the only keys the answer takes. */
   options?: AnswerOptions;
+  /** Epoch seconds where the charts should start: 15 minutes before the start, or the end of the exercise before, whichever is later. */
+  baseline_from?: number;
   /** From the start of a ramp. */
   plan?: RampPlan;
   /** From the start of a bench. */
@@ -217,6 +219,20 @@ export interface QuizVerdict {
   guide: GuideRef[];
 }
 
+export interface SettleCheck {
+  name: string;
+  ok: boolean;
+  value: string | null;
+  target: string;
+}
+
+export interface SettleStatus {
+  settled: boolean;
+  checks: SettleCheck[];
+  waited_seconds: number;
+  gave_up: boolean;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -260,6 +276,7 @@ export const api = {
   health: (signal?: AbortSignal) => call<{ ok: boolean }>("GET", "/health", undefined, signal),
   status: () => call<Status>("GET", "/status"),
   options: () => call<Options>("GET", "/options"),
+  settle: () => call<SettleStatus>("GET", "/settle"),
   start: (body: NewExercise) => call<ActiveView>("POST", "/exercises", body),
   exercise: () => call<ActiveView>("GET", "/exercise"),
   hint: (key: string) => call<ActiveView>("POST", "/exercise/hint", { key }),

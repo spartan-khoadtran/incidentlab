@@ -162,7 +162,7 @@ export function ExerciseTab() {
   }
 
   const toolbox = view.mode === "toolbox";
-  const range = exerciseRange(view.started_at);
+  const range = exerciseRange(view.started_at, view.baseline_from);
 
   if (reveal) {
     return (

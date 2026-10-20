@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Confirm, ErrorNote } from "../../components/LabUi";
 import { api, ApiError, type ActiveView, type NewExercise, type Options } from "../../lib/api";
 import { lab } from "../../lib/data";
+import { useSettledStart } from "../../lib/settle";
+import { SettleCard } from "../../components/SettleCard";
 
 export function StartForm({ options, openMode, onStarted }: { options: Options | null; openMode: string | null; onStarted: (view: ActiveView) => void }) {
   const [mode, setMode] = useState<"incident" | "toolbox">("incident");
@@ -16,6 +18,12 @@ export function StartForm({ options, openMode, onStarted }: { options: Options |
   const topics = (options?.topics ?? lab.topics).filter((t) => lab.scenarios.some((s) => s.topics.includes(t)));
   const ids = lab.scenarios.filter((s) => (mode === "toolbox" ? s.toolbox : true)).map((s) => s.id);
 
+  const failed = useCallback((e: unknown) => {
+    if (e instanceof ApiError && e.code === "exercise_open") setConfirm(true);
+    else setError(e);
+  }, []);
+  const { run, waiting, cancel } = useSettledStart(onStarted, failed);
+
   const start = async (force: boolean) => {
     setBusy(true);
     setError(null);
@@ -25,16 +33,15 @@ export function StartForm({ options, openMode, onStarted }: { options: Options |
     if (id.trim()) body.id = id.trim();
     if (force) body.force = true;
     try {
-      onStarted(await api.start(body));
-    } catch (e) {
-      if (e instanceof ApiError && e.code === "exercise_open") setConfirm(true);
-      else setError(e);
+      await run(() => api.start(body));
     } finally {
       setBusy(false);
     }
   };
 
   const command = ["make", mode === "toolbox" ? "toolbox" : "new", level && `LEVEL=${level}`, topic && `TOPIC=${topic}`, id.trim() && `ID=${id.trim()}`].filter(Boolean).join(" ");
+
+  if (waiting) return <SettleCard status={waiting} onCancel={cancel} />;
 
   return (
     <form
