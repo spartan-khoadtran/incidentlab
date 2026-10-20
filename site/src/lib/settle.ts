@@ -2,6 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type SettleStatus } from "./api";
 
 export const SETTLE_POLL_MS = 3000;
+const MAX_POLL_FAILURES = 3;
+
+/** The lab not answering or a 5xx can pass, so the wait goes on. A 4xx will not change by asking again. */
+function passing(e: unknown): boolean {
+  return e instanceof ApiError && (e.code === "offline" || e.status === 0 || e.status >= 500);
+}
 
 /**
  * Runs a start. While the lab answers 409 lab_settling, it holds the status, polls the gate and runs
@@ -53,17 +59,19 @@ export function useSettledStart<T>(onStarted: (value: T) => void, onError: (e: u
           if (!retry) onWaiting?.();
           setWaiting((e.body.settle as SettleStatus | undefined) ?? null);
         }
-        for (;;) {
+        for (let failures = 0; ; ) {
           await pause();
           if (!live()) return;
           let status: SettleStatus;
           try {
             status = await api.settle();
+            failures = 0;
           } catch (e) {
-            if (live()) {
-              stop();
-              onError(e);
-            }
+            if (!live()) return;
+            failures += 1;
+            if (passing(e) && failures < MAX_POLL_FAILURES) continue;
+            stop();
+            onError(e);
             return;
           }
           if (!live()) return;
