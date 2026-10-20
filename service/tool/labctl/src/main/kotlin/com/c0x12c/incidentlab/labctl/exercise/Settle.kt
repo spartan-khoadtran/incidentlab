@@ -3,6 +3,7 @@ package com.c0x12c.incidentlab.labctl.exercise
 import com.c0x12c.incidentlab.labctl.Terminal
 import com.c0x12c.incidentlab.labctl.control.LabProbe
 import com.c0x12c.incidentlab.labctl.state.LabState
+import com.c0x12c.incidentlab.labctl.state.NormalWindow
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import java.util.concurrent.Executors
 import kotlin.math.max
@@ -28,9 +29,19 @@ data class SettleStatus(
 )
 
 /**
+ * What a start keeps from the gate: where its clean baseline begins, the checks still off, and the
+ * new [normal] for the next start, or null to keep the one before.
+ */
+data class SettleMark(
+  val cleanFrom: Double?,
+  val unsettled: List<String>,
+  val normal: NormalWindow?
+)
+
+/**
  * Reads whether the lab is back to normal after the last exercise. A start waits for it, so the
- * next exercise's baseline holds no part of the fault before. "Normal" means what the lab looked
- * like in the 5 minutes before the last exercise started, and it must hold for a whole window.
+ * next exercise's baseline holds no part of the fault before. "Normal" is [LabState.normal], the
+ * clean stretch before the last settled start, and it must hold for a whole window.
  */
 class SettleGate(
   private val probe: LabProbe,
@@ -57,7 +68,7 @@ class SettleGate(
   fun status(state: LabState): SettleStatus {
     val at = now()
     val waited = state.lastEnded?.let { at - it }
-    val reference = state.lastStarted
+    val reference = state.normal
     val readings = parallel(values) { read(it, reference) }
     val uptime = probe.instantQuery(UPTIME)
     val checks = listOfNotNull(
@@ -83,19 +94,32 @@ class SettleGate(
   fun refusal(state: LabState): Refusal? = status(state).takeUnless { it.settled || it.gaveUp }?.let { Refusal.LabSettling(it) }
 
   /**
+   * What a start at [at] keeps. Only a settled start moves normal: a baseline that still held the
+   * fault would raise the limits, and the next start would pass with the same fault.
+   */
+  fun mark(state: LabState, at: Double): SettleMark {
+    val unsettled = status(state).checks.filterNot { it.ok }.map { it.name }
+    val clean = cleanSince(state, at)
+    val normal = clean?.takeIf { unsettled.isEmpty() }
+      ?.let { NormalWindow(max(it, at - NORMAL_SECONDS), at) }
+      ?.takeIf { it.to - it.from >= MIN_NORMAL_SECONDS }
+    return SettleMark(clean, unsettled, normal)
+  }
+
+  /**
    * Where a clean baseline starts for an exercise starting at [at]: just after the last moment a value
    * was off its normal, and never before the last exercise ended.
    */
   fun cleanSince(state: LabState, at: Double): Double? {
     val ended = state.lastEnded ?: return null
     val lastBad = parallel(values) { check ->
-      val limit = check.limit(state.lastStarted?.let { probe.instantQuery(normal(check.expr, it)) }) ?: return@parallel null
+      val limit = check.limit(state.normal?.let { probe.instantQuery(normal(check.expr, it)) }) ?: return@parallel null
       probe.rangeQuery(check.expr, ended, at, STEP_SECONDS)?.lastOrNull { if (check.strict) it.value >= limit else it.value > limit }?.at
     }.filterNotNull().maxOrNull()
     return max(ended, lastBad?.let { it + STEP_SECONDS } ?: ended).coerceAtMost(at)
   }
 
-  private fun read(check: ValueCheck, reference: Double?): Reading {
+  private fun read(check: ValueCheck, reference: NormalWindow?): Reading {
     val (worst, normal, current, past) = parallel(
       listOf(
         "max_over_time((${check.expr})[${WINDOW_SECONDS.toInt()}s:${STEP_SECONDS.toInt()}s])",
@@ -107,7 +131,7 @@ class SettleGate(
     return Reading(check, worst, normal, current, past)
   }
 
-  private fun normal(expr: String, startedAt: Double): String = "avg_over_time(($expr)[${NORMAL_SECONDS.toInt()}s:${STEP_SECONDS.toInt()}s] @ ${startedAt.toLong()})"
+  private fun normal(expr: String, window: NormalWindow): String = "avg_over_time(($expr)[${(window.to - window.from).toLong()}s:${STEP_SECONDS.toInt()}s] @ ${window.to.toLong()})"
 
   private fun <T, R> parallel(items: List<T>, work: (T) -> R): List<R> =
     Executors.newVirtualThreadPerTaskExecutor().use { pool -> items.map { item -> pool.submit<R> { work(item) } }.map { it.get() } }
@@ -123,6 +147,7 @@ class SettleGate(
     const val UPTIME_SECONDS = 120.0
     const val WINDOW_SECONDS = 120.0
     const val NORMAL_SECONDS = 300.0
+    const val MIN_NORMAL_SECONDS = 60.0
     const val STEP_SECONDS = 15.0
     const val PROGRESS_SECONDS = 120.0
     const val LAG_SECONDS = 5.0

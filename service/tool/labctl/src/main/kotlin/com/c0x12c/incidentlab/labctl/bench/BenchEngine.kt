@@ -58,7 +58,7 @@ class BenchEngine(
     if (store.load().active != null) return Refused(Refusal.ExerciseOpen)
     if (gate != null && settle) gate.refusal(store.load())?.let { return Refused(it) }
     val startedAt = now()
-    val clean = gate?.cleanSince(store.load(), startedAt)
+    val mark = gate?.mark(store.load(), startedAt)
     val active = store.withLock { state, write ->
       if (state.active != null) return@withLock null
       ActiveExercise(
@@ -68,8 +68,8 @@ class BenchEngine(
         started = startedAt,
         n = state.history.size + 1,
         key = ActiveExercise.newKey(),
-        baselineFrom = ExerciseEngine.baselineFrom(startedAt, clean ?: state.lastEnded)
-      ).also { write(state.copy(active = it, lastStarted = startedAt)) }
+        baselineFrom = ExerciseEngine.baselineFrom(startedAt, mark?.cleanFrom ?: state.lastEnded)
+      ).also { write(state.copy(active = it, normal = mark?.normal ?: state.normal)) }
     } ?: return Refused(Refusal.ExerciseOpen)
     val marks = listOf("bench: $clients closed-loop clients" to startedAt, "bench over: open load again" to startedAt + seconds)
     ScheduledAnnotations.write(store, annotator, active.key, listOf(TAG), marks, now)

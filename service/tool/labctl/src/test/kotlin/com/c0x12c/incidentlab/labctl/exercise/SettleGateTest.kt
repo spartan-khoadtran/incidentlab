@@ -1,6 +1,7 @@
 package com.c0x12c.incidentlab.labctl.exercise
 
 import assertk.assertThat
+import assertk.assertions.contains
 import assertk.assertions.isEqualTo
 import assertk.assertions.isFalse
 import assertk.assertions.isNull
@@ -16,6 +17,7 @@ import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.RSS
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.UPTIME
 import com.c0x12c.incidentlab.labctl.exercise.SettleGate.Companion.WAITING
 import com.c0x12c.incidentlab.labctl.state.LabState
+import com.c0x12c.incidentlab.labctl.state.NormalWindow
 import org.junit.jupiter.api.Test
 
 class SettleGateTest {
@@ -28,7 +30,8 @@ class SettleGateTest {
     return SettleGate(FakePrometheus { expr, _ -> if (expr == UPTIME) uptime else values.answer(expr) }.withRange(values)) { now }
   }
 
-  private fun state(endedAgo: Double?, startedAgo: Double? = 600.0) = LabState(lastEnded = endedAgo?.let { now - it }, lastStarted = startedAgo?.let { now - it })
+  private fun state(endedAgo: Double?, startedAgo: Double? = 600.0) =
+    LabState(lastEnded = endedAgo?.let { now - it }, normal = startedAgo?.let { NormalWindow(now - it - SettleGate.NORMAL_SECONDS, now - it) })
 
   private fun failing(status: SettleStatus): List<String> = status.checks.filterNot { it.ok }.map { it.name }
 
@@ -85,5 +88,32 @@ class SettleGateTest {
     assertThat(gate.cleanSince(state(150.0), now)).isEqualTo(now - 140 + SettleGate.STEP_SECONDS)
     assertThat(gate().cleanSince(state(150.0), now)).isEqualTo(now - 150)
     assertThat(gate.cleanSince(state(null), now)).isNull()
+  }
+
+  @Test
+  fun `normal is read over the clean window before the last settled start, not over the minutes before it`() {
+    val prometheus = FakePrometheus { expr, _ -> if (expr == UPTIME) 600.0 else SettleValues(worst = { normal[it] }, normal = { normal[it] }).answer(expr) }
+    SettleGate(prometheus) { now }.status(LabState(lastEnded = now - 150, normal = NormalWindow(now - 900, now - 700)))
+
+    assertThat(prometheus.queries).contains("avg_over_time(($P99)[200s:15s] @ ${(now - 700).toLong()})")
+  }
+
+  @Test
+  fun `a settled start moves normal to its clean stretch, at most 5 minutes long`() {
+    val bad = listOf(Sample(now - 140, 0.9))
+    val values = SettleValues(worst = { normal[it] }, normal = { normal[it] }, range = { if (it == P99) bad else emptyList() })
+    val gate = SettleGate(FakePrometheus { expr, _ -> if (expr == UPTIME) 600.0 else values.answer(expr) }.withRange(values)) { now }
+
+    assertThat(gate.mark(state(150.0), now)).isEqualTo(SettleMark(now - 125, emptyList(), NormalWindow(now - 125, now)))
+    assertThat(gate().mark(state(900.0), now).normal).isEqualTo(NormalWindow(now - SettleGate.NORMAL_SECONDS, now))
+  }
+
+  @Test
+  fun `a start that did not settle keeps the normal before, so a fault never becomes normal`() {
+    val unsettled = gate(normal + (P99 to 2.5)).mark(state(400.0), now)
+
+    assertThat(unsettled.unsettled).isEqualTo(listOf("User p99"))
+    assertThat(unsettled.normal).isNull()
+    assertThat(gate().mark(state(null), now).normal).isNull()
   }
 }

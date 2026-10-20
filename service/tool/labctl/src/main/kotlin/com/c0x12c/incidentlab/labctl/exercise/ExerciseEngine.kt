@@ -98,11 +98,10 @@ class ExerciseEngine(
       }
       gate.refusal(state)?.let { return Refused(it) }
     }
-    val unsettled = gate?.status(state)?.checks.orEmpty().filterNot { it.ok }.map { it.name }
     val context = ExerciseContext(cpuCount = probe.cpuCount(), productDetailSeconds = probe.productDetailSeconds(), tenants = probe.tenants())
     val params = scenario.params(random, context)
     val startedAt = now()
-    val clean = gate?.cleanSince(state, startedAt)
+    val mark = gate?.mark(state, startedAt)
     val active = store.withLock { current, write ->
       if (current.active != null && !options.force) return@withLock null
       val ended = if (current.active != null) startedAt else current.lastEnded
@@ -113,10 +112,11 @@ class ExerciseEngine(
         started = startedAt,
         n = current.history.size + 1,
         key = ActiveExercise.newKey(),
-        baselineFrom = baselineFrom(startedAt, if (current.active != null) ended else clean ?: ended),
-        unsettled = unsettled
+        baselineFrom = baselineFrom(startedAt, if (current.active != null) ended else mark?.cleanFrom ?: ended),
+        unsettled = mark?.unsettled.orEmpty()
       )
-      write(current.queueFutureMarks(current.active, startedAt).copy(active = opened, lastEnded = ended, lastStarted = startedAt))
+      val normal = mark?.normal.takeIf { current.active == null } ?: current.normal
+      write(current.queueFutureMarks(current.active, startedAt).copy(active = opened, lastEnded = ended, normal = normal))
       opened
     } ?: return Refused(Refusal.ExerciseOpen)
     val room = (startedAt - (active.baselineFrom ?: startedAt)).toInt()

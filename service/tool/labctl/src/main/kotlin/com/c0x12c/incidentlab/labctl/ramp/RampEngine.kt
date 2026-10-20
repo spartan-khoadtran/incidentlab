@@ -114,7 +114,7 @@ class RampEngine(
     check()?.let { return Refused(it) }
     if (gate != null && settle) gate.refusal(store.load())?.let { return Refused(it) }
     val startedAt = now()
-    val clean = gate?.cleanSince(store.load(), startedAt)
+    val mark = gate?.mark(store.load(), startedAt)
     val opened = store.withLock<Outcome<ActiveExercise>> { state, write ->
       val multiplier = ExerciseEngine.loadMultiplier(state)
       when {
@@ -128,9 +128,9 @@ class RampEngine(
             started = startedAt,
             n = state.history.size + 1,
             key = ActiveExercise.newKey(),
-            baselineFrom = ExerciseEngine.baselineFrom(startedAt, clean ?: state.lastEnded)
+            baselineFrom = ExerciseEngine.baselineFrom(startedAt, mark?.cleanFrom ?: state.lastEnded)
           )
-          write(state.copy(active = active, lastStarted = startedAt))
+          write(state.copy(active = active, normal = mark?.normal ?: state.normal))
           Done(active)
         }
       }

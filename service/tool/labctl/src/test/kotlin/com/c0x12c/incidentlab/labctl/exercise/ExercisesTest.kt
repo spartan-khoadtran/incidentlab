@@ -23,6 +23,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Params
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
 import com.c0x12c.incidentlab.labctl.state.ActiveExercise
 import com.c0x12c.incidentlab.labctl.state.LabState
+import com.c0x12c.incidentlab.labctl.state.NormalWindow
 import com.c0x12c.incidentlab.labctl.state.PlannedAnnotation
 import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.c0x12c.incidentlab.labctl.state.StateStore
@@ -100,6 +101,21 @@ class ExercisesTest {
     assertThat(terminal.lines).contains("  still settling: Kafka lag 30 s (want at most 5 s for 120 s)")
     assertThat(terminal.lines).contains("The lab is back to normal.")
     assertThat(store.load().active?.id).isEqualTo("pool_hold")
+    assertThat(store.load().normal).isEqualTo(NormalWindow(NOW - 120, NOW))
+  }
+
+  @Test
+  fun `a start that skips the gate while the lab is off keeps the old normal`(@TempDir dir: Path) {
+    val store = StateStore(dir.resolve("state.json"))
+    val before = NormalWindow(NOW - 1000, NOW - 700)
+    store.save(LabState(lastEnded = NOW - 400, normal = before))
+    val probe = settleProbe { 30.0 }
+    val exercises = Exercises(store, probe, annotator, ScriptedTerminal(ArrayDeque()), random = Random(1), now = { NOW }, gate = SettleGate(probe) { NOW })
+
+    assertThat(exercises.newExercise(NewOptions(id = "pool_hold", settle = false))).isEqualTo(0)
+
+    assertThat(store.load().active?.unsettled).isEqualTo(listOf("Kafka lag"))
+    assertThat(store.load().normal).isEqualTo(before)
   }
 
   @Test

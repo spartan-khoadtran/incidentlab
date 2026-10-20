@@ -80,9 +80,12 @@ data class LabState(
   val pendingAnnotationDeletes: List<PlannedAnnotation> = emptyList(),
   /** Epoch seconds when the last exercise of any mode ended. The settle gate and the next baseline start from it. */
   val lastEnded: Double? = null,
-  /** Epoch seconds when the last exercise of any mode started. The minutes before it are what normal looks like. */
-  val lastStarted: Double? = null
+  /** What normal looks like: the clean stretch before the last start that waited for the lab to settle. */
+  val normal: NormalWindow? = null
 )
+
+/** A stretch of time in epoch seconds, read with the PromQL `@` modifier. */
+data class NormalWindow(val from: Double, val to: Double)
 
 /**
  * The state of a fresh lab: no exercise, the default load, only the history kept. The pending
