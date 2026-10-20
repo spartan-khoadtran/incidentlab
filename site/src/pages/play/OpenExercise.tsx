@@ -12,7 +12,7 @@ export function TicketCard({ view }: { view: ActiveView }) {
   return (
     <article className="ticket" aria-labelledby="ticket-title">
       <header className="ticket-head">
-        <p id="ticket-title" className="ticket-id">
+        <p id="ticket-title" className="ticket-id" tabIndex={-1}>
           Ticket #{view.n}
         </p>
         <dl className="ticket-meta">
@@ -105,9 +105,14 @@ export function ExplorePanel({ view, status }: { view: ActiveView; status: Statu
           Investigate
         </button>
       </h2>
+      {view.unsettled?.length ? (
+        <p className="small settle-warning">
+          The lab was not fully back to normal ({view.unsettled.join(", ")}), so the time before the ticket may hold part of the last exercise.
+        </p>
+      ) : null}
       {open ? (
         <>
-          <p className="small muted">From the end of the last exercise, or 15 minutes before the ticket, to now. So the baseline is on the chart, with no part of the exercise before.</p>
+          <p className="small muted">From 15 minutes before the ticket, or from the end of the last exercise if that is later, to now.</p>
           <ul className="explore-links">
             {links
               .filter((l) => l.href)
