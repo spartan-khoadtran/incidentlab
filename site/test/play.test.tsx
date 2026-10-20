@@ -287,6 +287,25 @@ describe("Play", () => {
     expect(section.querySelector(".is-wrong-pick")).toBeNull();
   });
 
+  it("shows the picks and the rule-outs again after a reload of an answered exercise", async () => {
+    state.lab.handle("POST", "/api/exercises", JSON_POST, {});
+    state.lab.handle("POST", "/api/exercise/answer", JSON_POST, { ...ANSWER, signal: "mock_rate", cause: "mock_cpu" });
+    renderPlay();
+
+    expect(await screen.findByLabelText("Score 2 out of 5")).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "You said" })).toBeTruthy();
+    const signalRow = screen.getByRole("rowheader", { name: "Signal" }).closest("tr")!;
+    expect(within(signalRow).getByText("Mock signal: rate by route")).toBeTruthy();
+    const causeRow = screen.getByRole("rowheader", { name: "Cause" }).closest("tr")!;
+    expect(within(causeRow).getByText("Mock cause: one hot core")).toBeTruthy();
+
+    const section = screen.getByRole("region", { name: "Rule out the look-alikes" });
+    expect(within(section).getAllByRole("listitem")).toHaveLength(MOCK_REVEAL.rule_outs.length);
+    const cpu = within(section).getAllByRole("listitem")[2];
+    expect(within(cpu).getByText("Your pick")).toBeTruthy();
+    expect(cpu.classList.contains("is-wrong-pick")).toBe(true);
+  });
+
   it("shows the rule-outs after a reveal, with no pick to mark", async () => {
     const user = userEvent.setup();
     state.lab.handle("POST", "/api/exercises", JSON_POST, {});

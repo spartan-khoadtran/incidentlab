@@ -200,7 +200,8 @@ export class MockLab {
         const missed = keys.filter((k) => verdicts[k] !== "correct");
         this.history.push({ n: active.n, id: MOCK_REVEAL.id, title: MOCK_REVEAL.title, level: 2, mode: active.mode, score, hints: active.hints_used, minutes: 4.2, at: Date.now() / 1000, missed, note: String(body.note ?? "") });
         active.answered = true;
-        active.result = { n: active.n, score, raw, max: 5, hints_used: active.hints_used, verdicts, missed, reveal: MOCK_REVEAL };
+        const choices = { nature: String(body.nature), location: String(body.location), signal: String(body.signal), cause: String(body.cause) };
+        active.result = { n: active.n, score, raw, max: 5, hints_used: active.hints_used, verdicts, missed, reveal: MOCK_REVEAL, choices };
         return { status: 200, body: active.result };
       }
       case route === "POST /exercise/reveal": {

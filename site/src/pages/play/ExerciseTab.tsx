@@ -32,14 +32,16 @@ export function ExerciseTab() {
   const load = useCallback(async () => {
     try {
       const v = await api.exercise();
+      const r = v.result && "verdicts" in v.result && v.result.verdicts && "nature" in v.result.verdicts ? (v.result as Result) : null;
       if (shown.current !== v.key) {
         setChoices(null);
         setStarting(false);
       }
+      if (r?.choices) setChoices(r.choices);
       shown.current = v.key;
       setView(v);
       setReveal(v.reveal ?? null);
-      setResult(v.result && "verdicts" in v.result && v.result.verdicts && "nature" in v.result.verdicts ? (v.result as Result) : null);
+      setResult(r);
       setError(null);
       setHintError(null);
     } catch (e) {
@@ -204,7 +206,7 @@ export function ExerciseTab() {
             onSubmit={(c, note) =>
               act("answer", async () => {
                 const r = await api.answer(view.key, { ...c, ...(note ? { note } : {}) });
-                setChoices(c);
+                setChoices(r.choices ?? c);
                 setResult(r);
                 setReveal(r.reveal);
                 setView({ ...view, answered: true });
