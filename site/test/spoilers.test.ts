@@ -38,6 +38,14 @@ describe("no spoilers", () => {
     expect(forbidden).not.toContain("n_plus_one");
   });
 
+  it("reads the rule-out checks from Answers.kt and forbids the long ones", () => {
+    const { ruleOuts } = readAnswers(repoFile(ANSWERS_KT));
+    expect(ruleOuts.length).toBeGreaterThan(30);
+    const long = ruleOuts.map(([, text]) => text).filter((t) => t.length >= 40 && !docsText.includes(t));
+    expect(long.length).toBeGreaterThan(30);
+    for (const text of long) expect(forbidden).toContain(text);
+  });
+
   it("finds a key as a whole word only", () => {
     expect(findLeaks("cause: pool_exhausted.", ["pool_exhausted"])).toEqual(["pool_exhausted"]);
     expect(findLeaks("db_pool_exhausted_total", ["pool_exhausted"])).toEqual([]);
