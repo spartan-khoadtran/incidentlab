@@ -57,6 +57,7 @@ class Exercises(
       is Refused -> return refused(outcome.refusal)
     }
     banner("EXERCISE #${view.n}  ·  level ${view.level}  ·  ticket opened at ${hhmm(view.startedAt)}")
+    if (view.unsettled.isNotEmpty()) terminal.out("Note: the lab was not fully back to normal (${view.unsettled.joinToString(", ")}), so the time before the ticket may hold part of the last exercise.")
     terminal.out(view.ticket)
     terminal.out()
     terminal.out("The fault is now being applied to the system. Wait 1-2 minutes for the numbers to show, then start investigating.")

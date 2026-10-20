@@ -21,7 +21,9 @@ data class ActiveExercise(
   /** Annotations written ahead of time, so an early end can delete the ones still in the future. */
   val annotations: List<PlannedAnnotation> = emptyList(),
   /** Epoch seconds where a clean baseline starts: 15 minutes before the start, or the end of the exercise before, whichever is later. */
-  val baselineFrom: Double? = null
+  val baselineFrom: Double? = null,
+  /** The settle checks still off when it started: the gate gave up, or the start skipped it. */
+  val unsettled: List<String> = emptyList()
 ) {
   companion object {
     fun newKey(): String = UUID.randomUUID().toString()

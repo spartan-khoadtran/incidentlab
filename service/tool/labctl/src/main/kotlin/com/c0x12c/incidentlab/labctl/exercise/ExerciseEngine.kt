@@ -98,6 +98,7 @@ class ExerciseEngine(
       }
       gate.refusal(state)?.let { return Refused(it) }
     }
+    val unsettled = gate?.status(state)?.checks.orEmpty().filterNot { it.ok }.map { it.name }
     val context = ExerciseContext(cpuCount = probe.cpuCount(), productDetailSeconds = probe.productDetailSeconds(), tenants = probe.tenants())
     val params = scenario.params(random, context)
     val startedAt = now()
@@ -112,7 +113,8 @@ class ExerciseEngine(
         started = startedAt,
         n = current.history.size + 1,
         key = ActiveExercise.newKey(),
-        baselineFrom = baselineFrom(startedAt, if (current.active != null) ended else clean ?: ended)
+        baselineFrom = baselineFrom(startedAt, if (current.active != null) ended else clean ?: ended),
+        unsettled = unsettled
       )
       write(current.queueFutureMarks(current.active, startedAt).copy(active = opened, lastEnded = ended, lastStarted = startedAt))
       opened
@@ -395,7 +397,8 @@ class ExerciseEngine(
       answered = active.answered,
       rules = if (active.mode == TOOLBOX) TOOLBOX_RULES else null,
       options = options(active, scenario),
-      baselineFrom = active.baselineFrom ?: (active.started - BASELINE_SECONDS)
+      baselineFrom = active.baselineFrom ?: (active.started - BASELINE_SECONDS),
+      unsettled = active.unsettled
     )
 
   private fun options(active: ActiveExercise, scenario: Scenario): AnswerOptions = offer(scenario.symptom(rendered(active)))
