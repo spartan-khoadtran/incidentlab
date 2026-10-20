@@ -2,10 +2,14 @@ package com.c0x12c.incidentlab.dashboards
 
 import assertk.assertThat
 import assertk.assertions.isEmpty
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.path.extension
 import kotlin.io.path.invariantSeparatorsPathString
+import kotlin.io.path.name
 import kotlin.io.path.readText
 import org.junit.jupiter.api.Test
 
@@ -65,21 +69,36 @@ class DashboardPointersTest {
 
   private fun sources(): List<Path> {
     val docs = Files.list(root.resolve("docs")).use { files -> files.filter { it.extension == "md" }.toList() }
-    val code = listOf("service", "site/src").flatMap { dir ->
-      Files.walk(root.resolve(dir)).use { files ->
-        files.filter { path ->
-          val p = path.invariantSeparatorsPathString
-          path.extension in setOf("kt", "ts", "tsx") && "/src/test/" !in p && "/build/" !in p && "/generated/" !in p && "/node_modules/" !in p
-        }.toList()
-      }
-    }
+    val code = listOf("service", "site/src").flatMap { sourceFiles(root.resolve(it)) }
     return docs + code + listOf(root.resolve("README.md"), root.resolve("CLAUDE.md"))
+  }
+
+  /** Never enters build output, so a compile running at the same time cannot delete a file under the walk. */
+  private fun sourceFiles(dir: Path): List<Path> {
+    val found = mutableListOf<Path>()
+    Files.walkFileTree(
+      dir,
+      object : SimpleFileVisitor<Path>() {
+        override fun preVisitDirectory(path: Path, attrs: BasicFileAttributes): FileVisitResult {
+          val skip = path != dir && (path.name in SKIPPED_DIRS || path.name.startsWith(".") || path.invariantSeparatorsPathString.endsWith("/src/test"))
+          return if (skip) FileVisitResult.SKIP_SUBTREE else FileVisitResult.CONTINUE
+        }
+
+        override fun visitFile(path: Path, attrs: BasicFileAttributes): FileVisitResult {
+          if (path.extension in SOURCE_EXTENSIONS) found.add(path)
+          return FileVisitResult.CONTINUE
+        }
+      }
+    )
+    return found
   }
 
   private companion object {
     const val BOARD = 1
     const val ROW = 2
     const val LINE_PREVIEW = 120
+    val SKIPPED_DIRS = setOf("build", "generated", "node_modules")
+    val SOURCE_EXTENSIONS = setOf("kt", "ts", "tsx")
     val NUMBERED = Regex("[Dd]ashboard (\\d{2}), [Rr]ow (\\d+)")
     val TITLED = Regex("[Rr]ow (\\d+) of `(\\d{2}) · [^`]+`")
     val TITLE_THEN_ROW = Regex("`(\\d{2}) · [^`]+`, [Rr]ow (\\d+)")
