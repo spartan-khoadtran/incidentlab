@@ -125,6 +125,8 @@ make down      # stop and remove everything
 
 `make` with no target lists every command.
 
+`make new` waits until the lab is back to normal after the last exercise (Kafka drained, no restarts, a steady p99), so each exercise starts from a clean baseline. `make new SETTLE=0` skips the wait. The Play page waits the same way and starts by itself.
+
 Every `make up` starts a fresh lab. It ends any exercise still running, sets the load back to 1, and starts Postgres, Prometheus, Tempo and Pyroscope empty. Your exercise history stays. `make up CLEAN=1` wipes the history too.
 
 ### The handbook

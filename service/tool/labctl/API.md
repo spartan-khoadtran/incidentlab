@@ -50,7 +50,9 @@ ActiveView = {
   hints: [string],                 // the hints already taken, in order
   answered: bool,
   rules: string|null,              // the toolbox rules in toolbox mode
-  options?: AnswerOptions          // incident and toolbox only, left out for a ramp or a bench
+  options?: AnswerOptions,         // incident and toolbox only, left out for a ramp or a bench
+  baseline_from: number            // epoch seconds where the charts should start: 15 minutes before
+                                   // the start, or the end of the exercise before, whichever is later
 }
 AnswerOptions = {
   natures: [Option], locations: [Option],   // always every key
@@ -98,13 +100,14 @@ An example, with the lists cut short:
 
 - `GET /api/health` -> `{ ok: true }`
 - `GET /api/status` -> `{ services: { api: null|"<error>", pricing, worker, loadgen, noisy, pgobserver }, active: ActiveView|null, load_multiplier: number, base_rps: number, links: { grafana, prometheus, pyroscope } }`. A service is `null` when it answers. `active` is null for a stale exercise too.
+- `GET /api/settle` -> `{ settled: bool, checks: [{ name, ok: bool, value: string|null, target }], waited_seconds: number, gave_up: bool }`: whether a new exercise may start. The settle gate waits until the lab is back to normal after the last exercise: at least 60 s since it ended, every JVM service up for 120 s, Kafka lag under 5 s, user errors under 1%, a steady user p99 (within 30% of the minute before, or under 0.2 s), almost no requests waiting inside api, and no memory a fault kept. A check Prometheus cannot answer counts as ok. `gave_up` turns true after 5 minutes of waiting, and a start then goes ahead. `labctl api` (no daemon) is always settled.
 - `GET /api/options` -> `{ levels: [int], topics: [string], modes: ["incident", "toolbox"] }`: what `POST /api/exercises` takes. The answer options are not here: each open exercise has its own in `options`.
 - `POST /api/load` body `{ multiplier: number }` (0.1 to 6) -> `{ multiplier, rps }`. 400 `bad_multiplier` outside the range. 409 `ramp_running` (with `seconds_left`) while a ramp step runs, because the ramp holds the load at 1 until its last step ends.
 - `GET /api/history` -> `{ entries: [HistoryEntry], average: number|null, scored_count: int, by_topic: [{ topic, average, count }], most_missed_cause: { key, label, group, count }|null, ramp_average: number|null, ramp_count: int }`. `average`, `scored_count`, `by_topic` and `most_missed_cause` count scored incident and toolbox entries only. A ramp is scored on other questions, so `ramp_average` and `ramp_count` count scored ramps on their own. `by_topic` lists the weakest topic first.
 
 ### Incident and toolbox
 
-- `POST /api/exercises` body `{ mode?: "incident"|"toolbox", level?: int, topic?: string, id?: string, force?: bool }` -> 201 `ActiveView`. 409 `exercise_open` when one is open and `force` is not true. 400 for a bad mode, level, topic or id. 400 `no_cli` for an id without CLI proof in toolbox mode. 400 `no_match` when no scenario fits the level, topic and mode. 409 `unsupported` (with `missing`, the container settings keys) when the controller cannot apply what the scenario needs. No docker socket is one example. A random pick skips such scenarios, and gives this error only when none is left. 409 `load_not_one` when the load multiplier is not 1 and the id is a scenario tuned for the default load. A random pick skips those, and gives `load_not_one` when every match needs load 1. Writes the same Grafana annotations as `make new`.
+- `POST /api/exercises` body `{ mode?: "incident"|"toolbox", level?: int, topic?: string, id?: string, force?: bool }` -> 201 `ActiveView`. 409 `exercise_open` when one is open and `force` is not true. With `force`, the open exercise is cleared first. 409 `lab_settling` (with `settle`, the body of `GET /api/settle`) while the lab is still coming back from the last exercise: wait, then post again. The web polls `GET /api/settle` and posts again by itself. 400 for a bad mode, level, topic or id. 400 `no_cli` for an id without CLI proof in toolbox mode. 400 `no_match` when no scenario fits the level, topic and mode. 409 `unsupported` (with `missing`, the container settings keys) when the controller cannot apply what the scenario needs. No docker socket is one example. A random pick skips such scenarios, and gives this error only when none is left. 409 `load_not_one` when the load multiplier is not 1 and the id is a scenario tuned for the default load. A random pick skips those, and gives `load_not_one` when every match needs load 1. Writes the same Grafana annotations as `make new`.
 - `GET /api/exercise` -> the open exercise in any mode, so a page reload can rebuild itself: `ActiveView`, plus
   - `plan: { steps: [rps], every, total_seconds }` for a ramp, and `ends_at` (epoch seconds) for a bench, from the start;
   - `reveal: Reveal` once an incident is answered or revealed;
@@ -126,7 +129,7 @@ An example, with the lists cut short:
 ### Capacity ramp
 
 - `GET /api/ramp/options` -> `{ resources: [Option] }`: the resources the third question offers.
-- `POST /api/ramp` body `{ every?: int }` (30 to 300 s, default 60) -> 201 `ActiveView` (mode ramp) plus `plan: { steps: [rps], every, total_seconds }`. 409 `exercise_open`, or `load_not_one` when the load multiplier is not 1.
+- `POST /api/ramp` body `{ every?: int }` (30 to 300 s, default 60) -> 201 `ActiveView` (mode ramp) plus `plan: { steps: [rps], every, total_seconds }`. 409 `exercise_open`, `load_not_one` when the load multiplier is not 1, or `lab_settling` like `POST /api/exercises`.
 - `POST /api/ramp/answer` body `{ knee_rps: number, max_rps: number, resource: string, note?: string, key?: string }` -> `RampResult`. `knee_rps` is 0 when there was no knee. 409 `too_early` (with `seconds_left`) before the last step ends, `already_answered`, `exercise_changed`. 400 `missing_field` when a rate is missing, below 0 or not finite, or when `resource` is missing. 400 `unknown_key` for a resource. 503 `prometheus_down`. Keeps the history entry. Does not stop the ramp.
 - `POST /api/ramp/reveal` body `{ key?: string }` -> `RampResult` with `score`, `given` and `verdicts` null. 409 `exercise_changed`. The table is empty and `prometheus_down` is true when Prometheus does not answer.
 
@@ -142,7 +145,7 @@ RampResult = {
 
 ### Closed-loop bench
 
-- `POST /api/bench` body `{ clients?: int, seconds?: int }` (1 to 200 clients, 30 to 600 s) -> 201 `ActiveView` (mode bench) plus `ends_at`. 409 `exercise_open`.
+- `POST /api/bench` body `{ clients?: int, seconds?: int }` (1 to 200 clients, 30 to 600 s) -> 201 `ActiveView` (mode bench) plus `ends_at`. 409 `exercise_open`, or `lab_settling` like `POST /api/exercises`.
 - `GET /api/bench/report` -> `BenchReport` once the bench is over. It changes nothing. 425 `still_running` with `seconds_left`. 503 `prometheus_down`.
 - `POST /api/bench/report` body `{ key?: string }` -> the same `BenchReport`, and it closes the bench with a history entry, like `make answer`. 409 `exercise_changed`.
 
