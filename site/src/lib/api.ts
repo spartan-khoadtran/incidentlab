@@ -28,6 +28,8 @@ export interface ActiveView {
   hints: string[];
   answered: boolean;
   rules: string | null;
+  /** For an incident or a toolbox exercise: the only keys the answer takes. */
+  options?: AnswerOptions;
   /** From the start of a ramp. */
   plan?: RampPlan;
   /** From the start of a bench. */
@@ -36,6 +38,14 @@ export interface ActiveView {
   reveal?: Reveal;
   /** Once it is answered: a Result for an incident, a RampResult for a ramp. */
   result?: Result | RampResult;
+}
+
+/** Drawn from what the ticket shows, so they say nothing the ticket did not. Causes come in layer order with a `group`. */
+export interface AnswerOptions {
+  natures: Option[];
+  locations: Option[];
+  signals: Option[];
+  causes: Option[];
 }
 
 export interface GuideRef {
@@ -54,6 +64,16 @@ export interface Reveal {
   evidence: string[];
   cli: string[];
   guide: GuideRef[];
+  /** Every offered cause, in the offered order, with the check that rules it in or out. An older daemon sends none. */
+  rule_outs?: RuleOut[];
+}
+
+export interface RuleOut {
+  cause: Option;
+  check: string;
+  correct: boolean;
+  /** One step before the root cause, worth 1 point. */
+  partial: boolean;
 }
 
 export interface Result {
@@ -65,6 +85,15 @@ export interface Result {
   verdicts: { nature: Verdict; location: Verdict; signal: Verdict; cause: Verdict };
   missed: string[];
   reveal: Reveal;
+  /** The keys the learner picked, also sent when an answered exercise is read again. */
+  choices?: Choices;
+}
+
+export interface Choices {
+  nature: string;
+  location: string;
+  signal: string;
+  cause: string;
 }
 
 export interface Status {
@@ -76,10 +105,6 @@ export interface Status {
 }
 
 export interface Options {
-  natures: Option[];
-  locations: Option[];
-  signals: Option[];
-  causes: Option[];
   levels: number[];
   topics: string[];
   modes: string[];
@@ -110,11 +135,7 @@ export interface History {
   ramp_count: number;
 }
 
-export interface Answer {
-  nature: string;
-  location: string;
-  signal: string;
-  cause: string;
+export interface Answer extends Choices {
   note?: string;
 }
 

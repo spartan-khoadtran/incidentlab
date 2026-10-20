@@ -6,6 +6,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Baseline.CHECKOUTS_PER_SECOND
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.PERCENT
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
+import com.c0x12c.incidentlab.labctl.scenario.Symptom
 import kotlin.math.roundToInt
 
 /** Faults on the disk under Postgres: an IOPS quota on its volume. */
@@ -27,6 +28,7 @@ internal object DiskScenarios {
       "Since ${p.startedAt}, /checkout p99 has climbed. The DBA sees Postgres sessions waiting on I/O. " +
         "The infra team says the disk is nearly idle and refuses to look further."
     },
+    symptom = { Symptom.SLOW_ONE_ROUTE },
     hints = listOf(
       "Both teams can be right. Compare what Postgres waits for with what the host disk does.",
       "Mean WAL sync time against host disk await: do they rise together?",

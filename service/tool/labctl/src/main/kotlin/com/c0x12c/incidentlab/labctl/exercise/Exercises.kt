@@ -79,15 +79,18 @@ class Exercises(
     val state = store.load()
     modeOf(state)?.let { return it.answer(state) }
     val submitted = "This exercise was already submitted. Use `make clear`, then `make new`."
-    val key = when (val outcome = engine.answerable()) {
+    val view = when (val outcome = engine.answerable()) {
       is Done -> outcome.value
       is Refused -> return refused(outcome.refusal, submitted)
     }
+    val key = view.key
+    val options = view.options ?: error("an incident always has options")
     terminal.out("Four questions. Type the number of your choice and press Enter. Ctrl-C quits without scoring.")
-    val nature = choose("1) What is the nature of the problem?", Answers.NATURES) ?: return inputClosed()
-    val location = choose("2) Where is the cause?", Answers.LOCATIONS) ?: return inputClosed()
-    val signal = choose("3) Which signal proves it?", Answers.SIGNALS) ?: return inputClosed()
-    val cause = choose("4) What is the root cause?", Answers.CAUSES, Answers.CAUSE_GROUPS) ?: return inputClosed()
+    terminal.out("The signals and causes on offer all fit what the ticket shows.")
+    val nature = choose("1) What is the nature of the problem?", options.natures) ?: return inputClosed()
+    val location = choose("2) Where is the cause?", options.locations) ?: return inputClosed()
+    val signal = choose("3) Which signal proves it?", options.signals) ?: return inputClosed()
+    val cause = choose("4) What is the root cause?", options.causes) ?: return inputClosed()
     val result = when (val outcome = engine.submit(Choices(nature, location, signal, cause), key = key)) {
       is Done -> outcome.value
       is Refused -> return refused(outcome.refusal, submitted)
@@ -99,7 +102,7 @@ class Exercises(
     terminal.out("  Location : ${result.verdicts.location}")
     terminal.out("  Signal   : ${result.verdicts.signal}")
     terminal.out("  Cause    : ${if (result.verdicts.cause == ExerciseEngine.PARTIAL) "partly correct" else result.verdicts.cause}")
-    explain(result.reveal)
+    explain(result.reveal, pick = cause)
     val note = terminal.ask("\nOne line for your future self: what evidence did you use? (Enter to skip) ")?.trim().orEmpty()
     engine.note(result.n, note)
     offerClear(key)
@@ -115,7 +118,7 @@ class Exercises(
       is Refused -> return refused(outcome.refusal)
     }
     banner("EXERCISE #${revealed.n}: ${revealed.reveal.title} (${if (revealed.wasAnswered) "already scored" else "not scored"})")
-    explain(revealed.reveal)
+    explain(revealed.reveal, pick = state.active?.choices?.cause)
     key?.let(::offerClear)
     return 0
   }
@@ -228,6 +231,7 @@ class Exercises(
       is Refusal.LoadNotOne -> "Background load is ${plain(refusal.multiplier)} x. This exercise is tuned for the default load, so run `make load X=1` first." to 1
       Refusal.AlreadyAnswered -> alreadyAnswered to 0
       Refusal.ExerciseChanged -> CHANGED to 1
+      is Refusal.UnknownKey -> "'${refusal.key}' is not a ${refusal.question} this exercise offers. Nothing was saved. Run `make answer` again." to 1
       is Refusal.RampRunning ->
         "A ramp is running. It holds the load at 1 until its last step ends, in ${refusal.secondsLeft} s. Set the load after that, or `make clear` to stop the ramp." to 1
       Refusal.NoHintsLeft -> "No hints left. Use `make answer` to submit or `make reveal` to see the answer." to 0
@@ -245,22 +249,22 @@ class Exercises(
 
   private fun stale(n: Int): String = "Exercise #$n was started by an older version of the lab and cannot be resumed. Use `make clear`, then `make new`."
 
-  private fun choose(title: String, options: List<Pair<String, String>>, groups: Map<String, String> = emptyMap()): String? {
+  private fun choose(title: String, options: List<Option>): String? {
     terminal.out()
     terminal.out(title)
     var group: String? = null
-    options.forEachIndexed { index, (key, label) ->
-      groups[key]?.takeIf { it != group }?.let {
+    options.forEachIndexed { index, option ->
+      option.group?.takeIf { it != group }?.let {
         group = it
         terminal.out("  -- $it")
       }
-      terminal.out("  ${(index + 1).toString().padStart(2)}. $label")
+      terminal.out("  ${(index + 1).toString().padStart(2)}. ${option.label}")
     }
     while (true) {
       val raw = terminal.ask("  Pick a number: ")?.trim() ?: return null
       val index = raw.toIntOrNull()
       if (index != null && index in 1..options.size) {
-        return options[index - 1].first
+        return options[index - 1].key
       }
       terminal.out("  Enter a number from 1 to ${options.size}.")
     }
@@ -272,7 +276,7 @@ class Exercises(
     return 1
   }
 
-  private fun explain(reveal: Reveal) {
+  private fun explain(reveal: Reveal, pick: String? = null) {
     terminal.out()
     terminal.out("ANSWER")
     terminal.out("  Nature   : ${reveal.answer.nature.joinToString(" / ") { it.label }}")
@@ -294,7 +298,25 @@ class Exercises(
       reveal.cli.forEach { terminal.out("  $ $it") }
       terminal.out()
     }
+    ruleOuts(reveal.ruleOuts, pick)
     terminal.out("Read again in ${GuideIndex.where(reveal.guide.joinToString("; ") { it.pointer })}")
+  }
+
+  private fun ruleOuts(ruleOuts: List<RuleOut>, pick: String?) {
+    if (ruleOuts.isEmpty()) return
+    terminal.out("RULE OUT THE LOOK-ALIKES (every cause you could pick, and how to check it)")
+    var group: String? = null
+    for (ruleOut in ruleOuts) {
+      ruleOut.cause.group?.takeIf { it != group }?.let {
+        group = it
+        terminal.out("  -- $it")
+      }
+      val tags = listOfNotNull(ROOT_CAUSE.takeIf { ruleOut.correct }, ONE_POINT.takeIf { ruleOut.partial }, YOUR_PICK.takeIf { ruleOut.cause.key == pick })
+      val mark = if (ruleOut.correct) "=>" else "  "
+      terminal.out("  $mark ${ruleOut.cause.label}" + if (tags.isEmpty()) "" else "  [${tags.joinToString(", ")}]")
+      terminal.out("       ${ruleOut.check}")
+    }
+    terminal.out()
   }
 
   /** Offers to end the exercise named [key]. Only that one: another exercise opened meanwhile keeps running. */
@@ -348,6 +370,9 @@ class Exercises(
     private const val SECONDS_PER_MINUTE = 60.0
     private val DAY_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM HH:mm")
     private const val TOOLBOX_TAG = "[toolbox]"
+    private const val ROOT_CAUSE = "root cause"
+    private const val ONE_POINT = "1 point"
+    private const val YOUR_PICK = "your pick"
     const val CHANGED = "The exercise changed while you answered: it was cleared, or another one started. Nothing was saved. `make status` shows what is open now."
     const val NOT_CLEARED = "That exercise was already closed, so nothing was cleared. `make status` shows what is open now."
     const val LINKS = "  Grafana     http://localhost:3000   (start on '00 · Start here', the Lab menu lists every board)\n" +

@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { ErrorNote } from "../../components/LabUi";
-import type { Answer, Option, Options } from "../../lib/api";
+import type { AnswerOptions, Choices, Option } from "../../lib/api";
 
-export type Choices = Omit<Answer, "note">;
+export type { Choices };
 
-const QUESTIONS: { key: keyof Choices; title: string; ask: string; list: (o: Options) => Option[] }[] = [
+const QUESTIONS: { key: keyof Choices; title: string; ask: string; list: (o: AnswerOptions) => Option[] }[] = [
   { key: "nature", title: "Nature", ask: "What kind of problem is it?", list: (o) => o.natures },
   { key: "location", title: "Location", ask: "Where is the first layer where the numbers drift?", list: (o) => o.locations },
   { key: "signal", title: "Signal", ask: "Which comparison proves it?", list: (o) => o.signals },
@@ -12,7 +12,7 @@ const QUESTIONS: { key: keyof Choices; title: string; ask: string; list: (o: Opt
 ];
 
 /** Groups in the order the options list them, which is how the CLI prints its layer headers. */
-function grouped(options: Option[]): { group: string | null; options: Option[] }[] {
+export function grouped(options: Option[]): { group: string | null; options: Option[] }[] {
   const out: { group: string | null; options: Option[] }[] = [];
   for (const o of options) {
     const g = o.group ?? null;
@@ -23,11 +23,11 @@ function grouped(options: Option[]): { group: string | null; options: Option[] }
   return out;
 }
 
-function Question({ q, options, value, onChange }: { q: (typeof QUESTIONS)[number]; options: Options; value: string; onChange: (v: string) => void }) {
+function Question({ q, options, value, onChange }: { q: (typeof QUESTIONS)[number]; options: AnswerOptions; value: string; onChange: (v: string) => void }) {
   const list = q.list(options);
   const groups = useMemo(() => grouped(list), [list]);
   return (
-    <fieldset className={`question question-${q.key}`}>
+    <fieldset className={`question question-${q.key}${groups.length > 1 ? " has-groups" : ""}`}>
       <legend>
         <span className="question-title">{q.title}</span>
         <span className="question-ask">{q.ask}</span>
@@ -47,7 +47,7 @@ function Question({ q, options, value, onChange }: { q: (typeof QUESTIONS)[numbe
   );
 }
 
-export function AnswerForm({ options, busy, error, onSubmit }: { options: Options; busy: boolean; error: unknown; onSubmit: (choices: Choices, note: string) => void }) {
+export function AnswerForm({ options, busy, error, onSubmit }: { options: AnswerOptions; busy: boolean; error: unknown; onSubmit: (choices: Choices, note: string) => void }) {
   const [choices, setChoices] = useState<Partial<Choices>>({});
   const [note, setNote] = useState("");
   const done = QUESTIONS.every((q) => choices[q.key]);

@@ -9,6 +9,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Baseline.SECONDS_PER_MINUTE
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.WORKER_CAPACITY_PER_SECOND
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
+import com.c0x12c.incidentlab.labctl.scenario.Symptom
 
 /** Faults on the Kafka leg: the producer, the worker and the lag between them. */
 internal object AsyncScenarios {
@@ -29,7 +30,8 @@ internal object AsyncScenarios {
     params = { random, _ -> mapOf("extra" to random.nextInt(170, 241)) },
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("extra_events_rps" to p.int("extra")))) },
     decoy = 0.5,
-    ticket = { p -> "At ${p.startedAt}, the reporting team says new orders take minutes to show up (normally seconds). The worker shows no errors." },
+    ticket = { p -> "At ${p.startedAt}, the reporting team says new orders take minutes to show up (normally seconds). Order volume is normal and the worker shows no errors." },
+    symptom = { Symptom.WORK_LATE },
     hints = listOf(
       "The worker's RED: consume rate, errors, processing time. Did the processing time change?",
       "Compare the produce rate with the consume rate. How is lag moving over time?",
@@ -43,7 +45,7 @@ internal object AsyncScenarios {
         "Lag is the consumer group's saturation; end-to-end latency is what users see."
     },
     steps = listOf(
-      "Problem statement: new orders take minutes to show up, and the worker shows no errors.",
+      "Problem statement: new orders take minutes to show up, order volume is normal, and the worker shows no errors.",
       "The worker's RED: consume rate, errors, processing time. Processing time is flat and errors are zero.",
       "Compare the produce rate with the consume rate: produce is above the consumer's capacity, so lag grows over time.",
       "Split the produce rate by source: a backfill job adds extra events.",
@@ -71,6 +73,7 @@ internal object AsyncScenarios {
     marker = { "Deploy order-worker v1.9: fraud check added to each order" },
     decoy = 0.5,
     ticket = { p -> "At ${p.startedAt}, the reporting team says new orders take minutes to show up. Order volume is normal and the worker shows no errors." },
+    symptom = { Symptom.WORK_LATE },
     hints = listOf(
       "The worker's RED: consume rate, errors, processing time per message. Which one moved?",
       "Compare the produce rate with the consume rate. Did the producer grow, or did the consumer shrink?",
@@ -113,7 +116,8 @@ internal object AsyncScenarios {
     params = { random, _ -> mapOf("nonce" to String.format("%06x", random.nextInt(NONCE_SPACE))) },
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("poison_nonce" to p.string("nonce")), "worker" to mapOf("fail_nonce" to p.string("nonce")))) },
     decoy = 0.5,
-    ticket = { p -> "At ${p.startedAt}, some orders are never processed while others are fine. The worker's total throughput is almost unchanged." },
+    ticket = { p -> "At ${p.startedAt}, some orders still have not shown up after many minutes, while others show up on time. The worker's total throughput is almost unchanged." },
+    symptom = { Symptom.WORK_LATE },
     hints = listOf(
       "Look at lag per partition instead of the total.",
       "Are the worker's errors and retries up? On which partition?",
@@ -126,7 +130,7 @@ internal object AsyncScenarios {
         "while the others keep moving, so the total throughput barely changes. Fix: cap the retries, then send the message to a DLQ."
     },
     steps = listOf(
-      "Problem statement: some orders are never processed, others are fine, and total throughput is almost unchanged.",
+      "Problem statement: some orders are many minutes late, others are on time, and total throughput is almost unchanged.",
       "Look at lag per partition, not the total: exactly one partition's lag grows in a straight line.",
       "The worker's retries are up on that one partition only.",
       "Read the worker log: one event fails and is retried every second, never skipped.",
@@ -159,6 +163,7 @@ internal object AsyncScenarios {
         "${p.int("fix_after") / SECONDS_PER_MINUTE.toDouble()} minutes after this ticket. Wait for the rollback, then answer: is the rollback broken, " +
         "and when will orders be on time again?"
     },
+    symptom = { Symptom.WORK_LATE },
     hints = listOf(
       "After the rollback, did processing time per message go back to normal?",
       "Compare the produce rate with the consume rate after the rollback. How big is the gap?",
@@ -208,6 +213,7 @@ internal object AsyncScenarios {
       "At ${p.startedAt}, the CPU alarm fired on worker: 100% of its limit. The on-call asks whether the queue is backing up and whether we should " +
         "add consumers before the evening peak."
     },
+    symptom = { Symptom.RESOURCE_ALARM },
     hints = listOf(
       "A CPU alarm is utilization. Before adding consumers, read the worker's RED and its saturation: consume rate, processing time, lag.",
       "Lag is 0 and the consume rate is unchanged, so the worker is not working harder. What else keeps a thread at 100%?",

@@ -8,6 +8,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Baseline.CHECKOUTS_PER_SECOND
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.MILLIS_PER_SECOND
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
+import com.c0x12c.incidentlab.labctl.scenario.Symptom
 import kotlin.math.roundToInt
 
 /** Faults in api's runtime: the JVM heap and GC, virtual threads, and the cost of syscalls. */
@@ -71,6 +72,8 @@ internal object JvmScenarios {
         "again and again, while p50 stays flat. api's own p99 looks normal. Traffic is normal and nothing was deployed. " +
         "api memory went up a little at the start and has been flat since, with no restarts."
     },
+    symptom = { Symptom.TAIL_ONLY },
+    lures = setOf("queue_before_app"),
     hints = listOf(
       "Are all requests a little slower, or a few requests a lot slower? Compare p50, p99 and p99.9 at the LB, then the same at api.",
       "The LB sees the wait and api barely does. What stops every thread in api, its network thread too, for a fraction of a second, with no deploy?",
@@ -135,6 +138,7 @@ internal object JvmScenarios {
       "Since ${p.startedAt}, p99 is up on every route, /checkout the most, and /products is slower too. Throughput is normal and there are no errors. " +
         "api CPU is under 10%, and Postgres and pricing look fine. A teammate took a thread dump: only two threads are doing any work."
     },
+    symptom = { Symptom.SLOW_EVERY_ROUTE },
     hints = listOf(
       "Postgres and pricing are fine and CPU is low. So what limits how many requests api runs at the same time?",
       "api runs each request on a virtual thread, carried by as many platform threads as it has cores. What keeps a virtual thread on its carrier while it waits?",
@@ -197,10 +201,12 @@ internal object JvmScenarios {
     marker = { "Config change: api log level DEBUG for a support case" },
     decoy = 0.3,
     ticket = { p ->
-      "Since ${p.startedAt}, api uses about five times its usual CPU with the same traffic, and system time is now close to user time. " +
+      "Since ${p.startedAt}, api uses about five times its usual CPU with the same traffic. " +
         "/products, normally under a millisecond at the median, now takes about ${logMsPerRequest(p.int("lines")).roundToInt()} ms, and p99 is up on both routes. " +
         "Someone proposes giving api a third core."
     },
+    symptom = { Symptom.SLOW_EVERY_ROUTE },
+    lures = setOf("cpu_throttle"),
     hints = listOf(
       "Traffic is flat and CPU is up. Where does the extra CPU go: into api's own code, or into the kernel working for api?",
       "CPU user against system in the Runtime row. What does a service do on every request that costs system time?",
@@ -229,7 +235,7 @@ internal object JvmScenarios {
         "Fix: put the log level back to INFO, log less per request, or use an asynchronous appender that batches the writes."
     },
     steps = listOf(
-      "Problem statement: CPU up about five times, system time close to user time, traffic flat, latency up on both routes, and a config change just before.",
+      "Problem statement: CPU up about five times, traffic flat, latency up on both routes, and a config change just before.",
       "RED: the rate is flat and errors are zero. The extra cost comes from inside api, not from load.",
       "USE for the container: CPU is up but far from the 2-core limit, with no throttling. More cores would not help.",
       "Split the CPU by mode: system time grew from a sliver to about half of api's CPU. Something now makes many more syscalls per request.",

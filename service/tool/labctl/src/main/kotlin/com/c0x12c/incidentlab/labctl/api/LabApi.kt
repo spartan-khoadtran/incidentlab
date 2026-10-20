@@ -185,7 +185,7 @@ class LabApi(
         "${refusal.id?.let { "'$it' needs" } ?: "Every exercise that matches needs"} container settings the lab's controller cannot apply here (${refusal.missing.joinToString()}).",
         mapOf("missing" to refusal.missing.sorted())
       )
-      is Refusal.UnknownKey -> badRequest("unknown_key", "'${refusal.key}' is not a ${refusal.question} key. The options endpoint lists them.")
+      is Refusal.UnknownKey -> badRequest("unknown_key", "'${refusal.key}' is not a ${refusal.question} this exercise offers.")
       is Refusal.LoadNotOne -> conflict("load_not_one", "Background load is ${Format.plain(refusal.multiplier)} x. This exercise is tuned for the default load: set the load back to 1 first.")
       is Refusal.TooEarly -> conflict("too_early", "The ramp is not over yet: ${refusal.secondsLeft} s to go. Answer after the last step.", mapOf("seconds_left" to refusal.secondsLeft))
       Refusal.PrometheusDown -> ApiError(UNAVAILABLE, "prometheus_down", "Prometheus did not answer. Check that the lab is up, then try again.")

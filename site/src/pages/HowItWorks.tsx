@@ -193,7 +193,7 @@ export function HowItWorks() {
             </tfoot>
           </table>
           <p className="muted small">
-            The answer lists hold {lab.counts.causes} causes and {lab.counts.signals} signals. Some causes belong to no scenario, so the list is not a copy of the catalog.
+            The lab knows {lab.counts.causes} causes and {lab.counts.signals} signals. Each exercise offers only the few that fit what its ticket shows. Some causes belong to no scenario, so the list is not a copy of the catalog.
           </p>
         </div>
       </section>

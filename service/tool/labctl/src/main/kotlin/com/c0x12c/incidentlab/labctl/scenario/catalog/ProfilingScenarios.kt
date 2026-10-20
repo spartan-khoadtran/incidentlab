@@ -6,6 +6,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Baseline.MILLIS_PER_SECOND
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.PERCENT
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
+import com.c0x12c.incidentlab.labctl.scenario.Symptom
 import kotlin.math.roundToInt
 
 /** Faults that the metrics and the traces can locate but only a CPU profile can name. */
@@ -26,8 +27,10 @@ internal object ProfilingScenarios {
     decoy = 0.3,
     ticket = { p ->
       "At ${p.startedAt}, p99 went up on every route, /products and /checkout alike, and the CPU alarm on api fired. " +
-        "Traffic looks normal. I checked event loop lag and it is flat, so it is not the event loop again. Which code is eating the CPU?"
+        "Traffic looks normal. Someone wants to raise api's CPU limit."
     },
+    symptom = { Symptom.SLOW_EVERY_ROUTE },
+    lures = setOf("cpu_throttle"),
     hints = listOf(
       "Rate flat, p99 up everywhere. Is the extra time inside api, or in a call api makes? Compare api's p99 with its downstream calls.",
       "USE for api: process CPU against the 2-core limit, and event loop lag. Is one thread busy, or many?",

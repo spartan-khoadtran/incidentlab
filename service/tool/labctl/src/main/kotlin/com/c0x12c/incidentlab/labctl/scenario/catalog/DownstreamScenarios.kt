@@ -12,6 +12,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Baseline.THOUSANDTHS
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.round2
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
+import com.c0x12c.incidentlab.labctl.scenario.Symptom
 import kotlin.math.roundToInt
 
 /** Faults in pricing, the downstream service api calls, and the way api reads them. */
@@ -47,6 +48,7 @@ internal object DownstreamScenarios {
     },
     decoy = 0.7,
     ticket = { p -> "At ${p.startedAt}, /checkout p99 is several times higher. /products is still normal." },
+    symptom = { Symptom.SLOW_ONE_ROUTE },
     hints = listOf(
       "On which route did duration rise? Did the rate change?",
       "Inside /checkout, which downstream rose with it: the DB, pricing or Kafka?",
@@ -85,6 +87,7 @@ internal object DownstreamScenarios {
     faults = { p -> FaultSpec(services = mapOf("pricing" to mapOf("error_rate" to p.double("err")))) },
     decoy = 0.5,
     ticket = { p -> "At ${p.startedAt}, some checkouts fail with a 502. The mobile team says they are not retrying. /products is fine." },
+    symptom = { Symptom.ERRORS },
     hints = listOf(
       "Errors at the client, at the LB and at api: are they the same count? What about attempts per request?",
       "api's /checkout errors: which downstream call fails? Look at http_client_requests_total by outcome.",
@@ -132,6 +135,7 @@ internal object DownstreamScenarios {
       "At ${p.startedAt}, about half of the checkouts fail with a 502. The pricing team says every one of their requests returns 200, " +
         "just a little slower than before."
     },
+    symptom = { Symptom.ERRORS_UNSEEN },
     hints = listOf(
       "Errors at the client, at the LB and at api are the same. Which downstream call fails inside api?",
       "http_client_requests_total by outcome: is it a 5xx from pricing, or a timeout on api's side?",
@@ -172,6 +176,7 @@ internal object DownstreamScenarios {
       "At ${p.startedAt}, /checkout p99 is several times higher and /products is normal. " +
         "The pricing team says their container uses less than 1 of its 2 cores."
     },
+    symptom = { Symptom.SLOW_ONE_ROUTE },
     hints = listOf(
       "Inside /checkout, which downstream rose? Compare api's client duration to pricing with pricing's own p99.",
       "USE for pricing: process CPU, event loop lag, throttling.",
@@ -215,6 +220,7 @@ internal object DownstreamScenarios {
     marker = { "Deploy pricing v3.7: rules cache refreshed in the request path" },
     decoy = 0.5,
     ticket = { p -> "At ${p.startedAt}, the /checkout p99 alert fires. The mean latency panel is flat, and most users say the app is fine." },
+    symptom = { Symptom.TAIL_ONLY },
     hints = listOf(
       "Read p50 and p99 of /checkout side by side. Which one moved?",
       "Which downstream call has the same tail? Compare api's calls to pricing with the DB.",
@@ -260,6 +266,8 @@ internal object DownstreamScenarios {
       "At ${p.startedAt}, /checkout p99 is several times higher and /products is normal. " +
         "Someone already found the host CPU at about half and wants to stop the batch job."
     },
+    symptom = { Symptom.SLOW_ONE_ROUTE },
+    lures = setOf("noisy_neighbor"),
     hints = listOf(
       "Host CPU is busy, but is anyone waiting for a CPU? Look at load against the CPU count, PSI and throttling.",
       "Only /checkout is slow. Which downstream does only /checkout call?",
@@ -308,6 +316,7 @@ internal object DownstreamScenarios {
       "Since ${p.startedAt}, /checkout is slow. Our fix, api v2.41 with resilience improvements, goes out in about ${DEPLOY_AFTER_SECONDS / SECONDS_PER_MINUTE} minutes. " +
         "Write down the /checkout numbers now. After the deploy the PM expects good news: explain what changed, and whether it is a real win."
     },
+    symptom = { Symptom.CHANGE_TO_JUDGE },
     hints = listOf(
       "Latency falls when work is skipped or cut short. Which part of a /checkout got shorter at the deploy? Compare the spans before and after.",
       "api's client view of pricing: http_client_requests_total by outcome and http_client_duration_seconds. Does pricing still answer in time?",

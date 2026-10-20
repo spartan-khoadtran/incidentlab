@@ -24,6 +24,11 @@ class ScriptedTerminal(vararg answers: String?) : Terminal {
     beforeAnswer(++asked)
     return answers.removeFirstOrNull()
   }
+
+  /** Adds answers at the end, for picks that depend on the exercise just opened. */
+  fun queue(vararg more: String?) {
+    answers.addAll(more)
+  }
 }
 
 /**

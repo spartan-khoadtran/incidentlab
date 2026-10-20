@@ -11,6 +11,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Baseline.SECONDS_PER_MINUTE
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Params
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
+import com.c0x12c.incidentlab.labctl.scenario.Symptom
 import kotlin.math.roundToInt
 
 /**
@@ -41,6 +42,7 @@ internal object NetworkScenarios {
       "At ${p.startedAt}, /checkout p99 jumped and p50 did not move. The pricing team shows that their own p99 on /price is flat " +
         "and says the problem is not on their side. Find where the time goes."
     },
+    symptom = { Symptom.TAIL_ONLY },
     hints = listOf(
       "Which downstream call of /checkout has the same tail? Compare api's view of pricing with pricing's own p99.",
       "The time is lost between api and pricing, not inside either one. What does the kernel inside api count when a segment never arrives?",
@@ -100,8 +102,9 @@ internal object NetworkScenarios {
     marker = { "Infra: Postgres moved to zone b" },
     ticket = { p ->
       "At ${p.startedAt}, /checkout p99 is up a lot and /products is up a little. The DBA says Postgres is fine: " +
-        "mean exec time per query is flat, and the extra queries are cheap."
+        "mean exec time per query is flat."
     },
+    symptom = { Symptom.SLOW_EVERY_ROUTE },
     hints = listOf(
       "Compare the query time api sees with the exec time Postgres counts. Then compare the DB session time with both.",
       "How many queries does one checkout send now? How much longer does each one take at api than inside Postgres?",
@@ -166,9 +169,9 @@ internal object NetworkScenarios {
     decoy = 0.3,
     ticket = { p ->
       "At ${p.startedAt}, pricing moved to zone b as planned. The network team measured about ${p.int("delay")} ms of round trip between the zones. " +
-        "api's calls to pricing now cost more than that, and pricing's own p99 is flat. Someone ran ss -s in the api container " +
-        "and saw about ${timeWait()} sockets in TIME_WAIT."
+        "api's calls to pricing now cost more than that, and pricing's own p99 is flat."
     },
+    symptom = { Symptom.CHANGE_TO_JUDGE },
     hints = listOf(
       "How much slower are api's calls to pricing, against the round trip the zone move adds? Compare p50, not only p99.",
       "A call over a reused connection costs one round trip. What else costs a round trip before the request can go?",
@@ -187,7 +190,7 @@ internal object NetworkScenarios {
         "$EPHEMERAL_PORTS / $TIME_WAIT_SECONDS = ${p.fixed(ports, 0)} new connections per second. Fix: turn connection reuse back on. The zone move is fine."
     },
     steps = listOf(
-      "Problem statement: pricing moved to a zone a few ms away, calls cost more than that, pricing's p99 is flat, and api holds many TIME_WAIT sockets.",
+      "Problem statement: pricing moved to a zone a few ms away, calls cost more than that, and pricing's p99 is flat.",
       "Compare api's view of pricing with pricing's own p50 and p99: api's p50 rose by about two round trips, pricing did not move. The time is outside pricing.",
       "A reused connection costs one round trip per call. The second round trip is a TCP handshake.",
       "Dashboard 04, row 3 (Network): api opens about $CHECKOUTS_PER_SECOND TCP connections per second. On dashboard 01, row 4, connections opened per second equal calls per second: no reuse.",

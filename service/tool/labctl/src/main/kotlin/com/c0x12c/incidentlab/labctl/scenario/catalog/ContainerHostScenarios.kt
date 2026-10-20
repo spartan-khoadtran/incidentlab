@@ -7,6 +7,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Baseline.SECONDS_PER_MINUTE
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.round2
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
+import com.c0x12c.incidentlab.labctl.scenario.Symptom
 import kotlin.math.roundToInt
 
 /** Faults at the container and the host: CPU limits, memory limits and shared CPU. */
@@ -32,6 +33,8 @@ internal object ContainerHostScenarios {
       "At ${p.startedAt}, p99 rose on every endpoint, including /products which is normally very fast. The rate is normal. " +
         "A teammate looked at the host's CPU and said 'plenty of CPU left, it is not CPU'."
     },
+    symptom = { Symptom.SLOW_EVERY_ROUTE },
+    lures = setOf("noisy_neighbor"),
     hints = listOf(
       "Rate flat, duration up on every route: suspect architecture. Do the LB and api rise together?",
       "Do USE per layer for api: host, container, runtime. Which layer's limit should utilization be measured against?",
@@ -78,6 +81,7 @@ internal object ContainerHostScenarios {
     faults = { p -> FaultSpec(services = mapOf("api" to mapOf("leak_kb" to p.int("leak")))) },
     decoy = 0.5,
     ticket = { p -> "Since ${p.startedAt}, about once a minute there is a burst of 503s that lasts a few seconds and then clears. Nobody deployed anything." },
+    symptom = { Symptom.ERRORS },
     hints = listOf(
       "During the errors, is api still receiving requests? Look at process_start_time_seconds (the restart count).",
       "What does the api container's memory look like right before each restart, against its limit?",
@@ -124,6 +128,7 @@ internal object ContainerHostScenarios {
       "Since ${p.startedAt}, api's memory has been climbing on the container panel. Nothing fails yet. " +
         "Is this a problem, and if so, about how long do we have? A rough number is fine."
     },
+    symptom = { Symptom.RESOURCE_ALARM },
     hints = listOf(
       "Container memory against its limit: is it a step, a sawtooth, or a straight line?",
       "How many MB per minute does it grow? Read two points 5 minutes apart, not 1: the JVM's own memory moves a few MB on its own.",
@@ -170,7 +175,8 @@ internal object ContainerHostScenarios {
     params = { _, context -> mapOf("burners" to maxOf(MIN_BURNERS, 2 * (context.cpuCount ?: DEFAULT_CPU_COUNT))) },
     faults = { p -> FaultSpec(services = mapOf("noisy" to mapOf("burners" to p.int("burners")))) },
     decoy = 0.5,
-    ticket = { p -> "At ${p.startedAt}, every service is slower, including pricing and the worker. The rate is normal and nobody deployed anything." },
+    ticket = { p -> "At ${p.startedAt}, p99 rose on every api route. The rate is normal and nobody deployed anything." },
+    symptom = { Symptom.SLOW_EVERY_ROUTE },
     hints = listOf(
       "When everything slows down at once, think of the shared resources.",
       "USE at the host / VM layer: CPU by mode, load against the CPU count, CPU PSI.",
@@ -183,7 +189,7 @@ internal object ContainerHostScenarios {
         "None of your services is throttled or failing: the cause sits in the shared layer."
     },
     steps = listOf(
-      "Problem statement: every service is slower, including pricing and the worker. The rate is normal and nobody deployed.",
+      "Problem statement: p99 rose on every api route. The rate is normal and nobody deployed.",
       "When everything slows down at once, think of the shared resources.",
       "USE at the host layer: CPU by mode, load against the CPU count, CPU PSI. All of them are high.",
       "Compare cgroup CPU usage by job: the noisy batch job takes most of the host's CPU.",
@@ -214,9 +220,10 @@ internal object ContainerHostScenarios {
     faults = { p -> if (p.elapsedSeconds < p.int("credit_seconds")) FaultSpec() else FaultSpec(docker = mapOf("api" to mapOf("cpus" to p.double("cpus")))) },
     decoy = 0.3,
     ticket = { p ->
-      "At ${p.startedAt}, api moved to a smaller burstable VM to save cost. Right now every panel looks normal. The on-call lead asks you to keep " +
-        "watching for a few minutes, because this kind of VM does not always stay fast. When something changes, tell us what changed and why."
+      "At ${p.startedAt}, api moved to a cheaper VM type to save cost. Right now every panel looks normal. The on-call lead asks you to watch it " +
+        "for a few minutes after the move. When something changes, tell us what changed and why."
     },
+    symptom = { Symptom.CHANGE_TO_JUDGE },
     hints = listOf(
       "Nothing is wrong yet. Write down the baseline now: api p99 by route, CPU usage against the limit, the throttled share. Then wait.",
       "When p99 rises on every route with a flat rate and no deploy, do USE for api at the container layer: did the usage move, or did the limit?",
@@ -233,7 +240,7 @@ internal object ContainerHostScenarios {
         "Fix: a non-burstable instance for a service with steady load, or unlimited mode, which keeps bursting and bills the extra CPU."
     },
     steps = listOf(
-      "Problem statement: api moved to a burstable VM, nothing is wrong yet, and the lead expects that to change. Write down the baseline before it does.",
+      "Problem statement: api moved to a cheaper VM type, nothing is wrong yet, and the lead wants it watched. Write down the baseline before anything changes.",
       "Watch RED: after a few minutes p99 rises on every route, the rate is flat, and there is no deploy marker. Suspect architecture.",
       "USE for api at the container layer: CPU usage against the limit and the throttled share both jump, while the host still has idle CPU.",
       "Compare the limit itself before and after: cgroup_cpu_limit_cores fell. The work is the same, the ceiling moved.",

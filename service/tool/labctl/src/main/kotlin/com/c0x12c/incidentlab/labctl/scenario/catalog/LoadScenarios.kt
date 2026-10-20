@@ -12,6 +12,7 @@ import com.c0x12c.incidentlab.labctl.scenario.Baseline.PERCENT
 import com.c0x12c.incidentlab.labctl.scenario.Baseline.round2
 import com.c0x12c.incidentlab.labctl.scenario.FaultSpec
 import com.c0x12c.incidentlab.labctl.scenario.Scenario
+import com.c0x12c.incidentlab.labctl.scenario.Symptom
 import kotlin.math.roundToInt
 
 /** Faults at the client and the load source: who sends what, how much, and how often it retries. */
@@ -45,6 +46,7 @@ internal object LoadScenarios {
       "Alert at ${p.startedAt}: API p99 crossed its threshold and /checkout is getting slow. The mobile team asks whether the backend is slow. " +
         "According to the deploy calendar, nothing changed in checkout-api today."
     },
+    symptom = { Symptom.SLOW_ONE_ROUTE },
     hints = listOf(
       "Start with RED at the LB and client layers: is the rate the same as before the incident?",
       "If the rate went up, do workload characterization: split the rate by tenant and by endpoint (RED dashboard, Client row).",
@@ -88,6 +90,7 @@ internal object LoadScenarios {
       "At ${p.startedAt}, /checkout p99 crossed its threshold. Marketing mentions a push notification campaign, " +
         "but nobody knows whether it already went out."
     },
+    symptom = { Symptom.SLOW_ONE_ROUTE },
     hints = listOf(
       "RED at the LB: compare the rate with the baseline from 10 minutes ago.",
       "Split the client rate by tenant and by endpoint. Did one tenant grow, or all of them, in proportion?",
@@ -133,6 +136,7 @@ internal object LoadScenarios {
       "At ${p.startedAt}, the pricing team reports that their request rate doubled and asks whether api is retrying. " +
         "The DBA sees twice the writes on orders. The rate at the API gateway is flat."
     },
+    symptom = { Symptom.RATE_CHANGED },
     hints = listOf(
       "Attempts per user request at the client: is anyone retrying?",
       "The total rate is flat. Split it by route. What moved?",
@@ -181,6 +185,7 @@ internal object LoadScenarios {
       "At ${p.startedAt}, the business dashboard shows orders down about ${(lost * PERCENT).roundToInt()}%. " +
         "Every service dashboard is green and nobody was paged."
     },
+    symptom = { Symptom.RATE_CHANGED },
     hints = listOf(
       "A rate drop is a symptom too. Compare the LB rate with 10 minutes ago.",
       "Split the client rate by tenant. Who disappeared?",
@@ -219,6 +224,8 @@ internal object LoadScenarios {
       "At ${p.startedAt}, customer support reports many customers cannot place orders. The dashboard shows traffic into /checkout jumping, " +
         "and someone proposes scaling api out."
     },
+    symptom = { Symptom.ERRORS },
+    lures = setOf("global_load"),
     hints = listOf(
       "Compare the requests users really send (logical requests at the client) with the rate at the LB. Are they still equal?",
       "The 'Attempts vs user requests' panel in the Client row: how many attempts does one user request become?",
@@ -261,7 +268,8 @@ internal object LoadScenarios {
       )
     },
     decoy = 0.5,
-    ticket = { p -> "At ${p.startedAt}, the app reports 'timeout' errors when placing orders. The api team says no request failed: everything returned 200." },
+    ticket = { p -> "At ${p.startedAt}, the app shows errors when placing orders. The api team says no request failed: everything returned 200." },
+    symptom = { Symptom.ERRORS_UNSEEN },
     hints = listOf(
       "Compare errors at the client with errors at the LB and at api. At the client, which kind of error is it?",
       "Compare the server-side /checkout p99 with the timeout the client uses.",
@@ -276,7 +284,7 @@ internal object LoadScenarios {
         "Fix: set the client timeout from the server's real p99 plus a margin, and make the server stop work the client has abandoned."
     },
     steps = listOf(
-      "Problem statement: the app reports timeouts on orders, and api says every request returned 200.",
+      "Problem statement: the app shows errors on orders, and api says every request returned 200.",
       "Compare errors at the client with the LB and api: only the client sees them, and at the client they are timeouts.",
       "Compare the server-side /checkout p99 with the client's timeout: the p99 is longer.",
       "The client gives up and records a timeout. The server finishes and records a 200. The LB only sees the client leave.",
@@ -308,8 +316,9 @@ internal object LoadScenarios {
     decoy = 0.5,
     ticket = { p ->
       "At ${p.startedAt}, /checkout traffic at api is up by a third or more, but there are no more shoppers than usual. " +
-        "The app shows some timeout errors, and support reports a few orders placed twice."
+        "Support reports a few orders placed twice."
     },
+    symptom = { Symptom.RATE_CHANGED },
     hints = listOf(
       "Compare the user requests at the client with the attempts it sends. Are they still equal?",
       "Which outcome do the failed attempts have at the client: 5xx or timeout?",
@@ -323,7 +332,7 @@ internal object LoadScenarios {
       partial = setOf("client_timeout", "downstream_slow")
     ),
     steps = listOf(
-      "Problem statement: /checkout traffic is up by a third or more with no more shoppers, the app shows timeouts, and some orders are placed twice.",
+      "Problem statement: /checkout traffic is up by a third or more with no more shoppers, and some orders are placed twice.",
       "Rate up but shoppers flat: is this real demand? Compare user requests with attempts at the client: attempts are higher.",
       "The failed attempts at the client are timeouts, not 5xx. The server records 200s for them.",
       "Compare the server-side /checkout p99 with the client's timeout: part of the checkouts take longer than the timeout.",
@@ -364,6 +373,7 @@ internal object LoadScenarios {
       "At ${p.startedAt}, users say the app is slow. A TV ad went out a few minutes ago. The api team says their APM p99 is normal. " +
         "Last week they set api's concurrency limit to ${p.int("limit")} to protect the DB, and it has been fine since."
     },
+    symptom = { Symptom.SLOW_BUT_API_FINE },
     hints = listOf(
       "RED at the LB: is the rate the same as 10 minutes ago? Split it by tenant.",
       "Put the LB p99 and the api p99 on one chart. Where is the gap?",

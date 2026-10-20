@@ -17,6 +17,7 @@ import com.c0x12c.incidentlab.labctl.control.Capabilities
 import com.c0x12c.incidentlab.labctl.control.CapabilitiesFile
 import com.c0x12c.incidentlab.labctl.control.LabProbe
 import com.c0x12c.incidentlab.labctl.scenario.Answers
+import com.c0x12c.incidentlab.labctl.scenario.Params
 import com.c0x12c.incidentlab.labctl.scenario.ScenarioCatalog
 import com.c0x12c.incidentlab.labctl.state.ActiveExercise
 import com.c0x12c.incidentlab.labctl.state.LabState
@@ -24,6 +25,7 @@ import com.c0x12c.incidentlab.labctl.state.PlannedAnnotation
 import com.c0x12c.incidentlab.labctl.state.HistoryEntry
 import com.c0x12c.incidentlab.labctl.state.StateStore
 import java.nio.file.Path
+import java.time.ZoneId
 import kotlin.random.Random
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -58,8 +60,19 @@ class ExercisesTest {
   private fun exercises(dir: Path, terminal: Terminal, capabilities: Capabilities = Capabilities.ALL, random: Random = Random(1)): Exercises =
     Exercises(StateStore(dir.resolve("state.json")), probe, annotator, terminal, random = random, now = { NOW }, capabilities = capabilities)
 
-  private fun picks(nature: String, location: String, signal: String, cause: String): List<String> =
-    listOf(index(Answers.NATURES, nature), index(Answers.LOCATIONS, location), index(Answers.SIGNALS, signal), index(Answers.CAUSES, cause))
+  /** What the open exercise offers, as the CLI prompts with it. */
+  private fun offered(dir: Path): AnswerOptions =
+    (ExerciseEngine(StateStore(dir.resolve("state.json")), probe, annotator, now = { NOW }).active() as Outcome.Done).value.active.options!!
+
+  /** The numbers to type for these keys, in the open exercise's lists. */
+  private fun picks(dir: Path, nature: String, location: String, signal: String, cause: String): List<String> {
+    val options = offered(dir)
+    return listOf(number(options.natures, nature), number(options.locations, location), number(options.signals, signal), number(options.causes, cause))
+  }
+
+  private fun number(options: List<Option>, key: String): String = (options.indexOfFirst { it.key == key }.also { check(it >= 0) { "$key is not offered" } } + 1).toString()
+
+  private fun wrong(options: List<Option>, accepted: Set<String>): String = options.first { it.key !in accepted }.key
 
   @Test
   fun `a reset ends the exercise, sets the load back and drops old marks, but keeps the history`(@TempDir dir: Path) {
@@ -83,10 +96,12 @@ class ExercisesTest {
 
   @Test
   fun `a full round of new, hint and answer is scored with the hint penalty`(@TempDir dir: Path) {
-    val terminal = ScriptedTerminal(ArrayDeque(picks("arch", "api_db", "pool", "pool_exhausted") + listOf("session time vs exec time", "y")))
+    val answers = ArrayDeque<String?>()
+    val terminal = ScriptedTerminal(answers)
     val exercises = exercises(dir, terminal)
 
     assertThat(exercises.newExercise(NewOptions(id = "pool_hold"))).isEqualTo(0)
+    answers += picks(dir, "arch", "api_db", "pool", "pool_exhausted") + listOf("session time vs exec time", "y")
     val marker = annotations.single { it.first.startsWith("Deploy checkout-api v2.31") }
     assertThat(marker.second <= NOW && marker.second >= NOW - MARKER_LEAD_SECONDS).isTrue()
     assertThat(exercises.hint()).isEqualTo(0)
@@ -103,16 +118,26 @@ class ExercisesTest {
 
   @Test
   fun `a partial cause earns one point and a wrong answer none`(@TempDir dir: Path) {
-    val terminal = ScriptedTerminal(ArrayDeque(picks("load", "host", "host_cpu", "downstream_errors") + listOf("", "n")))
+    val answers = ArrayDeque<String?>()
+    val terminal = ScriptedTerminal(answers)
     val exercises = exercises(dir, terminal)
+    val expected = ScenarioCatalog.byId.getValue("retry_storm").answer
 
     exercises.newExercise(NewOptions(id = "retry_storm"))
+    val options = offered(dir)
+    answers += picks(dir, wrong(options.natures, expected.nature), wrong(options.locations, expected.location), wrong(options.signals, expected.signal), expected.partial.first()) +
+      listOf("", "n")
     exercises.answer()
 
     assertThat(terminal.lines.any { it.startsWith("RESULT: 1/5") }).isTrue()
     val state = StateStore(dir.resolve("state.json")).load()
     assertThat(state.active).isNotNull()
     assertThat(state.history.single().missed).containsExactly("nature", "location", "signal", "cause (partial)")
+    val tagged = ruleOutBlock(terminal.lines).filter { it.endsWith("]") }
+    val partials = options.causes.filter { it.key in expected.partial }
+    assertThat(tagged.filter { it.contains("[1 point") }).isEqualTo(
+      partials.map { "     ${it.label}  [1 point${if (it.key == expected.partial.first()) ", your pick" else ""}]" }
+    )
   }
 
   @Test
@@ -131,9 +156,10 @@ class ExercisesTest {
 
   @Test
   fun `an answer is refused when another exercise opened while the prompts waited`(@TempDir dir: Path) {
-    val terminal = HookedTerminal(*picks("arch", "api_db", "pool", "pool_exhausted").toTypedArray(), "", "y")
+    val terminal = HookedTerminal()
     val exercises = exercises(dir, terminal)
     exercises.newExercise(NewOptions(id = "pool_hold"))
+    terminal.queue(*picks(dir, "arch", "api_db", "pool", "pool_exhausted").toTypedArray(), "", "y")
     terminal.beforeAnswer = { if (it == LAST_PICK) exercises(dir, HookedTerminal()).newExercise(NewOptions(id = "oom", force = true)) }
 
     assertThat(exercises.answer()).isEqualTo(1)
@@ -147,9 +173,10 @@ class ExercisesTest {
 
   @Test
   fun `the clear prompt only clears the exercise just answered, even when the input closes`(@TempDir dir: Path) {
-    val terminal = HookedTerminal(*picks("arch", "api_db", "pool", "pool_exhausted").toTypedArray(), "")
+    val terminal = HookedTerminal()
     val exercises = exercises(dir, terminal)
     exercises.newExercise(NewOptions(id = "pool_hold"))
+    terminal.queue(*picks(dir, "arch", "api_db", "pool", "pool_exhausted").toTypedArray(), "")
     terminal.beforeAnswer = { if (it == CLEAR_PROMPT) exercises(dir, HookedTerminal()).newExercise(NewOptions(id = "oom", force = true)) }
 
     assertThat(exercises.answer()).isEqualTo(0)
@@ -160,6 +187,53 @@ class ExercisesTest {
     assertThat(state.history.single().id).isEqualTo("pool_hold")
     assertThat(annotations.none { it.first == "lab: fault cleared" }).isTrue()
   }
+
+  @Test
+  fun `the prompts offer the ticket's lists, and the rule-out block marks the root cause and the pick, on reveal too`(@TempDir dir: Path) {
+    val answers = ArrayDeque<String?>()
+    val terminal = ScriptedTerminal(answers)
+    val exercises = exercises(dir, terminal)
+    val scenario = ScenarioCatalog.byId.getValue("pool_hold")
+    exercises.newExercise(NewOptions(id = scenario.id))
+    val options = offered(dir)
+    val symptom = scenario.symptom(Params(StateStore(dir.resolve("state.json")).load().active!!.params, Format.hhmm(NOW, ZoneId.systemDefault())))
+    val pick = wrong(options.causes, setOf(scenario.answer.cause) + scenario.answer.partial)
+    answers += picks(dir, "arch", "api_db", "pool", pick) + listOf("", "n")
+
+    exercises.answer()
+
+    assertThat(options.signals.map { it.key }).isEqualTo(Answers.signalsFor(symptom).map { it.first })
+    assertThat(options.causes.map { it.key }).isEqualTo(Answers.causesFor(symptom).map { it.first })
+    val prompted = terminal.lines.takeWhile { !it.startsWith("RESULT:") }.filter { NUMBERED.matches(it) }.map { it.substringAfter(". ") }
+    assertThat(prompted).isEqualTo((options.natures + options.locations + options.signals + options.causes).map { it.label })
+    val block = ruleOutBlock(terminal.lines)
+    assertThat(block.filter { it.startsWith("       ") }).isEqualTo(options.causes.map { "       " + Answers.RULE_OUTS.getValue(it.key) })
+    assertThat(block.filter { it.startsWith("  => ") }).containsExactly("  => ${Answers.label(Answers.CAUSES, scenario.answer.cause)}  [root cause]")
+    assertThat(block.filter { it.endsWith("[your pick]") }).containsExactly("     ${Answers.label(Answers.CAUSES, pick)}  [your pick]")
+
+    terminal.lines.clear()
+    answers += listOf("y")
+    exercises.reveal()
+    val revealed = ruleOutBlock(terminal.lines)
+    assertThat(revealed.filter { it.startsWith("  => ") }).containsExactly("  => ${Answers.label(Answers.CAUSES, scenario.answer.cause)}  [root cause]")
+    assertThat(revealed.filter { it.endsWith("[your pick]") }).containsExactly("     ${Answers.label(Answers.CAUSES, pick)}  [your pick]")
+  }
+
+  @Test
+  fun `a pick of the right cause is marked as both`(@TempDir dir: Path) {
+    val answers = ArrayDeque<String?>()
+    val terminal = ScriptedTerminal(answers)
+    val exercises = exercises(dir, terminal)
+    exercises.newExercise(NewOptions(id = "oom"))
+    answers += picks(dir, "arch", "container", "memory_restarts", "oom") + listOf("", "y")
+
+    exercises.answer()
+
+    assertThat(ruleOutBlock(terminal.lines).filter { it.startsWith("  => ") }).containsExactly("  => ${Answers.label(Answers.CAUSES, "oom")}  [root cause, your pick]")
+  }
+
+  private fun ruleOutBlock(lines: List<String>): List<String> =
+    lines.dropWhile { !it.startsWith("RULE OUT THE LOOK-ALIKES") }.drop(1).takeWhile { it.isNotEmpty() }
 
   @Test
   fun `load changes the base override within bounds`(@TempDir dir: Path) {
@@ -173,10 +247,13 @@ class ExercisesTest {
 
   @Test
   fun `a bad pick asks again, causes print by group and the hint line shows the running penalty`(@TempDir dir: Path) {
-    val terminal = ScriptedTerminal(ArrayDeque(listOf("", "abc", "99") + picks("arch", "container", "cgroup_cpu", "cpu_throttle") + listOf("", "y")))
+    val answers = ArrayDeque<String?>()
+    val terminal = ScriptedTerminal(answers)
     val exercises = exercises(dir, terminal)
 
     exercises.newExercise(NewOptions(id = "cpu_throttle"))
+    answers += listOf("", "abc", "99") + picks(dir, "arch", "container", "cgroup_cpu", "cpu_throttle") + listOf("", "y")
+    val groups = offered(dir).causes.mapNotNull { it.group }.distinct()
     exercises.hint()
     exercises.hint()
     assertThat(terminal.lines).contains("Hint 1/3 (-0.5 point, -0.5 in total): " + ScenarioCatalog.byId.getValue("cpu_throttle").hints[0])
@@ -184,7 +261,7 @@ class ExercisesTest {
     assertThat(exercises.answer()).isEqualTo(0)
 
     assertThat(terminal.lines.count { it == "  Enter a number from 1 to ${Answers.NATURES.size}." }).isEqualTo(3)
-    assertThat(terminal.lines.count { it.startsWith("  -- ") }).isEqualTo(Answers.CAUSE_GROUPS.values.toSet().size)
+    assertThat(terminal.lines.takeWhile { !it.startsWith("RESULT:") }.filter { it.startsWith("  -- ") }).isEqualTo(groups.map { "  -- $it" })
     assertThat(terminal.lines.any { it.startsWith("RESULT: 4/5  (correct 5/5, 2 hint(s) used)") }).isTrue()
   }
 
@@ -204,10 +281,12 @@ class ExercisesTest {
 
   @Test
   fun `reveal after a kept answer adds no second history entry`(@TempDir dir: Path) {
-    val terminal = ScriptedTerminal(ArrayDeque(picks("arch", "container", "memory_restarts", "oom") + listOf("", "n", "y")))
+    val answers = ArrayDeque<String?>()
+    val terminal = ScriptedTerminal(answers)
     val exercises = exercises(dir, terminal)
 
     exercises.newExercise(NewOptions(id = "oom"))
+    answers += picks(dir, "arch", "container", "memory_restarts", "oom") + listOf("", "n", "y")
     exercises.answer()
     assertThat(exercises.answer()).isEqualTo(0)
     exercises.hint()
@@ -234,17 +313,15 @@ class ExercisesTest {
 
   @Test
   fun `history shows the note, the missed questions and the weak spots`(@TempDir dir: Path) {
-    val terminal = ScriptedTerminal(
-      ArrayDeque(
-        picks("amplified", "client", "attempts_vs_requests", "downstream_errors") + listOf("saw pricing 503s", "y") +
-          picks("arch", "api_db", "pool", "pool_exhausted") + listOf("", "y")
-      )
-    )
+    val answers = ArrayDeque<String?>()
+    val terminal = ScriptedTerminal(answers)
     val exercises = exercises(dir, terminal)
 
     exercises.newExercise(NewOptions(id = "retry_storm"))
+    answers += picks(dir, "amplified", "client", "attempts_vs_requests", "downstream_errors") + listOf("saw pricing 503s", "y")
     exercises.answer()
     exercises.newExercise(NewOptions(id = "pool_hold"))
+    answers += picks(dir, "arch", "api_db", "pool", "pool_exhausted") + listOf("", "y")
     exercises.answer()
     terminal.lines.clear()
     exercises.history()
@@ -445,5 +522,6 @@ class ExercisesTest {
     const val PICKS = 20
     const val LAST_PICK = 4
     const val CLEAR_PROMPT = 6
+    val NUMBERED = Regex("^  [ 0-9][0-9]\\. .*")
   }
 }

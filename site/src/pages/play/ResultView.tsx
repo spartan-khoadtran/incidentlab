@@ -1,10 +1,10 @@
 import { CopyButton } from "../../components/Copy";
 import { GuideLinks } from "../../components/LabUi";
-import type { Option, Options, Result, Reveal, Verdict } from "../../lib/api";
+import type { AnswerOptions, Option, Result, Reveal, RuleOut, Verdict } from "../../lib/api";
 import { promqlUrl, type TimeRange } from "../../lib/grafana";
-import type { Choices } from "./AnswerForm";
+import { grouped, type Choices } from "./AnswerForm";
 
-const ROWS: { key: keyof Choices; title: string; list: (o: Options) => Option[] }[] = [
+const ROWS: { key: keyof Choices; title: string; list: (o: AnswerOptions) => Option[] }[] = [
   { key: "nature", title: "Nature", list: (o) => o.natures },
   { key: "location", title: "Location", list: (o) => o.locations },
   { key: "signal", title: "Signal", list: (o) => o.signals },
@@ -21,6 +21,46 @@ function plain(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
+function pickClass(r: RuleOut): string {
+  if (r.correct) return "verdict-correct";
+  return r.partial ? "verdict-partial" : "verdict-wrong";
+}
+
+function RuleOuts({ ruleOuts, picked }: { ruleOuts: RuleOut[]; picked: string | null }) {
+  const byKey = new Map(ruleOuts.map((r) => [r.cause.key, r]));
+  const groups = grouped(ruleOuts.map((r) => r.cause));
+  return (
+    <section className="result-block" aria-labelledby="ruleouts-title">
+      <h3 id="ruleouts-title">Rule out the look-alikes</h3>
+      <p className="muted small">Every cause the form offered, with the check that tells it apart. Next time, run these checks before you pick.</p>
+      {groups.map((g, gi) => (
+        <div key={`${g.group}-${gi}`} className="ruleout-group">
+          {g.group ? <p className="question-group-title">{g.group}</p> : null}
+          <ul className="ruleouts" aria-label={g.group ?? undefined}>
+            {g.options.map((o) => {
+              const r = byKey.get(o.key)!;
+              const mine = picked === o.key;
+              const half = !r.correct && r.partial;
+              const wrongPick = mine && !r.correct && !r.partial;
+              return (
+                <li key={o.key} className={`ruleout${r.correct ? " is-cause" : ""}${mine && half ? " is-partial-pick" : ""}${wrongPick ? " is-wrong-pick" : ""}`}>
+                  <p className="ruleout-head">
+                    <span className="ruleout-label">{o.label}</span>
+                    {r.correct ? <span className="verdict verdict-correct">The cause</span> : null}
+                    {half ? <span className="verdict verdict-partial">1 point</span> : null}
+                    {mine ? <span className={`verdict ${pickClass(r)}`}>Your pick</span> : null}
+                  </p>
+                  <p className="ruleout-check">{r.check}</p>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 export function ResultView({
   reveal,
   result,
@@ -33,7 +73,7 @@ export function ResultView({
   reveal: Reveal;
   result: Result | null;
   choices: Choices | null;
-  options: Options | null;
+  options: AnswerOptions | null;
   toolbox: boolean;
   grafanaUrl: string | null;
   range: TimeRange;
@@ -115,6 +155,8 @@ export function ResultView({
           ))}
         </ol>
       </section>
+
+      {reveal.rule_outs?.length ? <RuleOuts ruleOuts={reveal.rule_outs} picked={choices?.cause ?? null} /> : null}
 
       {reveal.evidence.length ? (
         <section className="result-block">
