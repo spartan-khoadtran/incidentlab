@@ -42,14 +42,14 @@ describe("settle gate", () => {
     renderPlay();
     await user.click(await screen.findByRole("button", { name: "Start the exercise" }));
 
-    const card = await screen.findByRole("status", { name: "Waiting for the lab to settle" });
+    const card = await screen.findByRole("region", { name: "Waiting for the lab to settle" });
     expect(within(card).getByText("Mock queue lag")).toBeTruthy();
     expect(within(card).getByText("40 s (want under 5 s)")).toBeTruthy();
     expect(within(card).getAllByText("Waiting")).toHaveLength(1);
 
     await vi.advanceTimersByTimeAsync(SETTLE_POLL_MS * 3);
     expect(await screen.findByText(/a mock teammate reports/)).toBeTruthy();
-    expect(screen.queryByRole("status", { name: "Waiting for the lab to settle" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Waiting for the lab to settle" })).toBeNull();
   });
 
   it("stops waiting on Cancel and starts nothing", async () => {
@@ -58,7 +58,7 @@ describe("settle gate", () => {
     state.lab.settlePolls = 100;
     renderPlay();
     await user.click(await screen.findByRole("button", { name: "Start the exercise" }));
-    await screen.findByRole("status", { name: "Waiting for the lab to settle" });
+    await screen.findByRole("region", { name: "Waiting for the lab to settle" });
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(await screen.findByRole("button", { name: "Start the exercise" })).toBeTruthy();
@@ -74,7 +74,7 @@ describe("settle gate", () => {
     renderPlay("/play?tab=capacity");
     await user.click(await screen.findByRole("button", { name: "Start the ramp" }));
 
-    expect(await screen.findByRole("status", { name: "Waiting for the lab to settle" })).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "Waiting for the lab to settle" })).toBeTruthy();
     await vi.advanceTimersByTimeAsync(SETTLE_POLL_MS * 2);
     expect(state.lab.active?.mode).toBe("ramp");
   });

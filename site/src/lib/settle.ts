@@ -9,6 +9,12 @@ function passing(e: unknown): boolean {
   return e instanceof ApiError && (e.code === "offline" || e.status === 0 || e.status >= 500);
 }
 
+/** Moves focus to `el` only when nothing holds it, as after the settle card or a start button left the page. */
+export function focusIfLost(el: HTMLElement | null) {
+  const active = document.activeElement;
+  if (el && (!active || active === document.body || !active.isConnected)) el.focus();
+}
+
 /**
  * Runs a start. While the lab answers 409 lab_settling, it holds the status, polls the gate and runs
  * the start again once the lab is back to normal or the gate gave up. `start` gets `retry` true on

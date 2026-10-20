@@ -12,7 +12,7 @@ export function TicketCard({ view }: { view: ActiveView }) {
   return (
     <article className="ticket" aria-labelledby="ticket-title">
       <header className="ticket-head">
-        <p id="ticket-title" className="ticket-id">
+        <p id="ticket-title" className="ticket-id" tabIndex={-1}>
           Ticket #{view.n}
         </p>
         <dl className="ticket-meta">

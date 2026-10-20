@@ -1,8 +1,8 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Confirm, ErrorNote } from "../../components/LabUi";
 import { api, ApiError, type ActiveView, type NewExercise, type Options } from "../../lib/api";
 import { lab } from "../../lib/data";
-import { useSettledStart } from "../../lib/settle";
+import { focusIfLost, useSettledStart } from "../../lib/settle";
 import { SettleCard } from "../../components/SettleCard";
 
 export function StartForm({
@@ -33,6 +33,16 @@ export function StartForm({
     else setError(e);
   }, []);
   const { run, waiting, isWaiting, posting, cancel } = useSettledStart(onStarted, failed, onWaiting);
+  const submit = useRef<HTMLButtonElement>(null);
+  const wasWaiting = useRef(false);
+
+  useEffect(() => {
+    if (isWaiting) wasWaiting.current = true;
+    else if (wasWaiting.current && !busy) {
+      wasWaiting.current = false;
+      focusIfLost(submit.current);
+    }
+  }, [isWaiting, busy]);
 
   const start = async (force: boolean) => {
     setBusy(true);
@@ -50,7 +60,7 @@ export function StartForm({
 
   const command = ["make", mode === "toolbox" ? "toolbox" : "new", level && `LEVEL=${level}`, topic && `TOPIC=${topic}`, id.trim() && `ID=${id.trim()}`].filter(Boolean).join(" ");
 
-  if (isWaiting) return <SettleCard status={waiting} starting={posting} onCancel={cancel} />;
+  if (isWaiting) return <SettleCard status={waiting} starting={posting} level={3} onCancel={cancel} />;
 
   return (
     <form
@@ -106,7 +116,7 @@ export function StartForm({
         Same as <code>{command}</code>. With no id the lab picks one you did not play in the last {lab.recent_window} rounds and does not say which.
       </p>
       <div className="start-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy}>
+        <button ref={submit} type="submit" className="btn btn-primary" disabled={busy}>
           {busy ? "Starting..." : openMode ? "Start a new exercise" : "Start the exercise"}
         </button>
       </div>
