@@ -137,10 +137,35 @@ class SettleGateTest {
   }
 
   @Test
-  fun `a service down for 2 minutes is stuck, and a service that is restarting is not`() {
-    assertThat(gate(uptime = 0.0, upLately = 0.0).status(state(400.0)).gaveUp).isTrue()
-    assertThat(gate(uptime = 0.0, upLately = 0.0).status(state(100.0)).gaveUp).isFalse()
-    assertThat(gate(uptime = 0.0, upLately = 1.0).status(state(400.0)).gaveUp).isFalse()
+  fun `a service with no answer for 2 minutes is stuck once the gate watched it for a minute`() {
+    var clock = now
+    val down = gate(uptime = 0.0, upLately = 0.0, clock = { clock })
+
+    assertThat(down.status(state(400.0)).gaveUp).isFalse()
+    clock += SettleGate.DOWN_GRACE_SECONDS / 2
+    assertThat(down.status(state(400.0)).gaveUp).isFalse()
+    clock += SettleGate.DOWN_GRACE_SECONDS / 2
+    assertThat(down.status(state(400.0)).gaveUp).isTrue()
+  }
+
+  @Test
+  fun `a service that is restarting is waited for, even long after the last end`() {
+    var clock = now
+    val restarting = gate(uptime = 0.0, upLately = 1.0, clock = { clock })
+
+    repeat(4) {
+      assertThat(restarting.status(state(3600.0)).gaveUp).isFalse()
+      clock += SettleGate.DOWN_GRACE_SECONDS / 2
+    }
+  }
+
+  @Test
+  fun `a value that just went off is not stuck, so a new spike is waited out`() {
+    val spike = gate(normal + (P99 to 0.9), past = normal).status(state(3600.0))
+
+    assertThat(spike.settled).isFalse()
+    assertThat(spike.gaveUp).isFalse()
+    assertThat(gate(normal + (P99 to 0.9)).status(state(3600.0)).gaveUp).isTrue()
   }
 
   @Test
