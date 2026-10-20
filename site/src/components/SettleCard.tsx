@@ -34,7 +34,7 @@ export function SettleCard({ status, starting, level = 2, onCancel }: { status: 
                 <span className="settle-mark">{c.ok ? "Ready" : "Waiting"}</span>
                 <span>{c.name}</span>
                 <span className="muted small">
-                  {c.value ?? "no data"} (want {c.target})
+                  {c.value === null ? "No data yet" : `Now ${c.value}`}. Want {c.target}.
                 </span>
               </li>
             ))}

@@ -72,6 +72,7 @@ interface MockActive {
   answered: boolean;
   revealed: boolean;
   result: unknown;
+  unsettled: string[];
 }
 
 export class MockLab {
@@ -80,6 +81,8 @@ export class MockLab {
   sendOptions = true;
   /** How many more settle polls answer "not settled". While above 0, every start answers 409 lab_settling. */
   settlePolls = 0;
+  /** True acts like a gate that waited too long: polls say gave_up and a start goes ahead while not settled. */
+  gaveUp = false;
   /** Epoch seconds the last exercise ended, for baseline_from. */
   lastEnded: number | null = null;
   active: MockActive | null = null;
@@ -117,6 +120,7 @@ export class MockLab {
       ...(a.mode === "ramp" ? { plan: this.plan } : {}),
       ...(a.mode === "bench" ? { ends_at: this.endsAt } : {}),
       baseline_from: Math.max(a.started_at - 900, this.lastEnded ?? 0),
+      ...(a.unsettled.length ? { unsettled: a.unsettled } : {}),
     };
   }
 
@@ -126,11 +130,16 @@ export class MockLab {
       settled,
       checks: [
         { name: "Mock quiet time", ok: true, value: "75 s", target: "at least 60 s" },
-        { name: "Mock queue lag", ok: settled, value: settled ? "1 s" : "40 s", target: "under 5 s" },
+        { name: "Mock queue lag", ok: settled, value: settled ? "1 s (normal 1 s)" : "40 s (normal 1 s)", target: "at most 5 s for 60 s" },
       ],
       waited_seconds: 75,
-      gave_up: false,
+      gave_up: this.gaveUp && !settled,
     };
+  }
+
+  /** Whether a start must answer 409 lab_settling now. */
+  settling() {
+    return this.settlePolls > 0 && !this.gaveUp;
   }
 
   handle(method: string, path: string, headers: Record<string, string | null>, body: Record<string, unknown>): MockReply {
@@ -163,6 +172,9 @@ export class MockLab {
       answered: false,
       revealed: false,
       result: null,
+      unsettled: this.settleStatus()
+        .checks.filter((c) => !c.ok)
+        .map((c) => c.name),
     });
     switch (true) {
       case route === "GET /health":
@@ -182,12 +194,12 @@ export class MockLab {
         return { status: 200, body: OPTIONS };
       case route === "GET /settle": {
         const status = this.settleStatus();
-        this.settlePolls -= 1;
+        this.settlePolls = Math.max(0, this.settlePolls - 1);
         return { status: 200, body: status };
       }
       case route === "POST /exercises": {
         if (this.active && !body.force) return err(409, "exercise_open", "An exercise is open. Answer, reveal or clear it first.");
-        if (this.settlePolls > 0) {
+        if (this.settling()) {
           if (this.active) {
             this.active = null;
             this.lastEnded = Date.now() / 1000;
@@ -280,7 +292,7 @@ export class MockLab {
       case route === "POST /ramp": {
         if (this.active) return err(409, "exercise_open", "An exercise is open.");
         if (this.load !== 1) return err(409, "load_not_one", "Set the load back to 1 first.");
-        if (this.settlePolls > 0) return err(409, "lab_settling", "Mock: the lab is still settling.", { settle: this.settleStatus() });
+        if (this.settling()) return err(409, "lab_settling", "Mock: the lab is still settling.", { settle: this.settleStatus() });
         this.n += 1;
         const every = Number(body.every ?? 60);
         this.active = fresh("ramp", Date.now() / 1000 - (this.rampStartedAgo ?? every + 5));
@@ -334,7 +346,7 @@ export class MockLab {
       }
       case route === "POST /bench": {
         if (this.active) return err(409, "exercise_open", "An exercise is open.");
-        if (this.settlePolls > 0) return err(409, "lab_settling", "Mock: the lab is still settling.", { settle: this.settleStatus() });
+        if (this.settling()) return err(409, "lab_settling", "Mock: the lab is still settling.", { settle: this.settleStatus() });
         this.n += 1;
         this.active = fresh("bench", Date.now() / 1000);
         this.endsAt = Date.now() / 1000 - 1;
